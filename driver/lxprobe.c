@@ -99,7 +99,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG SelfTestGlobal;
     ULONG SelfTestDosDevices;
     ULONG64 ReadDebug[8];
-    ULONG64 StatDebug[8];
     ULONG GetDentsCount;
     ULONG64 GetDentsStatus;
     ULONG64 GetDentsBytes;
@@ -109,6 +108,7 @@ typedef struct _LX_QUERY_RESULT
     LONG64 LastStatSize;
     ULONG LastStatMode;
     CHAR LastStatPath[128];
+    ULONG64 StatDebug[8];
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
