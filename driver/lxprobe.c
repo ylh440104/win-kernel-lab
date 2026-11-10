@@ -98,6 +98,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG SelfTestSystemRoot;
     ULONG SelfTestGlobal;
     ULONG SelfTestDosDevices;
+    ULONG64 ReadDebug[8];
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -489,6 +490,13 @@ int main(void)
                    q.SelfTestSystemRoot, q.SelfTestGlobal, q.SelfTestDosDevices);
             printf("  readCount=%llu lastReadStatus=0x%llx\n", (unsigned long long)q.ReadCount,
                    (unsigned long long)q.LastReadStatus);
+            printf("  readDebug=%llx %llx %llx %llx -> fd=%llx buf=%llx cnt=%llx\n",
+                   (unsigned long long)q.ReadDebug[0], (unsigned long long)q.ReadDebug[1],
+                   (unsigned long long)q.ReadDebug[2], (unsigned long long)q.ReadDebug[3],
+                   (unsigned long long)q.ReadDebug[4], (unsigned long long)q.ReadDebug[5],
+                   (unsigned long long)q.ReadDebug[6]);
+            printf("  writeLen=%lu WRITE_OUT=[%.*s]\n", q.WriteLength, q.WriteLength < 64 ? (int)q.WriteLength : 64,
+                   q.WriteBuffer);
             printf("  stackSetup=0x%08lx\n", q.StackSetupStatus);
             printf("  fsBaseAfter=0x%llx archPrctlCalls=%lu\n", (unsigned long long)q.FsBaseAfter,
                    q.ArchPrctlCalls);

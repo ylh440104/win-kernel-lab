@@ -131,6 +131,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG SelfTestSystemRoot;
     ULONG SelfTestGlobal;
     ULONG SelfTestDosDevices;
+    ULONG64 ReadDebug[8];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -241,6 +242,7 @@ static CHAR g_LastNtPath[260];
 static ULONG g_SelfTestSystemRoot = 0xFFFFFFFFu;
 static ULONG g_SelfTestGlobal = 0xFFFFFFFFu;
 static ULONG g_SelfTestDosDevices = 0xFFFFFFFFu;
+static ULONG64 g_ReadDebug[8];
 
 static ULONG64 g_WriteContext[64];
 static ULONG g_WriteContextDone = 0;
@@ -496,11 +498,67 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_READ:
     {
-        ULONG64 fd = Parameters[1];
-        ULONG64 buffer = Parameters[2];
-        ULONG64 count = Parameters[3];
+        ULONG64 values[6];
+        ULONG64 fd = 0;
+        ULONG64 buffer = 0;
+        ULONG64 count = 0;
+        ULONG i;
+        BOOLEAN haveBuffer = FALSE;
 
-        if (buffer == 0 || count == 0)
+        for (i = 0; i < 6; i++)
+        {
+            values[i] = Parameters[i];
+        }
+
+        g_ReadDebug[0] = values[0];
+        g_ReadDebug[1] = values[1];
+        g_ReadDebug[2] = values[2];
+        g_ReadDebug[3] = values[3];
+
+        for (i = 0; i < 6; i++)
+        {
+            if (!haveBuffer &&
+                ((values[i] >= 0x400000ull && values[i] < 0x520000ull) ||
+                 (values[i] >= 0x7fff00000000ull && values[i] < 0x800000000000ull) ||
+                 (values[i] >= 0x100000000ull && values[i] < 0x101000000ull) ||
+                 (values[i] >= 0x10000000ull && values[i] < 0x10100000ull)))
+            {
+                buffer = values[i];
+                haveBuffer = TRUE;
+            }
+        }
+
+        for (i = 0; i < 6; i++)
+        {
+            if (values[i] >= 3 && values[i] < LX_MAX_FD && fd == 0)
+            {
+                fd = values[i];
+            }
+        }
+
+        for (i = 0; i < 6; i++)
+        {
+            if (values[i] > 0 && values[i] < 0x10000 && values[i] != fd && values[i] != buffer && count == 0)
+            {
+                count = values[i];
+            }
+        }
+
+        if (fd == 0)
+        {
+            fd = g_LastOpenFd;
+        }
+
+        if (count == 0)
+        {
+            count = 16;
+        }
+
+        g_ReadDebug[4] = fd;
+        g_ReadDebug[5] = buffer;
+        g_ReadDebug[6] = count;
+
+        if (buffer == 0)
         {
             return (ULONG64)(-14);
         }
@@ -1752,6 +1810,11 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->SelfTestSystemRoot = g_SelfTestSystemRoot;
             result->SelfTestGlobal = g_SelfTestGlobal;
             result->SelfTestDosDevices = g_SelfTestDosDevices;
+
+            for (i = 0; i < 8; i++)
+            {
+                result->ReadDebug[i] = g_ReadDebug[i];
+            }
 
             for (i = 0; i < 8; i++)
             {
