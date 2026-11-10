@@ -965,7 +965,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_STAT:
     {
         CHAR kernelPath[260];
-        ULONG64 length = LxCopyLinuxPath(arg0, kernelPath, sizeof(kernelPath));
+        ULONG64 length = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
         ULONG64 status;
         LX_LINUX_STAT linuxStat;
         HANDLE fileHandle = NULL;
@@ -1062,15 +1062,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_LastStatSize = linuxStat.Size;
         g_LastStatMode = linuxStat.Mode;
 
-        if (arg1 == 0)
+        if (Parameters[2] == 0)
         {
             return (ULONG64)(-14);
         }
 
         __try
         {
-            ProbeForWrite((PVOID)(ULONG_PTR)arg1, sizeof(linuxStat), 4);
-            RtlCopyMemory((PVOID)(ULONG_PTR)arg1, &linuxStat, sizeof(linuxStat));
+            ProbeForWrite((PVOID)(ULONG_PTR)Parameters[2], sizeof(linuxStat), 4);
+            RtlCopyMemory((PVOID)(ULONG_PTR)Parameters[2], &linuxStat, sizeof(linuxStat));
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -1139,75 +1139,28 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_READ:
     {
-        ULONG64 values[6];
-        ULONG64 fd = 0;
-        ULONG64 buffer = 0;
-        ULONG64 count = 0;
-        ULONG i;
-        BOOLEAN haveBuffer = FALSE;
+        ULONG64 fd = Parameters[1];
+        ULONG64 buffer = Parameters[2];
+        ULONG64 count = Parameters[3];
 
-        for (i = 0; i < 6; i++)
+        g_ReadDebug[0] = Parameters[0];
+        g_ReadDebug[1] = Parameters[1];
+        g_ReadDebug[2] = Parameters[2];
+        g_ReadDebug[3] = Parameters[3];
+
+        if (buffer == 0 || count == 0 || count > 0x10000)
         {
-            values[i] = Parameters[i];
-        }
-
-        g_ReadDebug[0] = values[0];
-        g_ReadDebug[1] = values[1];
-        g_ReadDebug[2] = values[2];
-        g_ReadDebug[3] = values[3];
-
-        for (i = 0; i < 6; i++)
-        {
-            if (!haveBuffer &&
-                ((values[i] >= 0x400000ull && values[i] < 0x520000ull) ||
-                 (values[i] >= 0x7fff00000000ull && values[i] < 0x800000000000ull) ||
-                 (values[i] >= 0x100000000ull && values[i] < 0x101000000ull) ||
-                 (values[i] >= 0x10000000ull && values[i] < 0x10100000ull)))
+            if (buffer == 0)
             {
-                buffer = values[i];
-                haveBuffer = TRUE;
+                return (ULONG64)(-14);
             }
-        }
 
-        for (i = 0; i < 6; i++)
-        {
-            if (values[i] >= 3 && values[i] < LX_MAX_FD && fd == 0)
-            {
-                fd = values[i];
-            }
-        }
-
-        for (i = 0; i < 6; i++)
-        {
-            if (values[i] > 0 && values[i] < 0x10000 && values[i] != fd && values[i] != buffer && count == 0)
-            {
-                count = values[i];
-            }
-        }
-
-        if (fd == 0)
-        {
-            fd = g_LastOpenFd;
-        }
-
-        if (count == 0)
-        {
             count = 16;
         }
 
         g_ReadDebug[4] = fd;
         g_ReadDebug[5] = buffer;
         g_ReadDebug[6] = count;
-
-        if (buffer == 0)
-        {
-            return (ULONG64)(-14);
-        }
-
-        if (count > 0x10000)
-        {
-            count = 0x10000;
-        }
 
         return LxReadFile((ULONG)fd, (PVOID)(ULONG_PTR)buffer, (ULONG)count);
     }
