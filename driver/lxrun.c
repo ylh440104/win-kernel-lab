@@ -171,6 +171,8 @@ typedef struct _LX_QUERY_RESULT
     CHAR LastStatPath[128];
     ULONG64 StatDebug[8];
     CHAR SlotText[8][48];
+    ULONG64 SeekCount;
+    ULONG64 LastSeekResult;
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -306,6 +308,8 @@ static ULONG g_SelfTestGlobal = 0xFFFFFFFFu;
 static ULONG g_SelfTestDosDevices = 0xFFFFFFFFu;
 static ULONG64 g_ReadDebug[8];
 static ULONG64 g_StatDebug[8];
+static ULONG64 g_SeekCount = 0;
+static ULONG64 g_LastSeekResult = 0;
 static ULONG g_GetDentsCount = 0;
 static ULONG64 g_GetDentsStatus = 0xFFFFFFFFu;
 static ULONG64 g_GetDentsBytes = 0;
@@ -1259,6 +1263,59 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return 0;
 
     case LX_SYS_LSEEK:
+    {
+        ULONG64 fd = Parameters[1];
+        LONG64 offset = (LONG64)Parameters[2];
+        ULONG64 whence = Parameters[3];
+        ULONG64 base;
+        LONGLONG newPosition;
+
+        if (fd >= LX_MAX_FD || !g_FdTable[fd].Used)
+        {
+            return (ULONG64)(-9);
+        }
+
+        base = g_FdTable[fd].Offset;
+
+        if (whence == 0)
+        {
+            newPosition = offset;
+        }
+        else if (whence == 1)
+        {
+            newPosition = (LONGLONG)base + offset;
+        }
+        else if (whence == 2)
+        {
+            FILE_STANDARD_INFORMATION sizeInfo;
+            IO_STATUS_BLOCK seekStatusBlock;
+
+            if (!NT_SUCCESS(ZwQueryInformationFile(g_FdTable[fd].Handle, &seekStatusBlock, &sizeInfo,
+                                                  sizeof(sizeInfo), FileStandardInformation)))
+            {
+                return (ULONG64)(-5);
+            }
+
+            newPosition = sizeInfo.EndOfFile.QuadPart + offset;
+        }
+        else
+        {
+            return (ULONG64)(-22);
+        }
+
+        if (newPosition < 0)
+        {
+            return (ULONG64)(-22);
+        }
+
+        g_FdTable[fd].Offset = (ULONG64)newPosition;
+
+        g_SeekCount++;
+        g_LastSeekResult = (ULONG64)newPosition;
+
+        return (ULONG64)newPosition;
+    }
+
     case LX_SYS_IOCTL:
         return 0;
 
@@ -2524,6 +2581,8 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->SelfTestSystemRoot = g_SelfTestSystemRoot;
             result->SelfTestGlobal = g_SelfTestGlobal;
             result->SelfTestDosDevices = g_SelfTestDosDevices;
+            result->SeekCount = g_SeekCount;
+            result->LastSeekResult = g_LastSeekResult;
 
             for (i = 0; i < 8; i++)
             {
