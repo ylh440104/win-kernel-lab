@@ -1020,6 +1020,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
 
+        g_StatDebug[3] = Parameters[2];
+        g_StatDebug[4] = pathLength;
+
         if (pathLength == 0)
         {
             pathLength = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
