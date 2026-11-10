@@ -400,8 +400,9 @@ static ULONG64 LxNtStatusToErrno(NTSTATUS Status)
 }
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
-    CHAR staging[200];
+    CHAR staging[64];
     ULONG i;
+    BOOLEAN ok = TRUE;
 
     if (UserPath == 0 || KernelPath == NULL || Capacity < 2)
     {
@@ -409,19 +410,28 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
     }
 
     KernelPath[0] = 0;
+    RtlZeroMemory(staging, sizeof(staging));
 
-    __try
+    for (i = 0; i < sizeof(staging); i++)
     {
-        ProbeForRead((PVOID)(ULONG_PTR)UserPath, 200, 1);
-        RtlCopyMemory(staging, (PVOID)(ULONG_PTR)UserPath, 200);
+        __try
+        {
+            ProbeForRead((PVOID)(ULONG_PTR)(UserPath + i), 1, 1);
+            staging[i] = ((const CHAR *)(ULONG_PTR)UserPath)[i];
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            ok = FALSE;
+            break;
+        }
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+
+    if (!ok && i == 0)
     {
-        KernelPath[0] = 0;
         return 0;
     }
 
-    for (i = 0; i < Capacity - 1 && i < 200; i++)
+    for (i = 0; i < Capacity - 1 && i < sizeof(staging); i++)
     {
         CHAR value = staging[i];
 
