@@ -400,6 +400,7 @@ static ULONG64 LxNtStatusToErrno(NTSTATUS Status)
 }
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
+    CHAR staging[200];
     ULONG i;
 
     if (UserPath == 0 || KernelPath == NULL || Capacity < 2)
@@ -411,34 +412,35 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 
     __try
     {
-        ProbeForRead((PVOID)(ULONG_PTR)UserPath, 1, 1);
-
-        for (i = 0; i < Capacity - 1 && i < 200; i++)
-        {
-            CHAR value = ((const CHAR *)(ULONG_PTR)UserPath)[i];
-
-            if (value == 0)
-            {
-                return i;
-            }
-
-            if (value < 0x20 || value > 0x7E)
-            {
-                KernelPath[0] = 0;
-                return 0;
-            }
-
-            KernelPath[i] = value;
-        }
-
-        KernelPath[0] = 0;
-        return 0;
+        ProbeForRead((PVOID)(ULONG_PTR)UserPath, 200, 1);
+        RtlCopyMemory(staging, (PVOID)(ULONG_PTR)UserPath, 200);
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
         KernelPath[0] = 0;
         return 0;
     }
+
+    for (i = 0; i < Capacity - 1 && i < 200; i++)
+    {
+        CHAR value = staging[i];
+
+        if (value == 0)
+        {
+            return i;
+        }
+
+        if (value < 0x20 || value > 0x7E)
+        {
+            KernelPath[0] = 0;
+            return 0;
+        }
+
+        KernelPath[i] = value;
+    }
+
+    KernelPath[0] = 0;
+    return 0;
 }
 
 static ULONG64 LxFillStat(HANDLE Handle, LX_LINUX_STAT *LinuxStat)
@@ -1661,7 +1663,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 
     targetProcess = (PEPROCESS)processObject;
 
-    maximumSize.QuadPart = (LONGLONG)load->ImageSize;
+    maximumSize.QuadPart = (LONGLONG)((load->ImageSize + 0xFFF) & ~0xFFFull);
     InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
     status = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &objectAttributes, &maximumSize,
