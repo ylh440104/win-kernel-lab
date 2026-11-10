@@ -1444,9 +1444,17 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
                 __try
                 {
-                    ProbeForRead((PVOID)(ULONG_PTR)buffer, length, 1);
-                    RtlCopyMemory(g_WriteBuffer, (PVOID)(ULONG_PTR)buffer, length);
-                    g_WriteLength = length;
+                    ULONG appendAt = g_WriteLength;
+
+                    if (appendAt + length >= sizeof(g_WriteBuffer) - 1)
+                    {
+                        appendAt = 0;
+                    }
+
+                    RtlCopyMemory(g_WriteBuffer + appendAt, (PVOID)(ULONG_PTR)buffer, length);
+                    appendAt += length;
+                    g_WriteBuffer[appendAt] = 0;
+                    g_WriteLength = appendAt;
                     g_WriteCount++;
                     g_WriteFd = (ULONG)fd;
                     g_WriteStatus = 0;
