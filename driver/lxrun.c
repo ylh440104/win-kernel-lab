@@ -1088,6 +1088,20 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         if (length > 0)
         {
             g_LastStatStatus = 0x11110000u;
+            g_LastNtPath[0] = 0;
+
+            {
+                ULONG k;
+                ULONG pl = LxBuildNtPath(kernelPath, ntPathBuffer, RTL_NUMBER_OF(ntPathBuffer));
+
+                g_StatDebug[7] = pl;
+
+                for (k = 0; k < 259 && pl > 0 && ntPathBuffer[k] != 0; k++)
+                {
+                    g_LastNtPath[k] = (CHAR)ntPathBuffer[k];
+                }
+                g_LastNtPath[k] = 0;
+            }
         }
 
         if (length == 0)
@@ -1118,6 +1132,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 }
             }
         }
+
+        if (length == 0)
         {
             g_LastStatStatus = 0xFFFFFFFFu;
             return (ULONG64)(-14);
