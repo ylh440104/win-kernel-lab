@@ -1,6 +1,11 @@
 #include <ntddk.h>
 #include <intrin.h>
 
+typedef struct _LX_APC_STATE
+{
+    UCHAR Reserved[0x40];
+} LX_APC_STATE;
+
 typedef struct _LX_FILE_INTERNAL_INFORMATION
 {
     LARGE_INTEGER IndexNumber;
@@ -415,7 +420,7 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
     for (i = 0; i < Capacity - 1 && i < 255; i++)
     {
         CHAR value = 0;
-        KAPC_STATE apcState;
+        LX_APC_STATE apcState;
 
         ObReferenceObject(processObject);
 
@@ -1834,11 +1839,6 @@ static void LxMapPool(void)
 }
 
 #define LX_PROCESS_VM_ACCESS 0x0028ul
-
-typedef struct _LX_APC_STATE
-{
-    UCHAR Reserved[0x40];
-} LX_APC_STATE;
 
 typedef struct _LX_CONTEXT
 {
