@@ -1028,27 +1028,24 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_OPEN:
     case LX_SYS_OPENAT:
     {
-        ULONG64 pathPointer = Parameters[1];
-        ULONG64 openFlags = Parameters[2];
+        CHAR kernelPath[260];
+        ULONG pathLength;
+        ULONG64 openFlags = Parameters[1];
         ULONG64 modeBits = Parameters[3];
-        ULONG64 result;
 
-        if (pathPointer == 0)
+        pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
+
+        g_OpenCount++;
+
+        if (pathLength == 0)
         {
-            return (ULONG64)(-14);
+            g_LastOpenStatus = 0xC000000Du;
+            g_LastOpenFd = 0xFFFFFFFFu;
+            g_LastOpenPath[0] = 0;
+            return (ULONG64)(-2);
         }
 
-        __try
-        {
-            ProbeForRead((PVOID)(ULONG_PTR)pathPointer, 1, 1);
-            result = LxOpenFile((const char *)(ULONG_PTR)pathPointer, (ULONG)openFlags, (ULONG)modeBits);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            result = (ULONG64)(-14);
-        }
-
-        return result;
+        return LxOpenFile(kernelPath, (ULONG)openFlags, (ULONG)modeBits);
     }
 
     case LX_SYS_CLOSE:
@@ -1238,15 +1235,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_GETDENTS64:
     {
-        ULONG fd = (ULONG)arg0;
-        ULONG count = (ULONG)arg2;
+        ULONG fd = (ULONG)Parameters[1];
+        ULONG count = (ULONG)Parameters[3];
 
         if (count > 0x4000)
         {
             count = 0x4000;
         }
 
-        return LxGetDents64(fd, (PVOID)(ULONG_PTR)arg1, count);
+        return LxGetDents64(fd, (PVOID)(ULONG_PTR)Parameters[2], count);
     }
 
     case LX_SYS_ACCESS:
