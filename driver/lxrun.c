@@ -1037,6 +1037,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         g_OpenCount++;
 
+        g_StatDebug[0] = Parameters[1];
+        g_StatDebug[1] = Parameters[2];
+        g_StatDebug[2] = Parameters[3];
+        LxProbeSlots(Parameters);
+        g_SlotProbe[6] = (ULONG64)LxCopyLinuxPath(0x400078ull, g_SlotText[6], 48);
+
         if (pathLength == 0)
         {
             g_LastOpenStatus = 0xC000000Du;
