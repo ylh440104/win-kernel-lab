@@ -132,6 +132,15 @@ typedef struct _LX_QUERY_RESULT
     ULONG SelfTestGlobal;
     ULONG SelfTestDosDevices;
     ULONG64 ReadDebug[8];
+    ULONG GetDentsCount;
+    ULONG64 GetDentsStatus;
+    ULONG64 GetDentsBytes;
+    CHAR LastDirectoryPath[260];
+    ULONG64 StatCount;
+    ULONG64 LastStatStatus;
+    LONG64 LastStatSize;
+    ULONG LastStatMode;
+    CHAR LastStatPath[128];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -228,8 +237,31 @@ typedef struct _LX_FD_ENTRY
     HANDLE Handle;
     ULONG OpenFlags;
     ULONG64 Offset;
+    ULONG64 DirectoryCursor;
+    CHAR LinuxPath[260];
     BOOLEAN Used;
+    BOOLEAN IsDirectory;
 } LX_FD_ENTRY;
+
+typedef struct _LX_LINUX_DIRENT64
+{
+    ULONG64 Inode;
+    LONG64 Offset;
+    USHORT RecordLength;
+    UCHAR Type;
+    CHAR Name[1];
+} LX_LINUX_DIRENT64;
+
+#define LX_SYS_NEWFSTATAT 262
+#define LX_SYS_GETDENTS64 217
+#define LX_SYS_STATX 332
+#define LX_SYS_AT_FDCWD 0xFFFFFF9Cu
+#define LX_O_ACCMODE 3u
+#define LX_O_CREAT 0x40u
+#define LX_O_EXCL 0x80u
+#define LX_O_TRUNC 0x200u
+#define LX_O_DIRECTORY 0x10000u
+#define LX_AT_FDCWD ((ULONG64)0xFFFFFFFFFFFFFF9Cull)
 
 static LX_FD_ENTRY g_FdTable[LX_MAX_FD];
 static ULONG g_OpenCount = 0;
@@ -243,9 +275,186 @@ static ULONG g_SelfTestSystemRoot = 0xFFFFFFFFu;
 static ULONG g_SelfTestGlobal = 0xFFFFFFFFu;
 static ULONG g_SelfTestDosDevices = 0xFFFFFFFFu;
 static ULONG64 g_ReadDebug[8];
+static ULONG g_GetDentsCount = 0;
+static ULONG64 g_GetDentsStatus = 0xFFFFFFFFu;
+static ULONG64 g_GetDentsBytes = 0;
+static CHAR g_LastDirectoryPath[260];
+static ULONG64 g_StatCount = 0;
+static ULONG64 g_LastStatStatus = 0xFFFFFFFFu;
+static LONG64 g_LastStatSize = 0;
+static ULONG g_LastStatMode = 0;
+static CHAR g_LastStatPath[128];
 
 static ULONG64 g_WriteContext[64];
 static ULONG g_WriteContextDone = 0;
+
+typedef struct _LX_LINUX_STAT
+{
+    ULONG64 Device;
+    ULONG64 Inode;
+    ULONG64 LinkCount;
+    ULONG Mode;
+    ULONG UserId;
+    ULONG GroupId;
+    ULONG Pad0;
+    ULONG64 DeviceType;
+    LONG64 Size;
+    LONG64 BlockSize;
+    LONG64 Blocks;
+    LONG64 AccessSeconds;
+    ULONG64 AccessNanoseconds;
+    LONG64 ModifySeconds;
+    ULONG64 ModifyNanoseconds;
+    LONG64 ChangeSeconds;
+    ULONG64 ChangeNanoseconds;
+    ULONG64 Reserved[3];
+} LX_LINUX_STAT;
+
+static LONG64 LxWindowsTimeToUnix(LARGE_INTEGER TimeValue)
+{
+    const LONGLONG EpochDelta = 116444736000000000LL;
+    LONGLONG value = TimeValue.QuadPart;
+
+    if (value < EpochDelta)
+    {
+        return 0;
+    }
+
+    return (value - EpochDelta) / 10000000LL;
+}
+
+static ULONG64 LxNtStatusToErrno(NTSTATUS Status)
+{
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND || Status == STATUS_OBJECT_PATH_NOT_FOUND)
+    {
+        return (ULONG64)(-2);
+    }
+    if (Status == STATUS_ACCESS_DENIED)
+    {
+        return (ULONG64)(-13);
+    }
+    if (Status == STATUS_INVALID_HANDLE)
+    {
+        return (ULONG64)(-9);
+    }
+    if (Status == STATUS_SHARING_VIOLATION)
+    {
+        return (ULONG64)(-16);
+    }
+    if (Status == STATUS_DISK_FULL)
+    {
+        return (ULONG64)(-28);
+    }
+    if (Status == STATUS_NO_MEMORY)
+    {
+        return (ULONG64)(-12);
+    }
+    if (Status == STATUS_INVALID_PARAMETER || Status == STATUS_BUFFER_TOO_SMALL)
+    {
+        return (ULONG64)(-22);
+    }
+    if (Status == STATUS_NOT_A_DIRECTORY)
+    {
+        return (ULONG64)(-20);
+    }
+    if (Status == STATUS_FILE_IS_A_DIRECTORY)
+    {
+        return (ULONG64)(-21);
+    }
+    if (Status == STATUS_OBJECT_NAME_COLLISION)
+    {
+        return (ULONG64)(-17);
+    }
+
+    return (ULONG64)(-5);
+}
+
+static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
+{
+    ULONG i;
+
+    if (UserPath == 0 || KernelPath == NULL || Capacity < 2)
+    {
+        return 0;
+    }
+
+    __try
+    {
+        for (i = 0; i < Capacity - 1; i++)
+        {
+            ProbeForRead((PVOID)(ULONG_PTR)(UserPath + i), 1, 1);
+            KernelPath[i] = ((const CHAR *)(ULONG_PTR)UserPath)[i];
+            if (KernelPath[i] == 0)
+            {
+                return i;
+            }
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return 0;
+    }
+
+    KernelPath[Capacity - 1] = 0;
+    return 0;
+}
+
+static ULONG64 LxFillStat(HANDLE Handle, LX_LINUX_STAT *LinuxStat)
+{
+    FILE_STANDARD_INFORMATION standardInfo;
+    FILE_BASIC_INFORMATION basicInfo;
+    FILE_INTERNAL_INFORMATION internalInfo;
+    IO_STATUS_BLOCK statusBlock;
+    NTSTATUS status;
+    ULONG attributes;
+    LONGLONG accessTime;
+    LONGLONG modifyTime;
+    LONGLONG changeTime;
+
+    RtlZeroMemory(LinuxStat, sizeof(*LinuxStat));
+
+    status = ZwQueryInformationFile(Handle, &statusBlock, &standardInfo, sizeof(standardInfo), FileStandardInformation);
+    if (!NT_SUCCESS(status))
+    {
+        return LxNtStatusToErrno(status);
+    }
+
+    status = ZwQueryInformationFile(Handle, &statusBlock, &basicInfo, sizeof(basicInfo), FileBasicInformation);
+    if (!NT_SUCCESS(status))
+    {
+        return LxNtStatusToErrno(status);
+    }
+
+    status = ZwQueryInformationFile(Handle, &statusBlock, &internalInfo, sizeof(internalInfo), FileInternalInformation);
+    if (NT_SUCCESS(status))
+    {
+        LinuxStat->Inode = (ULONG64)internalInfo.IndexNumber.QuadPart;
+    }
+
+    attributes = basicInfo.FileAttributes;
+    accessTime = basicInfo.LastAccessTime.QuadPart - 116444736000000000LL;
+    modifyTime = basicInfo.LastWriteTime.QuadPart - 116444736000000000LL;
+    changeTime = basicInfo.ChangeTime.QuadPart - 116444736000000000LL;
+
+    LinuxStat->Device = 1;
+    LinuxStat->LinkCount = standardInfo.NumberOfLinks;
+    LinuxStat->Mode = standardInfo.Directory ? (0x4000u | 0555u) : (0x8000u | 0444u);
+    if ((attributes & FILE_ATTRIBUTE_READONLY) == 0)
+    {
+        LinuxStat->Mode |= 0222u;
+    }
+    LinuxStat->Size = standardInfo.EndOfFile.QuadPart;
+    LinuxStat->BlockSize = 4096;
+    LinuxStat->Blocks = (standardInfo.AllocationSize.QuadPart + 511) / 512;
+    LinuxStat->AccessSeconds = LxWindowsTimeToUnix(basicInfo.LastAccessTime);
+    LinuxStat->AccessNanoseconds = accessTime >= 0 ? (ULONG64)(accessTime % 10000000LL) * 100 : 0;
+    LinuxStat->ModifySeconds = LxWindowsTimeToUnix(basicInfo.LastWriteTime);
+    LinuxStat->ModifyNanoseconds = modifyTime >= 0 ? (ULONG64)(modifyTime % 10000000LL) * 100 : 0;
+    LinuxStat->ChangeSeconds = LxWindowsTimeToUnix(basicInfo.ChangeTime);
+    LinuxStat->ChangeNanoseconds = changeTime >= 0 ? (ULONG64)(changeTime % 10000000LL) * 100 : 0;
+
+    return 0;
+}
 
 static ULONG LxBuildNtPath(const char *LinuxPath, WCHAR *OutBuffer, ULONG OutChars)
 {
@@ -316,18 +525,21 @@ static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
     NTSTATUS status;
     ULONG pathLength;
     ULONG slot;
-    ACCESS_MASK access = GENERIC_READ;
-    ULONG share = FILE_SHARE_READ | FILE_SHARE_WRITE;
+    ULONG accessMode = LinuxFlags & LX_O_ACCMODE;
+    ACCESS_MASK access;
+    ULONG share = FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE;
     ULONG disposition = FILE_OPEN;
-    ULONG i;
     ULONG copyLength;
+    ULONG create = (LinuxFlags & LX_O_CREAT) != 0;
+    ULONG truncate = (LinuxFlags & LX_O_TRUNC) != 0;
+    ULONG options = FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT;
 
     UNREFERENCED_PARAMETER(Mode);
 
-    pathLength = LxBuildNtPath(LinuxPath, ntPathBuffer, 260);
+    pathLength = LxBuildNtPath(LinuxPath, ntPathBuffer, RTL_NUMBER_OF(ntPathBuffer));
     if (pathLength == 0)
     {
-        g_LastOpenStatus = 0xC000000Du;
+        g_LastOpenStatus = STATUS_INVALID_PARAMETER;
         return (ULONG64)(-22);
     }
 
@@ -337,16 +549,50 @@ static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
     }
     g_LastOpenPath[copyLength] = 0;
 
-    if ((LinuxFlags & 3) != 0)
+    if (accessMode == 0)
     {
-        access = GENERIC_READ | GENERIC_WRITE;
-        disposition = FILE_OPEN_IF;
+        access = GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+    }
+    else if (accessMode == 1)
+    {
+        access = GENERIC_WRITE | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+    }
+    else if (accessMode == 2)
+    {
+        access = GENERIC_READ | GENERIC_WRITE | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+    }
+    else
+    {
+        g_LastOpenStatus = STATUS_INVALID_PARAMETER;
+        return (ULONG64)(-22);
     }
 
-    if ((LinuxFlags & 0x40) != 0)
+    if (create && (LinuxFlags & LX_O_EXCL) != 0)
+    {
+        disposition = FILE_CREATE;
+    }
+    else if (create)
+    {
+        disposition = FILE_OPEN_IF;
+    }
+    else if (truncate)
+    {
+        disposition = FILE_OVERWRITE;
+        if (accessMode == 0)
+        {
+            g_LastOpenStatus = STATUS_ACCESS_DENIED;
+            return (ULONG64)(-13);
+        }
+    }
+
+    if (create && truncate)
     {
         disposition = FILE_OVERWRITE_IF;
-        access = GENERIC_READ | GENERIC_WRITE;
+    }
+
+    if ((LinuxFlags & LX_O_DIRECTORY) != 0)
+    {
+        options |= FILE_DIRECTORY_FILE;
     }
 
     ntPath.Buffer = ntPathBuffer;
@@ -356,7 +602,7 @@ static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
     {
         ULONG k;
 
-        for (k = 0; k < 259 && ntPathBuffer[k] != 0; k++)
+        for (k = 0; k < RTL_NUMBER_OF(g_LastNtPath) - 1 && ntPathBuffer[k] != 0; k++)
         {
             g_LastNtPath[k] = (CHAR)ntPathBuffer[k];
         }
@@ -375,15 +621,13 @@ static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
 
     if (slot >= LX_MAX_FD)
     {
-        g_LastOpenStatus = 0xC000009Au;
+        g_LastOpenStatus = STATUS_TOO_MANY_OPENED_FILES;
         return (ULONG64)(-24);
     }
 
     g_FdTable[slot].Handle = NULL;
-
     status = ZwCreateFile(&g_FdTable[slot].Handle, access, &attributes, &statusBlock, NULL, FILE_ATTRIBUTE_NORMAL,
-                          share, disposition, FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE, NULL, 0);
-
+                          share, disposition, options, NULL, 0);
     g_OpenCount++;
     g_LastOpenStatus = (ULONG)status;
 
@@ -392,12 +636,30 @@ static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
         g_FdTable[slot].Handle = NULL;
         g_FdTable[slot].Used = FALSE;
         g_LastOpenFd = 0xFFFFFFFFu;
-        return (ULONG64)(-(LONG)(status & 0xFFFF));
+        return LxNtStatusToErrno(status);
+    }
+
+    {
+        FILE_STANDARD_INFORMATION standardInfo;
+        NTSTATUS queryStatus = ZwQueryInformationFile(g_FdTable[slot].Handle, &statusBlock, &standardInfo,
+                                                      sizeof(standardInfo), FileStandardInformation);
+        g_FdTable[slot].IsDirectory = NT_SUCCESS(queryStatus) && standardInfo.Directory;
     }
 
     g_FdTable[slot].Used = TRUE;
     g_FdTable[slot].OpenFlags = LinuxFlags;
     g_FdTable[slot].Offset = 0;
+    g_FdTable[slot].DirectoryCursor = 0;
+    RtlZeroMemory(g_FdTable[slot].LinuxPath, sizeof(g_FdTable[slot].LinuxPath));
+    {
+        ULONG pathCopy = LxKernelPathLength(LinuxPath);
+
+        if (pathCopy > sizeof(g_FdTable[slot].LinuxPath) - 1)
+        {
+            pathCopy = sizeof(g_FdTable[slot].LinuxPath) - 1;
+        }
+        RtlCopyMemory(g_FdTable[slot].LinuxPath, LinuxPath, pathCopy);
+    }
     g_LastOpenFd = slot;
 
     return slot;
@@ -434,6 +696,175 @@ static ULONG64 LxReadFile(ULONG Fd, PVOID UserBuffer, ULONG Count)
     g_FdTable[Fd].Offset += statusBlock.Information;
 
     return statusBlock.Information;
+}
+
+static ULONG LxKernelPathLength(const char *LinuxPath)
+{
+    ULONG length = 0;
+
+    while (length < 259 && LinuxPath[length] != 0)
+    {
+        length++;
+    }
+
+    return length;
+}
+
+static ULONG64 LxGetDents64(ULONG Fd, PVOID UserBuffer, ULONG Count)
+{
+    FILE_BOTH_DIR_INFORMATION *info;
+    IO_STATUS_BLOCK statusBlock;
+    NTSTATUS status;
+    ULONG bufferSize = 0x4000;
+    PVOID buffer;
+    ULONG written = 0;
+    ULONG restart = 0;
+    WCHAR ntPathBuffer[260];
+    UNICODE_STRING directoryName;
+    OBJECT_ATTRIBUTES attributes;
+    HANDLE directoryHandle = NULL;
+    ULONG pathLength;
+
+    if (Fd >= LX_MAX_FD || !g_FdTable[Fd].Used || UserBuffer == NULL || Count == 0)
+    {
+        return (ULONG64)(-9);
+    }
+
+    g_GetDentsCount++;
+
+    if (!g_FdTable[Fd].IsDirectory)
+    {
+        g_GetDentsStatus = 0xC0000103u;
+        return (ULONG64)(-20);
+    }
+
+    pathLength = LxBuildNtPath(g_FdTable[Fd].LinuxPath, ntPathBuffer, RTL_NUMBER_OF(ntPathBuffer));
+    if (pathLength == 0)
+    {
+        g_GetDentsStatus = 0xC0000037u;
+        return (ULONG64)(-22);
+    }
+
+    directoryName.Buffer = ntPathBuffer;
+    directoryName.Length = (USHORT)(pathLength * sizeof(WCHAR));
+    directoryName.MaximumLength = (USHORT)((pathLength + 1) * sizeof(WCHAR));
+
+    InitializeObjectAttributes(&attributes, &directoryName, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+    g_LastDirectoryPath[0] = 0;
+    {
+        ULONG k;
+
+        for (k = 0; k < RTL_NUMBER_OF(g_LastDirectoryPath) - 1 && ntPathBuffer[k] != 0; k++)
+        {
+            g_LastDirectoryPath[k] = (CHAR)ntPathBuffer[k];
+        }
+        g_LastDirectoryPath[k] = 0;
+    }
+
+    status = ZwCreateFile(&directoryHandle, FILE_LIST_DIRECTORY | SYNCHRONIZE, &attributes, &statusBlock, NULL,
+                          FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, FILE_OPEN,
+                          FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE, NULL, 0);
+    g_GetDentsStatus = (ULONG)status;
+
+    if (!NT_SUCCESS(status))
+    {
+        return LxNtStatusToErrno(status);
+    }
+
+    buffer = ExAllocatePoolWithTag(NonPagedPool, bufferSize, 'rDxL');
+    if (buffer == NULL)
+    {
+        ZwClose(directoryHandle);
+        g_GetDentsStatus = 0xC000009Au;
+        return (ULONG64)(-12);
+    }
+
+    if (g_FdTable[Fd].DirectoryCursor != 0)
+    {
+        restart = 1;
+    }
+
+    status = ZwQueryDirectoryFile(directoryHandle, NULL, NULL, NULL, &statusBlock, buffer, bufferSize,
+                                  FileBothDirectoryInformation, FALSE, NULL, restart);
+
+    if (status == STATUS_NO_MORE_FILES || status == STATUS_END_OF_FILE)
+    {
+        status = STATUS_NO_MORE_FILES;
+    }
+    else if (NT_SUCCESS(status))
+    {
+        ULONG skip = 0;
+        ULONG index = 0;
+
+        info = (FILE_BOTH_DIR_INFORMATION *)buffer;
+
+        for (;;)
+        {
+            index++;
+
+            if (index >= g_FdTable[Fd].DirectoryCursor)
+            {
+                ULONG nameLength = info->FileNameLength / sizeof(WCHAR);
+                ULONG recordLength;
+                ULONG m;
+                BOOLEAN isDirectory = (info->FileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+                LX_LINUX_DIRENT64 *entry = (LX_LINUX_DIRENT64 *)((PUCHAR)(ULONG_PTR)UserBuffer + written);
+
+                recordLength = (ULONG)(19 + nameLength + 1);
+                recordLength = (recordLength + 7) & ~7u;
+
+                if (written + recordLength > Count || nameLength > 255)
+                {
+                    break;
+                }
+
+                __try
+                {
+                    entry->Inode = (ULONG64)((index + 1) * 2);
+                    entry->Offset = written + recordLength;
+                    entry->RecordLength = (USHORT)recordLength;
+                    entry->Type = isDirectory ? 4 : 8;
+
+                    for (m = 0; m < nameLength; m++)
+                    {
+                        entry->Name[m] = (CHAR)(UCHAR)info->FileName[m];
+                    }
+                    entry->Name[nameLength] = 0;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    ExFreePoolWithTag(buffer, 'rDxL');
+                    ZwClose(directoryHandle);
+                    g_GetDentsStatus = 0xC0000005u;
+                    return (ULONG64)(-14);
+                }
+
+                written += recordLength;
+            }
+
+            if (info->NextEntryOffset == 0)
+            {
+                break;
+            }
+
+            info = (FILE_BOTH_DIR_INFORMATION *)((PUCHAR)info + info->NextEntryOffset);
+        }
+
+        g_FdTable[Fd].DirectoryCursor = (ULONG64)index;
+    }
+
+    ExFreePoolWithTag(buffer, 'rDxL');
+    ZwClose(directoryHandle);
+
+    g_GetDentsStatus = (ULONG)status;
+    g_GetDentsBytes = written;
+
+    if (written == 0 && !NT_SUCCESS(status))
+    {
+        return 0;
+    }
+
+    return written;
 }
 
 static ULONG64 LxCloseFile(ULONG Fd)
@@ -488,9 +919,141 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return LxCloseFile((ULONG)Parameters[1]);
 
     case LX_SYS_STAT:
+    {
+        CHAR kernelPath[260];
+        ULONG64 length = LxCopyLinuxPath(arg0, kernelPath, sizeof(kernelPath));
+        ULONG64 status;
+        LX_LINUX_STAT linuxStat;
+        HANDLE fileHandle = NULL;
+        WCHAR ntPathBuffer[260];
+        UNICODE_STRING ntPath;
+        OBJECT_ATTRIBUTES attributes;
+        IO_STATUS_BLOCK statusBlock;
+        NTSTATUS ntStatus;
+        ULONG pathLength;
+
+        g_StatCount++;
+        g_LastStatPath[0] = 0;
+
+        if (length == 0)
+        {
+            g_LastStatStatus = 0xFFFFFFFFu;
+            return (ULONG64)(-14);
+        }
+
+        {
+            ULONG k;
+
+            for (k = 0; k < RTL_NUMBER_OF(g_LastStatPath) - 1 && kernelPath[k] != 0; k++)
+            {
+                g_LastStatPath[k] = kernelPath[k];
+            }
+            g_LastStatPath[k] = 0;
+        }
+
+        pathLength = LxBuildNtPath(kernelPath, ntPathBuffer, RTL_NUMBER_OF(ntPathBuffer));
+        if (pathLength == 0)
+        {
+            g_LastStatStatus = 0xC000000Du;
+            return (ULONG64)(-22);
+        }
+
+        ntPath.Buffer = ntPathBuffer;
+        ntPath.Length = (USHORT)(pathLength * sizeof(WCHAR));
+        ntPath.MaximumLength = (USHORT)((pathLength + 1) * sizeof(WCHAR));
+        InitializeObjectAttributes(&attributes, &ntPath, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+        ntStatus = ZwCreateFile(&fileHandle, FILE_READ_ATTRIBUTES | SYNCHRONIZE, &attributes, &statusBlock, NULL,
+                                FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                                FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT, NULL, 0);
+
+        g_LastStatStatus = (ULONG)ntStatus;
+        if (!NT_SUCCESS(ntStatus))
+        {
+            return LxNtStatusToErrno(ntStatus);
+        }
+
+        status = LxFillStat(fileHandle, &linuxStat);
+        ZwClose(fileHandle);
+
+        if (status != 0)
+        {
+            return status;
+        }
+
+        g_LastStatSize = linuxStat.Size;
+        g_LastStatMode = linuxStat.Mode;
+
+        if (arg1 == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        __try
+        {
+            ProbeForWrite((PVOID)(ULONG_PTR)arg1, sizeof(linuxStat), 4);
+            RtlCopyMemory((PVOID)(ULONG_PTR)arg1, &linuxStat, sizeof(linuxStat));
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return (ULONG64)(-14);
+        }
+
+        return 0;
+    }
+
     case LX_SYS_FSTAT:
+    {
+        ULONG fd = (ULONG)arg0;
+        LX_LINUX_STAT linuxStat;
+        ULONG64 status;
+
+        g_StatCount++;
+
+        if (fd >= LX_MAX_FD || !g_FdTable[fd].Used)
+        {
+            g_LastStatStatus = 0xC0000008u;
+            return (ULONG64)(-9);
+        }
+
+        status = LxFillStat(g_FdTable[fd].Handle, &linuxStat);
+        g_LastStatStatus = 0;
+        if (status != 0)
+        {
+            return status;
+        }
+
+        g_LastStatSize = linuxStat.Size;
+        g_LastStatMode = linuxStat.Mode;
+
+        __try
+        {
+            ProbeForWrite((PVOID)(ULONG_PTR)arg1, sizeof(linuxStat), 4);
+            RtlCopyMemory((PVOID)(ULONG_PTR)arg1, &linuxStat, sizeof(linuxStat));
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return (ULONG64)(-14);
+        }
+
+        return 0;
+    }
+
+    case LX_SYS_GETDENTS64:
+    {
+        ULONG fd = (ULONG)arg0;
+        ULONG count = (ULONG)arg2;
+
+        if (count > 0x4000)
+        {
+            count = 0x4000;
+        }
+
+        return LxGetDents64(fd, (PVOID)(ULONG_PTR)arg1, count);
+    }
+
     case LX_SYS_ACCESS:
-        return (ULONG64)(-2);
+        return 0;
 
     case LX_SYS_LSEEK:
     case LX_SYS_IOCTL:
@@ -1815,6 +2378,16 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             {
                 result->ReadDebug[i] = g_ReadDebug[i];
             }
+
+            result->GetDentsCount = g_GetDentsCount;
+            result->GetDentsStatus = g_GetDentsStatus;
+            result->GetDentsBytes = g_GetDentsBytes;
+            result->StatCount = g_StatCount;
+            result->LastStatStatus = g_LastStatStatus;
+            result->LastStatSize = g_LastStatSize;
+            result->LastStatMode = g_LastStatMode;
+            RtlCopyMemory(result->LastDirectoryPath, g_LastDirectoryPath, sizeof(result->LastDirectoryPath));
+            RtlCopyMemory(result->LastStatPath, g_LastStatPath, sizeof(result->LastStatPath));
 
             for (i = 0; i < 8; i++)
             {

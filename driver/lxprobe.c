@@ -99,6 +99,15 @@ typedef struct _LX_QUERY_RESULT
     ULONG SelfTestGlobal;
     ULONG SelfTestDosDevices;
     ULONG64 ReadDebug[8];
+    ULONG GetDentsCount;
+    ULONG64 GetDentsStatus;
+    ULONG64 GetDentsBytes;
+    CHAR LastDirectoryPath[260];
+    ULONG64 StatCount;
+    ULONG64 LastStatStatus;
+    LONG64 LastStatSize;
+    ULONG LastStatMode;
+    CHAR LastStatPath[128];
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -421,7 +430,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\hello.x64");
+        SendLoadElf(device, L"C:\\Windows\\lsdir.x64");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
@@ -497,6 +506,12 @@ int main(void)
                    (unsigned long long)q.ReadDebug[6]);
             printf("  writeLen=%lu WRITE_OUT=[%.*s]\n", q.WriteLength, q.WriteLength < 64 ? (int)q.WriteLength : 64,
                    q.WriteBuffer);
+            printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
+                   (unsigned long long)q.StatCount, (unsigned long long)q.LastStatStatus,
+                   (long long)q.LastStatSize, q.LastStatMode, (int)sizeof(q.LastStatPath), q.LastStatPath);
+            printf("  getdentsCount=%lu status=0x%llx bytes=%llu dir=[%.*s]\n", q.GetDentsCount,
+                   (unsigned long long)q.GetDentsStatus, (unsigned long long)q.GetDentsBytes,
+                   (int)sizeof(q.LastDirectoryPath), q.LastDirectoryPath);
             printf("  stackSetup=0x%08lx\n", q.StackSetupStatus);
             printf("  fsBaseAfter=0x%llx archPrctlCalls=%lu\n", (unsigned long long)q.FsBaseAfter,
                    q.ArchPrctlCalls);
