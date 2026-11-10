@@ -170,6 +170,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG LastStatMode;
     CHAR LastStatPath[128];
     ULONG64 StatDebug[8];
+    CHAR SlotText[8][48];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -398,6 +399,64 @@ static ULONG64 LxNtStatusToErrno(NTSTATUS Status)
 
     return (ULONG64)(-5);
 }
+static ULONG64 g_SlotProbe[8];
+static CHAR g_SlotText[8][48];
+
+static void LxProbeSlots(ULONG64 *Parameters)
+{
+    ULONG s;
+    ULONG i;
+
+    RtlZeroMemory(g_SlotProbe, sizeof(g_SlotProbe));
+    RtlZeroMemory(g_SlotText, sizeof(g_SlotText));
+
+    for (s = 0; s < 6; s++)
+    {
+        ULONG64 address = Parameters[s];
+        BOOLEAN anyOk = FALSE;
+
+        g_SlotProbe[s] = address;
+
+        if (address < 0x10000 || address >= 0x800000000000ull)
+        {
+            continue;
+        }
+
+        for (i = 0; i < 47; i++)
+        {
+            CHAR value = 0;
+
+            __try
+            {
+                ProbeForRead((PVOID)(ULONG_PTR)(address + i), 1, 1);
+                value = ((const CHAR *)(ULONG_PTR)address)[i];
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                value = 0;
+
+                if (!anyOk)
+                {
+                    g_SlotText[s][0] = 0;
+                }
+
+                break;
+            }
+
+            anyOk = TRUE;
+
+            if (value == 0)
+            {
+                g_SlotText[s][i] = 0;
+                break;
+            }
+
+            g_SlotText[s][i] = (value >= 0x20 && value <= 0x7E) ? value : '.';
+            g_SlotText[s][i + 1] = 0;
+        }
+    }
+}
+
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
     CHAR staging[64];
@@ -995,6 +1054,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_StatDebug[3] = Parameters[3];
         g_StatDebug[4] = Parameters[4];
         g_StatDebug[5] = Parameters[5];
+
+        LxProbeSlots(Parameters);
 
         if (length == 0)
         {
@@ -2414,6 +2475,7 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             {
                 result->ReadDebug[i] = g_ReadDebug[i];
                 result->StatDebug[i] = g_StatDebug[i];
+                RtlCopyMemory(result->SlotText[i], g_SlotText[i], 48);
             }
 
             result->GetDentsCount = g_GetDentsCount;
