@@ -1015,18 +1015,18 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     {
         CHAR kernelPath[260];
         ULONG pathLength;
-        ULONG64 openFlags = Parameters[2];
+        ULONG64 openFlags = Parameters[1];
         ULONG64 modeBits = Parameters[3];
 
-        pathLength = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
+        pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
 
         if (pathLength == 0)
         {
-            pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
+            pathLength = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
 
             if (pathLength > 0)
             {
-                openFlags = Parameters[1];
+                openFlags = Parameters[2];
             }
         }
 
@@ -1242,6 +1242,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         if (count > 0x4000)
         {
             count = 0x4000;
+        }
+
+        if (count == 0)
+        {
+            count = 1024;
         }
 
         return LxGetDents64(fd, (PVOID)(ULONG_PTR)Parameters[2], count);
