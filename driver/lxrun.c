@@ -401,7 +401,6 @@ static ULONG64 LxNtStatusToErrno(NTSTATUS Status)
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
     ULONG i;
-    PEPROCESS processObject = NULL;
 
     if (UserPath == 0 || KernelPath == NULL || Capacity < 2)
     {
@@ -410,54 +409,36 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 
     KernelPath[0] = 0;
 
-    processObject = PsGetCurrentProcess();
-
-    if (processObject == NULL)
+    __try
     {
+        ProbeForRead((PVOID)(ULONG_PTR)UserPath, 1, 1);
+
+        for (i = 0; i < Capacity - 1 && i < 200; i++)
+        {
+            CHAR value = ((const CHAR *)(ULONG_PTR)UserPath)[i];
+
+            if (value == 0)
+            {
+                return i;
+            }
+
+            if (value < 0x20 || value > 0x7E)
+            {
+                KernelPath[0] = 0;
+                return 0;
+            }
+
+            KernelPath[i] = value;
+        }
+
+        KernelPath[0] = 0;
         return 0;
     }
-
-    for (i = 0; i < Capacity - 1 && i < 255; i++)
+    __except (EXCEPTION_EXECUTE_HANDLER)
     {
-        CHAR value = 0;
-        LX_APC_STATE apcState;
-
-        ObReferenceObject(processObject);
-
-        KeStackAttachProcess(processObject, (PVOID)&apcState);
-
-        __try
-        {
-            value = ((const CHAR *)(ULONG_PTR)UserPath)[i];
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            value = 0;
-            KeUnstackDetachProcess((PVOID)&apcState);
-            ObDereferenceObject(processObject);
-            KernelPath[0] = 0;
-            return 0;
-        }
-
-        KeUnstackDetachProcess((PVOID)&apcState);
-        ObDereferenceObject(processObject);
-
-        KernelPath[i] = value;
-
-        if (value == 0)
-        {
-            return i;
-        }
-
-        if (i > 4 && (value < 0x20 || value > 0x7E))
-        {
-            KernelPath[0] = 0;
-            return 0;
-        }
+        KernelPath[0] = 0;
+        return 0;
     }
-
-    KernelPath[0] = 0;
-    return 0;
 }
 
 static ULONG64 LxFillStat(HANDLE Handle, LX_LINUX_STAT *LinuxStat)
