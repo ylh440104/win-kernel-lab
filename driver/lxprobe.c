@@ -99,6 +99,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG SelfTestGlobal;
     ULONG SelfTestDosDevices;
     ULONG64 ReadDebug[8];
+    ULONG64 StatDebug[8];
     ULONG GetDentsCount;
     ULONG64 GetDentsStatus;
     ULONG64 GetDentsBytes;
@@ -509,6 +510,11 @@ int main(void)
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
                    (unsigned long long)q.StatCount, (unsigned long long)q.LastStatStatus,
                    (long long)q.LastStatSize, q.LastStatMode, (int)sizeof(q.LastStatPath), q.LastStatPath);
+            printf("  statDebug=%llx %llx %llx %llx %llx %llx used=%llx\n",
+                   (unsigned long long)q.StatDebug[0], (unsigned long long)q.StatDebug[1],
+                   (unsigned long long)q.StatDebug[2], (unsigned long long)q.StatDebug[3],
+                   (unsigned long long)q.StatDebug[4], (unsigned long long)q.StatDebug[5],
+                   (unsigned long long)q.StatDebug[6]);
             printf("  getdentsCount=%lu status=0x%llx bytes=%llu dir=[%.*s]\n", q.GetDentsCount,
                    (unsigned long long)q.GetDentsStatus, (unsigned long long)q.GetDentsBytes,
                    (int)sizeof(q.LastDirectoryPath), q.LastDirectoryPath);
