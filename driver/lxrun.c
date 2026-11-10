@@ -1055,6 +1055,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         g_SlotProbe[6] = (ULONG64)LxCopyLinuxPath(0x400078ull, g_SlotText[6], 48);
         g_SlotProbe[7] = (ULONG64)LxCopyLinuxPath(Parameters[2], g_SlotText[7], 48);
+        g_StatDebug[6] = length;
+        g_StatDebug[7] = (ULONG64)(UCHAR)kernelPath[0];
+
+        if (length > 0)
+        {
+            g_LastStatStatus = 0x11110000u;
+        }
 
         if (length == 0)
         {
