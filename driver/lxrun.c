@@ -298,6 +298,7 @@ static ULONG g_SelfTestSystemRoot = 0xFFFFFFFFu;
 static ULONG g_SelfTestGlobal = 0xFFFFFFFFu;
 static ULONG g_SelfTestDosDevices = 0xFFFFFFFFu;
 static ULONG64 g_ReadDebug[8];
+static ULONG64 g_StatDebug[8];
 static ULONG g_GetDentsCount = 0;
 static ULONG64 g_GetDentsStatus = 0xFFFFFFFFu;
 static ULONG64 g_GetDentsBytes = 0;
@@ -391,7 +392,6 @@ static ULONG64 LxNtStatusToErrno(NTSTATUS Status)
 
     return (ULONG64)(-5);
 }
-
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
     ULONG i;
@@ -401,12 +401,16 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
         return 0;
     }
 
+    KernelPath[0] = 0;
+
     __try
     {
+        ProbeForRead((PVOID)(ULONG_PTR)UserPath, 1, 1);
+
         for (i = 0; i < Capacity - 1; i++)
         {
-            ProbeForRead((PVOID)(ULONG_PTR)(UserPath + i), 1, 1);
             KernelPath[i] = ((const CHAR *)(ULONG_PTR)UserPath)[i];
+
             if (KernelPath[i] == 0)
             {
                 return i;
@@ -415,6 +419,7 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
+        KernelPath[0] = 0;
         return 0;
     }
 
@@ -958,7 +963,29 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_StatCount++;
         g_LastStatPath[0] = 0;
 
+        g_StatDebug[0] = Parameters[0];
+        g_StatDebug[1] = Parameters[1];
+        g_StatDebug[2] = Parameters[2];
+        g_StatDebug[3] = Parameters[3];
+        g_StatDebug[4] = Parameters[4];
+        g_StatDebug[5] = Parameters[5];
+
         if (length == 0)
+        {
+            ULONG s;
+
+            for (s = 0; s < 6; s++)
+            {
+                if (Parameters[s] >= 0x400000ull && Parameters[s] < 0x800000000000ull &&
+                    Parameters[s] != arg1 &&
+                    LxCopyLinuxPath(Parameters[s], kernelPath, sizeof(kernelPath)) > 0)
+                {
+                    length = LxCopyLinuxPath(Parameters[s], kernelPath, sizeof(kernelPath));
+                    g_StatDebug[6] = Parameters[s];
+                    break;
+                }
+            }
+        }
         {
             g_LastStatStatus = 0xFFFFFFFFu;
             return (ULONG64)(-14);
@@ -2400,6 +2427,7 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             for (i = 0; i < 8; i++)
             {
                 result->ReadDebug[i] = g_ReadDebug[i];
+                result->StatDebug[i] = g_StatDebug[i];
             }
 
             result->GetDentsCount = g_GetDentsCount;
