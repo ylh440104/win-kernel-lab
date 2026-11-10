@@ -109,6 +109,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG LastStatMode;
     CHAR LastStatPath[128];
     ULONG64 StatDebug[8];
+    CHAR SlotText[8][48];
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -515,6 +516,14 @@ int main(void)
                    (unsigned long long)q.StatDebug[2], (unsigned long long)q.StatDebug[3],
                    (unsigned long long)q.StatDebug[4], (unsigned long long)q.StatDebug[5],
                    (unsigned long long)q.StatDebug[6]);
+            {
+                int si;
+                for (si = 0; si < 8; si++)
+                {
+                    printf("    slot[%d]=0x%llx text=[%s]\n", si,
+                           (unsigned long long)q.StatDebug[si], q.SlotText[si]);
+                }
+            }
             printf("  getdentsCount=%lu status=0x%llx bytes=%llu dir=[%.*s]\n", q.GetDentsCount,
                    (unsigned long long)q.GetDentsStatus, (unsigned long long)q.GetDentsBytes,
                    (int)sizeof(q.LastDirectoryPath), q.LastDirectoryPath);
