@@ -478,7 +478,7 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 
     __try
     {
-        RtlCopyMemory(staging, (PVOID)(ULONG_PTR)UserPath, 64);
+        RtlCopyMemory(staging, (PVOID)(ULONG_PTR)UserPath, 24);
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
