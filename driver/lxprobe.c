@@ -510,6 +510,28 @@ int main(void)
                    (unsigned long long)q.ReadDebug[6]);
             printf("  writeLen=%lu WRITE_OUT=[%.*s]\n", q.WriteLength, q.WriteLength < 64 ? (int)q.WriteLength : 64,
                    q.WriteBuffer);
+            {
+                ULONG dumpLen = q.WriteLength < 128 ? q.WriteLength : 128;
+                ULONG di;
+
+                printf("  writeHex(%lu):", dumpLen);
+
+                for (di = 0; di < dumpLen; di++)
+                {
+                    printf(" %02x", (unsigned char)q.WriteBuffer[di]);
+                }
+
+                printf("\n  writeAscii:");
+                printf(" |");
+
+                for (di = 0; di < dumpLen; di++)
+                {
+                    unsigned char ch = (unsigned char)q.WriteBuffer[di];
+                    putchar((ch >= 0x20 && ch < 0x7F) ? ch : '.');
+                }
+
+                printf("|\n");
+            }
             printf("  seekCount=%llu lastSeek=0x%llx\n", (unsigned long long)q.SeekCount,
                    (unsigned long long)q.LastSeekResult);
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
