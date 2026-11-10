@@ -628,7 +628,7 @@ static ULONG LxBuildNtPath(const char *LinuxPath, WCHAR *OutBuffer, ULONG OutCha
         }
     }
 
-    if (out == 0 || (isMntC && out <= 11))
+    if (out == 0 || (isMntC && out < 11))
     {
         return 0;
     }
