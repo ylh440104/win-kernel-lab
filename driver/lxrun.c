@@ -459,8 +459,10 @@ static void LxProbeSlots(ULONG64 *Parameters)
 
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
+    CHAR staging[64];
     ULONG i;
     ULONG limit = Capacity - 1;
+    ULONG attempt;
 
     if (UserPath == 0 || KernelPath == NULL || Capacity < 2)
     {
@@ -473,62 +475,45 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
     }
 
     KernelPath[0] = 0;
-    for (i = 0; i < limit; i++)
+
+    for (attempt = 0; attempt < 3; attempt++)
     {
-        CHAR value = 0;
-        BOOLEAN ok = FALSE;
+        BOOLEAN copied = FALSE;
 
-        if (g_ExceptionCount > 5000)
-        {
-            if (i > 0)
-            {
-                KernelPath[i] = 0;
-                return i;
-            }
-
-            return 0;
-        }
-
+        RtlZeroMemory(staging, sizeof(staging));
 
         __try
         {
-            RtlCopyMemory(&value, (PVOID)(ULONG_PTR)(UserPath + i), 1);
-            ok = TRUE;
+            RtlCopyMemory(staging, (PVOID)(ULONG_PTR)UserPath, 32);
+            copied = TRUE;
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            ok = FALSE;
+            copied = FALSE;
         }
 
-        if (!ok)
+        if (!copied)
         {
-            if (i == 0)
+            continue;
+        }
+
+        for (i = 0; i < limit && i < 32; i++)
+        {
+            CHAR value = staging[i];
+
+            if (value == 0)
             {
-                return 0;
+                if (i > 0)
+                {
+                    KernelPath[i] = 0;
+                    return i;
+                }
+
+                break;
             }
 
-            KernelPath[i] = 0;
-            return i;
+            KernelPath[i] = value;
         }
-
-        if (value == 0)
-        {
-            KernelPath[i] = 0;
-            return i;
-        }
-
-        if (value < 0x20 || value > 0x7E)
-        {
-            if (i == 0)
-            {
-                return 0;
-            }
-
-            KernelPath[i] = 0;
-            return i;
-        }
-
-        KernelPath[i] = value;
     }
 
     KernelPath[0] = 0;
@@ -1034,6 +1019,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 modeBits = Parameters[3];
 
         pathLength = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
+
+        if (pathLength == 0)
+        {
+            pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
+
+            if (pathLength > 0)
+            {
+                openFlags = Parameters[1];
+            }
+        }
 
         g_OpenCount++;
 
