@@ -430,7 +430,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\lsdir.x64");
+        SendLoadElf(device, L"C:\\Windows\\stat.x64");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
