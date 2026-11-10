@@ -164,6 +164,7 @@ typedef struct _LX_QUERY_RESULT
     LONG64 LastStatSize;
     ULONG LastStatMode;
     CHAR LastStatPath[128];
+    ULONG64 StatDebug[8];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
