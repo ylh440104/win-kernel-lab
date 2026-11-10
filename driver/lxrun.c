@@ -1030,10 +1030,10 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     {
         CHAR kernelPath[260];
         ULONG pathLength;
-        ULONG64 openFlags = Parameters[1];
+        ULONG64 openFlags = Parameters[2];
         ULONG64 modeBits = Parameters[3];
 
-        pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
+        pathLength = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
 
         g_OpenCount++;
 
