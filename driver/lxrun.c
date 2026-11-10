@@ -1,6 +1,29 @@
 #include <ntddk.h>
 #include <intrin.h>
 
+typedef struct _LX_FILE_INTERNAL_INFORMATION
+{
+    LARGE_INTEGER IndexNumber;
+} LX_FILE_INTERNAL_INFORMATION;
+
+typedef struct _LX_FILE_BOTH_DIR_INFORMATION
+{
+    ULONG NextEntryOffset;
+    ULONG FileIndex;
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    LARGE_INTEGER EndOfFile;
+    LARGE_INTEGER AllocationSize;
+    ULONG FileAttributes;
+    ULONG FileNameLength;
+    ULONG EaSize;
+    CCHAR ShortNameLength;
+    WCHAR ShortName[12];
+    WCHAR FileName[1];
+} LX_FILE_BOTH_DIR_INFORMATION;
+
 #define LX_DEVICE_NAME L"\\Device\\Lxrun"
 #define LX_SYMLINK_NAME L"\\DosDevices\\Lxrun"
 
@@ -403,7 +426,7 @@ static ULONG64 LxFillStat(HANDLE Handle, LX_LINUX_STAT *LinuxStat)
 {
     FILE_STANDARD_INFORMATION standardInfo;
     FILE_BASIC_INFORMATION basicInfo;
-    FILE_INTERNAL_INFORMATION internalInfo;
+    LX_FILE_INTERNAL_INFORMATION internalInfo;
     IO_STATUS_BLOCK statusBlock;
     NTSTATUS status;
     ULONG attributes;
@@ -712,7 +735,7 @@ static ULONG LxKernelPathLength(const char *LinuxPath)
 
 static ULONG64 LxGetDents64(ULONG Fd, PVOID UserBuffer, ULONG Count)
 {
-    FILE_BOTH_DIR_INFORMATION *info;
+    LX_FILE_BOTH_DIR_INFORMATION *info;
     IO_STATUS_BLOCK statusBlock;
     NTSTATUS status;
     ULONG bufferSize = 0x4000;
@@ -796,7 +819,7 @@ static ULONG64 LxGetDents64(ULONG Fd, PVOID UserBuffer, ULONG Count)
         ULONG skip = 0;
         ULONG index = 0;
 
-        info = (FILE_BOTH_DIR_INFORMATION *)buffer;
+        info = (LX_FILE_BOTH_DIR_INFORMATION *)buffer;
 
         for (;;)
         {
@@ -847,7 +870,7 @@ static ULONG64 LxGetDents64(ULONG Fd, PVOID UserBuffer, ULONG Count)
                 break;
             }
 
-            info = (FILE_BOTH_DIR_INFORMATION *)((PUCHAR)info + info->NextEntryOffset);
+            info = (LX_FILE_BOTH_DIR_INFORMATION *)((PUCHAR)info + info->NextEntryOffset);
         }
 
         g_FdTable[Fd].DirectoryCursor = (ULONG64)index;
