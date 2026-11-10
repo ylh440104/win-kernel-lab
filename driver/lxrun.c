@@ -1030,7 +1030,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_STAT:
     {
         CHAR kernelPath[260];
-        ULONG64 length = LxCopyLinuxPath(Parameters[3], kernelPath, sizeof(kernelPath));
+        ULONG64 length = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
         ULONG64 status;
         LX_LINUX_STAT linuxStat;
         HANDLE fileHandle = NULL;
@@ -1132,14 +1132,14 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_LastStatSize = linuxStat.Size;
         g_LastStatMode = linuxStat.Mode;
 
-        if (Parameters[2] == 0)
+        if (Parameters[1] == 0)
         {
             return (ULONG64)(-14);
         }
 
         __try
         {
-            RtlCopyMemory((PVOID)(ULONG_PTR)Parameters[2], &linuxStat, sizeof(linuxStat));
+            RtlCopyMemory((PVOID)(ULONG_PTR)Parameters[1], &linuxStat, sizeof(linuxStat));
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
