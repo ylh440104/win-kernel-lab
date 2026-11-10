@@ -473,11 +473,22 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
     }
 
     KernelPath[0] = 0;
-
     for (i = 0; i < limit; i++)
     {
         CHAR value = 0;
         BOOLEAN ok = FALSE;
+
+        if (g_ExceptionCount > 5000)
+        {
+            if (i > 0)
+            {
+                KernelPath[i] = 0;
+                return i;
+            }
+
+            return 0;
+        }
+
 
         __try
         {
