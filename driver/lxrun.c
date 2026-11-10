@@ -422,7 +422,7 @@ static void LxProbeSlots(ULONG64 *Parameters)
             continue;
         }
 
-        for (i = 0; i < 47; i++)
+        for (i = 0; i < 15; i++)
         {
             CHAR value = 0;
 
@@ -459,40 +459,35 @@ static void LxProbeSlots(ULONG64 *Parameters)
 
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
-    CHAR staging[64];
     ULONG i;
-    BOOLEAN ok = TRUE;
+    ULONG limit = Capacity - 1;
 
     if (UserPath == 0 || KernelPath == NULL || Capacity < 2)
     {
         return 0;
     }
 
-    KernelPath[0] = 0;
-    RtlZeroMemory(staging, sizeof(staging));
-
-    for (i = 0; i < sizeof(staging); i++)
+    if (limit > 60)
     {
+        limit = 60;
+    }
+
+    KernelPath[0] = 0;
+
+    for (i = 0; i < limit; i++)
+    {
+        CHAR value = 0;
+
         __try
         {
             ProbeForRead((PVOID)(ULONG_PTR)(UserPath + i), 1, 1);
-            staging[i] = ((const CHAR *)(ULONG_PTR)UserPath)[i];
+            value = ((const CHAR *)(ULONG_PTR)UserPath)[i];
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            ok = FALSE;
-            break;
+            KernelPath[0] = 0;
+            return 0;
         }
-    }
-
-    if (!ok && i == 0)
-    {
-        return 0;
-    }
-
-    for (i = 0; i < Capacity - 1 && i < sizeof(staging); i++)
-    {
-        CHAR value = staging[i];
 
         if (value == 0)
         {
@@ -1056,6 +1051,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_StatDebug[5] = Parameters[5];
 
         LxProbeSlots(Parameters);
+
+        g_SlotProbe[6] = (ULONG64)LxCopyLinuxPath(0x400078ull, g_SlotText[6], 48);
+        g_SlotProbe[7] = (ULONG64)LxCopyLinuxPath(Parameters[2], g_SlotText[7], 48);
 
         if (length == 0)
         {
