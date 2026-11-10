@@ -408,7 +408,7 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
     {
         ProbeForRead((PVOID)(ULONG_PTR)UserPath, 1, 1);
 
-        for (i = 0; i < Capacity - 1; i++)
+        for (i = 0; i < Capacity - 1 && i < 255; i++)
         {
             KernelPath[i] = ((const CHAR *)(ULONG_PTR)UserPath)[i];
 
@@ -416,7 +416,16 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
             {
                 return i;
             }
+
+            if (i > 4 && (KernelPath[i] < 0x20 || KernelPath[i] > 0x7E))
+            {
+                KernelPath[0] = 0;
+                return 0;
+            }
         }
+
+        KernelPath[0] = 0;
+        return 0;
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
@@ -977,11 +986,23 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
             for (s = 0; s < 6; s++)
             {
-                if (Parameters[s] >= 0x400000ull && Parameters[s] < 0x800000000000ull &&
-                    Parameters[s] != arg1 &&
-                    LxCopyLinuxPath(Parameters[s], kernelPath, sizeof(kernelPath)) > 0)
+                ULONG probe;
+
+                if (Parameters[s] < 0x400000ull || Parameters[s] >= 0x800000000000ull)
                 {
-                    length = LxCopyLinuxPath(Parameters[s], kernelPath, sizeof(kernelPath));
+                    continue;
+                }
+
+                if (Parameters[s] == arg1)
+                {
+                    continue;
+                }
+
+                probe = LxCopyLinuxPath(Parameters[s], kernelPath, sizeof(kernelPath));
+
+                if (probe > 0 && kernelPath[0] == '/')
+                {
+                    length = probe;
                     g_StatDebug[6] = Parameters[s];
                     break;
                 }
