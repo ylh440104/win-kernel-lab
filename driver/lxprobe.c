@@ -110,6 +110,8 @@ typedef struct _LX_QUERY_RESULT
     CHAR LastStatPath[128];
     ULONG64 StatDebug[8];
     CHAR SlotText[8][48];
+    ULONG64 SeekCount;
+    ULONG64 LastSeekResult;
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -432,7 +434,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\gd.x64");
+        SendLoadElf(device, L"C:\\Windows\\seek.x64");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
@@ -508,6 +510,8 @@ int main(void)
                    (unsigned long long)q.ReadDebug[6]);
             printf("  writeLen=%lu WRITE_OUT=[%.*s]\n", q.WriteLength, q.WriteLength < 64 ? (int)q.WriteLength : 64,
                    q.WriteBuffer);
+            printf("  seekCount=%llu lastSeek=0x%llx\n", (unsigned long long)q.SeekCount,
+                   (unsigned long long)q.LastSeekResult);
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
                    (unsigned long long)q.StatCount, (unsigned long long)q.LastStatStatus,
                    (long long)q.LastStatSize, q.LastStatMode, (int)sizeof(q.LastStatPath), q.LastStatPath);
