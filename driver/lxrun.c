@@ -396,6 +396,7 @@ static ULONG64 LxNtStatusToErrno(NTSTATUS Status)
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
     ULONG i;
+    PEPROCESS processObject = NULL;
 
     if (UserPath == 0 || KernelPath == NULL || Capacity < 2)
     {
@@ -404,36 +405,53 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 
     KernelPath[0] = 0;
 
-    __try
+    processObject = PsGetCurrentProcess();
+
+    if (processObject == NULL)
     {
-        ProbeForRead((PVOID)(ULONG_PTR)UserPath, 1, 1);
+        return 0;
+    }
 
-        for (i = 0; i < Capacity - 1 && i < 255; i++)
+    for (i = 0; i < Capacity - 1 && i < 255; i++)
+    {
+        CHAR value = 0;
+        KAPC_STATE apcState;
+
+        ObReferenceObject(processObject);
+
+        KeStackAttachProcess(processObject, (PVOID)&apcState);
+
+        __try
         {
-            KernelPath[i] = ((const CHAR *)(ULONG_PTR)UserPath)[i];
-
-            if (KernelPath[i] == 0)
-            {
-                return i;
-            }
-
-            if (i > 4 && (KernelPath[i] < 0x20 || KernelPath[i] > 0x7E))
-            {
-                KernelPath[0] = 0;
-                return 0;
-            }
+            value = ((const CHAR *)(ULONG_PTR)UserPath)[i];
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            value = 0;
+            KeUnstackDetachProcess((PVOID)&apcState);
+            ObDereferenceObject(processObject);
+            KernelPath[0] = 0;
+            return 0;
         }
 
-        KernelPath[0] = 0;
-        return 0;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-        KernelPath[0] = 0;
-        return 0;
+        KeUnstackDetachProcess((PVOID)&apcState);
+        ObDereferenceObject(processObject);
+
+        KernelPath[i] = value;
+
+        if (value == 0)
+        {
+            return i;
+        }
+
+        if (i > 4 && (value < 0x20 || value > 0x7E))
+        {
+            KernelPath[0] = 0;
+            return 0;
+        }
     }
 
-    KernelPath[Capacity - 1] = 0;
+    KernelPath[0] = 0;
     return 0;
 }
 
