@@ -459,7 +459,6 @@ static void LxProbeSlots(ULONG64 *Parameters)
 
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
-    CHAR staging[64];
     ULONG i;
     ULONG limit = Capacity - 1;
 
@@ -474,31 +473,48 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
     }
 
     KernelPath[0] = 0;
-    RtlZeroMemory(staging, sizeof(staging));
-
-    __try
-    {
-        RtlCopyMemory(staging, (PVOID)(ULONG_PTR)UserPath, 24);
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
-    {
-        KernelPath[0] = 0;
-        return 0;
-    }
 
     for (i = 0; i < limit; i++)
     {
-        CHAR value = staging[i];
+        CHAR value = 0;
+        BOOLEAN ok = FALSE;
+
+        __try
+        {
+            RtlCopyMemory(&value, (PVOID)(ULONG_PTR)(UserPath + i), 1);
+            ok = TRUE;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            ok = FALSE;
+        }
+
+        if (!ok)
+        {
+            if (i == 0)
+            {
+                return 0;
+            }
+
+            KernelPath[i] = 0;
+            return i;
+        }
 
         if (value == 0)
         {
+            KernelPath[i] = 0;
             return i;
         }
 
         if (value < 0x20 || value > 0x7E)
         {
-            KernelPath[0] = 0;
-            return 0;
+            if (i == 0)
+            {
+                return 0;
+            }
+
+            KernelPath[i] = 0;
+            return i;
         }
 
         KernelPath[i] = value;
