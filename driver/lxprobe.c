@@ -121,6 +121,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LastMmapStatus;
     ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
+    UCHAR MmapBytes[16];
+    UCHAR MmapBytes[16];
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -593,6 +595,17 @@ printf("  writeLen=%lu\n", q.WriteLength);
                    (unsigned long long)q.MmapDebug[2], (unsigned long long)q.MmapDebug[3],
                    (unsigned long long)q.MmapDebug[4], (unsigned long long)q.MmapDebug[5],
                    (unsigned long long)q.MmapDebug[6], (unsigned long long)q.MmapDebug[7]);
+            printf("  mmapBytes:");
+            {
+                int bi;
+
+                for (bi = 0; bi < 16; bi++)
+                {
+                    printf(" %02x", q.MmapBytes[bi]);
+                }
+
+                printf("\n");
+            }
             printf("  magicOk=%lu written=0x%llx readback=0x%llx\n", q.ProbeMagicOk,
                    (unsigned long long)q.ProbeMagicWritten, (unsigned long long)q.ProbeMagicReadback);
             printf("  seekCount=%llu lastSeek=0x%llx\n", (unsigned long long)q.SeekCount,
