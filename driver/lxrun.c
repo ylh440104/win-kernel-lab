@@ -1968,8 +1968,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     {
         ULONG64 randomBuffer = Parameters[1];
         ULONG64 randomLength = Parameters[2];
-        LARGE_INTEGER counter;
-        ULONG offset;
+        LARGE_INTEGER systemTime;
+        ULONGLONG seed;
 
         if (randomBuffer == 0 || randomLength == 0)
         {
@@ -1981,17 +1981,18 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             randomLength = 256;
         }
 
-        KeQueryPerformanceCounter(&counter);
-        offset = (ULONG)(counter.QuadPart & 0xFF);
+        KeQuerySystemTime(&systemTime);
+        seed = (ULONGLONG)systemTime.QuadPart ^ (ULONGLONG)(ULONG_PTR)g_PicoProcessObject;
 
         __try
         {
             UCHAR temp[256];
             ULONG ri;
 
-            for (ri = 0; ri < randomLength; ri++)
+            for (ri = 0; ri < (ULONG)randomLength; ri++)
             {
-                temp[ri] = (UCHAR)((counter.QuadPart >> ((ri + offset) & 63)) & 0xFF);
+                seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
+                temp[ri] = (UCHAR)((seed >> 33) & 0xFF);
             }
 
             ProbeForWrite((PVOID)(ULONG_PTR)randomBuffer, (ULONG)randomLength, 1);
