@@ -66,6 +66,17 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 DynSonameOffset;
     ULONG DynNeededCount;
     ULONG DynNeededOffsets[8];
+    ULONG RelocRelativeCount;
+    ULONG RelocJumpSlotCount;
+    ULONG RelocGlobDatCount;
+    ULONG RelocUnsupportedCount;
+    ULONG RelocWriteFailCount;
+    ULONG RelocTotalCount;
+    ULONG64 RelocFirstOffset;
+    ULONG64 RelocFirstAddend;
+    ULONG64 RelocFirstWritten;
+    ULONG64 RelocFirstReadBack;
+    ULONG RelocFirstStatus;
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -436,6 +447,13 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  DYNAMIC: jmprel=0x%llx jmprelSize=0x%llx jmprelCount=%llu plgot=0x%llx\n",
            (unsigned long long)q.DynJmpRelVaddr, (unsigned long long)q.DynJmpRelSize,
            (unsigned long long)q.DynJmpRelCount, (unsigned long long)q.DynPltGotVaddr);
+    printf("  RELOC: total=%lu relative=%lu jmpslot=%lu globdat=%lu unsupported=%lu writefail=%lu\n",
+           q.RelocTotalCount, q.RelocRelativeCount, q.RelocJumpSlotCount, q.RelocGlobDatCount,
+           q.RelocUnsupportedCount, q.RelocWriteFailCount);
+    printf("  RELOC: firstOff=0x%llx addend=0x%llx wrote=0x%llx readback=0x%llx status=0x%08lx\n",
+           (unsigned long long)q.RelocFirstOffset, (unsigned long long)q.RelocFirstAddend,
+           (unsigned long long)q.RelocFirstWritten, (unsigned long long)q.RelocFirstReadBack,
+           q.RelocFirstStatus);
     printf("  DYNAMIC: init=0x%llx fini=0x%llx\n", (unsigned long long)q.DynInitVaddr,
            (unsigned long long)q.DynFiniVaddr);
     {
