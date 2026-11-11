@@ -90,6 +90,15 @@ typedef struct _LX_QUERY_RESULT
     ULONG SymNameOffsets[16];
     ULONG SymRelocOffsets[16];
     CHAR SymNames[16][48];
+    ULONG StubCount;
+    ULONG StubFound;
+    ULONG StubUnknown;
+    ULONG StubWriteFail;
+    ULONG64 StubAreaBase;
+    ULONG64 StubLastAddress;
+    ULONG64 StubLastSyscall;
+    ULONG StubLastStatus;
+    CHAR StubLastName[48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -469,6 +478,12 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  STUBS: count=%lu found=%lu unknown=%lu writeFail=%lu area=0x%llx\n",
+           q.StubCount, q.StubFound, q.StubUnknown, q.StubWriteFail,
+           (unsigned long long)q.StubAreaBase);
+    printf("  STUBS: lastAddr=0x%llx syscall=%llu status=0x%08lx name=%.48s\n",
+           (unsigned long long)q.StubLastAddress, (unsigned long long)q.StubLastSyscall,
+           q.StubLastStatus, q.StubLastName);
     printf("  SYMS: nameFileOff=0x%llx byte0=0x%lx byte1=0x%lx\n",
            (unsigned long long)q.SymNameFileOffset, q.SymNameByte0, q.SymNameByte1);
     printf("  SYMS: symtab=0x%llx strtab=0x%llx\n", (unsigned long long)q.SymSymTabVaddr,
