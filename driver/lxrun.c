@@ -342,6 +342,19 @@ typedef struct _LX_LINUX_DIRENT64
 #define LX_SYS_UNLINKAT 263
 #define LX_SYS_RENAME 82
 #define LX_SYS_RENAMEAT 264
+#define LX_SYS_KILL 62
+#define LX_SYS_TGKILL 234
+#define LX_SYS_PAUSE 34
+#define LX_SYS_ALARM 37
+#define LX_SYS_RT_SIGPENDING 127
+#define LX_SYS_RT_SIGSUSPEND 130
+#define LX_SYS_RT_SIGTIMEDWAIT 128
+#define LX_SYS_EPOLL_CREATE 213
+#define LX_SYS_EPOLL_CTL 233
+#define LX_SYS_EPOLL_WAIT 232
+#define LX_SYS_EVENTFD 284
+#define LX_SYS_EPOLL_CREATE1 291
+#define LX_SYS_EVENTFD2 290
 #define LX_O_ACCMODE 3u
 #define LX_O_CREAT 0x40u
 #define LX_O_EXCL 0x80u
@@ -800,6 +813,167 @@ static NTSTATUS LxQueryExists(const WCHAR *NtPath)
 
     return status;
 }
+
+static NTSTATUS LxCreateDirectory(const WCHAR *NtPath, ULONG Mode)
+{
+    UNICODE_STRING path;
+    OBJECT_ATTRIBUTES attributes;
+    IO_STATUS_BLOCK statusBlock;
+    HANDLE handle = NULL;
+    NTSTATUS status;
+    ULONG chars = 0;
+    FILE_BASIC_INFORMATION basicInfo;
+
+    while (chars < 259 && NtPath[chars] != 0)
+    {
+        chars++;
+    }
+
+    if (chars == 0)
+    {
+        return 0xC0000033u;
+    }
+
+    path.Buffer = (PWCH)NtPath;
+    path.Length = (USHORT)(chars * sizeof(WCHAR));
+    path.MaximumLength = (USHORT)((chars + 1) * sizeof(WCHAR));
+    InitializeObjectAttributes(&attributes, &path, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+    status = ZwCreateFile(&handle, FILE_LIST_DIRECTORY | FILE_ADD_FILE | SYNCHRONIZE, &attributes,
+                          &statusBlock, NULL, FILE_ATTRIBUTE_DIRECTORY,
+                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                          FILE_CREATE, FILE_SYNCHRONOUS_IO_NONALERT | FILE_DIRECTORY_FILE, NULL, 0);
+
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+
+    RtlZeroMemory(&basicInfo, sizeof(basicInfo));
+    basicInfo.LastWriteTime.QuadPart = -1;
+    basicInfo.ChangeTime.QuadPart = -1;
+    basicInfo.CreationTime.QuadPart = -1;
+    basicInfo.LastAccessTime.QuadPart = -1;
+
+    ZwSetInformationFile(handle, &statusBlock, &basicInfo, sizeof(basicInfo), FileBasicInformation);
+    ZwClose(handle);
+
+    (void)Mode;
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS LxRemoveEntry(const WCHAR *NtPath, BOOLEAN IsDirectory)
+{
+    UNICODE_STRING path;
+    OBJECT_ATTRIBUTES attributes;
+    IO_STATUS_BLOCK statusBlock;
+    HANDLE handle = NULL;
+    NTSTATUS status;
+    ULONG chars = 0;
+    FILE_DISPOSITION_INFORMATION disposition;
+
+    while (chars < 259 && NtPath[chars] != 0)
+    {
+        chars++;
+    }
+
+    if (chars == 0)
+    {
+        return 0xC0000033u;
+    }
+
+    path.Buffer = (PWCH)NtPath;
+    path.Length = (USHORT)(chars * sizeof(WCHAR));
+    path.MaximumLength = (USHORT)((chars + 1) * sizeof(WCHAR));
+    InitializeObjectAttributes(&attributes, &path, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+    status = ZwCreateFile(&handle, DELETE | SYNCHRONIZE, &attributes, &statusBlock, NULL,
+                          FILE_ATTRIBUTE_NORMAL | (IsDirectory ? FILE_ATTRIBUTE_DIRECTORY : 0),
+                          FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                          FILE_OPEN,
+                          FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT |
+                              (IsDirectory ? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE),
+                          NULL, 0);
+
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+
+    RtlZeroMemory(&disposition, sizeof(disposition));
+    disposition.DeleteFile = TRUE;
+
+    status = ZwSetInformationFile(handle, &statusBlock, &disposition, sizeof(disposition), FileDispositionInformation);
+    ZwClose(handle);
+
+    return status;
+}
+
+static NTSTATUS LxRenameEntry(const WCHAR *SourceNtPath, const WCHAR *TargetNtPath, BOOLEAN Replace)
+{
+    UNICODE_STRING sourcePath;
+    OBJECT_ATTRIBUTES attributes;
+    IO_STATUS_BLOCK statusBlock;
+    HANDLE handle = NULL;
+    NTSTATUS status;
+    ULONG sourceChars = 0;
+    ULONG targetChars = 0;
+    ULONG bytesNeeded;
+    PFILE_RENAME_INFORMATION renameInfo;
+
+    while (sourceChars < 259 && SourceNtPath[sourceChars] != 0)
+    {
+        sourceChars++;
+    }
+
+    while (targetChars < 259 && TargetNtPath[targetChars] != 0)
+    {
+        targetChars++;
+    }
+
+    if (sourceChars == 0 || targetChars == 0)
+    {
+        return 0xC0000033u;
+    }
+
+    sourcePath.Buffer = (PWCH)SourceNtPath;
+    sourcePath.Length = (USHORT)(sourceChars * sizeof(WCHAR));
+    sourcePath.MaximumLength = (USHORT)((sourceChars + 1) * sizeof(WCHAR));
+    InitializeObjectAttributes(&attributes, &sourcePath, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+    status = ZwCreateFile(&handle, DELETE | SYNCHRONIZE, &attributes, &statusBlock, NULL,
+                          FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                          FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT, NULL, 0);
+
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+
+    bytesNeeded = sizeof(FILE_RENAME_INFORMATION) + targetChars * sizeof(WCHAR);
+    renameInfo = (PFILE_RENAME_INFORMATION)ExAllocatePoolWithTag(NonPagedPool, bytesNeeded, 'nExL');
+
+    if (renameInfo == NULL)
+    {
+        ZwClose(handle);
+        return 0xC000009Au;
+    }
+
+    RtlZeroMemory(renameInfo, bytesNeeded);
+    renameInfo->ReplaceIfExists = Replace ? TRUE : FALSE;
+    renameInfo->RootDirectory = NULL;
+    renameInfo->FileNameLength = targetChars * sizeof(WCHAR);
+    RtlCopyMemory(renameInfo->FileName, TargetNtPath, targetChars * sizeof(WCHAR));
+
+    status = ZwSetInformationFile(handle, &statusBlock, renameInfo, bytesNeeded, FileRenameInformation);
+
+    ExFreePoolWithTag(renameInfo, 'nExL');
+    ZwClose(handle);
+
+    return status;
+}
+
+static ULONG g_ReportedUmask = 022u;
 
 static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
 {
@@ -2213,8 +2387,179 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return 0;
     }
 
-    case LX_SYS_PRCTL:
+    case LX_SYS_MKDIR:
+    case LX_SYS_MKDIRAT:
+    {
+        CHAR mkdirPath[260];
+        WCHAR mkdirNt[300];
+        ULONG mkdirLength;
+        ULONG64 mkdirArg;
+
+        mkdirArg = (Number == LX_SYS_MKDIRAT) ? Parameters[2] : Parameters[1];
+
+        mkdirLength = LxCopyLinuxPath(mkdirArg, mkdirPath, sizeof(mkdirPath));
+
+        if (mkdirLength == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (LxBuildNtPath(mkdirPath, mkdirNt, RTL_NUMBER_OF(mkdirNt)) == 0)
+        {
+            return (ULONG64)(-2);
+        }
+
+        return LxNtStatusToErrno(LxCreateDirectory(mkdirNt, (ULONG)Parameters[2]));
+    }
+
+    case LX_SYS_RMDIR:
+    case LX_SYS_UNLINK:
+    case LX_SYS_UNLINKAT:
+    {
+        CHAR removePath[260];
+        WCHAR removeNt[300];
+        ULONG removeLength;
+        ULONG64 removeArg = Parameters[1];
+
+        if (Number == LX_SYS_UNLINKAT)
+        {
+            removeArg = Parameters[2];
+        }
+
+        removeLength = LxCopyLinuxPath(removeArg, removePath, sizeof(removePath));
+
+        if (removeLength == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (LxBuildNtPath(removePath, removeNt, RTL_NUMBER_OF(removeNt)) == 0)
+        {
+            return (ULONG64)(-2);
+        }
+
+        return LxNtStatusToErrno(LxRemoveEntry(removeNt, Number == LX_SYS_RMDIR));
+    }
+
+    case LX_SYS_RENAME:
+    case LX_SYS_RENAMEAT:
+    {
+        CHAR renameSource[260];
+        CHAR renameTarget[260];
+        WCHAR renameSourceNt[300];
+        WCHAR renameTargetNt[300];
+        ULONG64 sourceArg;
+        ULONG64 targetArg;
+
+        if (Number == LX_SYS_RENAMEAT)
+        {
+            sourceArg = Parameters[2];
+            targetArg = Parameters[4];
+        }
+        else
+        {
+            sourceArg = Parameters[1];
+            targetArg = Parameters[2];
+        }
+
+        if (LxCopyLinuxPath(sourceArg, renameSource, sizeof(renameSource)) == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (LxCopyLinuxPath(targetArg, renameTarget, sizeof(renameTarget)) == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (LxBuildNtPath(renameSource, renameSourceNt, RTL_NUMBER_OF(renameSourceNt)) == 0)
+        {
+            return (ULONG64)(-2);
+        }
+
+        if (LxBuildNtPath(renameTarget, renameTargetNt, RTL_NUMBER_OF(renameTargetNt)) == 0)
+        {
+            return (ULONG64)(-2);
+        }
+
+        return LxNtStatusToErrno(LxRenameEntry(renameSourceNt, renameTargetNt, TRUE));
+    }
+
     case LX_SYS_UMASK:
+    {
+        ULONG previous = g_ReportedUmask;
+
+        g_ReportedUmask = (ULONG)Parameters[1] & 0777u;
+        return previous;
+    }
+
+    case LX_SYS_RT_SIGACTION:
+    case LX_SYS_RT_SIGPROCMASK:
+    case LX_SYS_SIGALTSTACK:
+    case LX_SYS_RT_SIGPENDING:
+    case LX_SYS_RT_SIGSUSPEND:
+    case LX_SYS_RT_SIGRETURN:
+    case LX_SYS_KILL:
+    case LX_SYS_TGKILL:
+    case LX_SYS_PAUSE:
+    case LX_SYS_ALARM:
+        return 0;
+
+    case LX_SYS_FUTEX:
+    {
+        ULONG64 futexOperation = Parameters[2] & 0x7Fu;
+
+        if (futexOperation == 0 || futexOperation == 9 || futexOperation == 10)
+        {
+            return 0;
+        }
+
+        if (futexOperation == 1 || futexOperation == 2 || futexOperation == 3)
+        {
+            return (ULONG64)(-11);
+        }
+
+        return 0;
+    }
+
+    case LX_SYS_EPOLL_CREATE:
+    case LX_SYS_EPOLL_CREATE1:
+    case LX_SYS_EVENTFD:
+    case LX_SYS_EVENTFD2:
+    {
+        ULONG epollSlot;
+
+        for (epollSlot = 0; epollSlot < LX_MAX_FD; epollSlot++)
+        {
+            if (!g_FdTable[epollSlot].Used)
+            {
+                break;
+            }
+        }
+
+        if (epollSlot >= LX_MAX_FD)
+        {
+            return (ULONG64)(-24);
+        }
+
+        RtlZeroMemory(&g_FdTable[epollSlot], sizeof(g_FdTable[epollSlot]));
+        g_FdTable[epollSlot].Used = TRUE;
+        g_FdTable[epollSlot].IsDirectory = FALSE;
+        g_FdTable[epollSlot].Handle = NULL;
+        g_FdTable[epollSlot].OpenFlags = 0;
+        g_FdTable[epollSlot].Offset = 0;
+        RtlCopyMemory(g_FdTable[epollSlot].LinuxPath, (const VOID *)"/dev/epoll", 11);
+
+        return (ULONG64)epollSlot;
+    }
+
+    case LX_SYS_EPOLL_CTL:
+        return 0;
+
+    case LX_SYS_EPOLL_WAIT:
+        return (ULONG64)(-11);
+
+    case LX_SYS_PRCTL:
     case LX_SYS_FSYNC:
     case LX_SYS_FDATASYNC:
     case LX_SYS_SYNC:
