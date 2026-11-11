@@ -122,7 +122,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
-    UCHAR MmapBytes[16];
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
