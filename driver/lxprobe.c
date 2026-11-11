@@ -77,6 +77,16 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 RelocFirstWritten;
     ULONG64 RelocFirstReadBack;
     ULONG RelocFirstStatus;
+    ULONG SymTotal;
+    ULONG SymDumped;
+    ULONG SymTruncated;
+    ULONG SymStrTabReadable;
+    ULONG SymStrTabStatus;
+    ULONG64 SymSymTabVaddr;
+    ULONG64 SymStrTabVaddr;
+    ULONG SymNameOffsets[16];
+    ULONG SymRelocOffsets[16];
+    CHAR SymNames[16][48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -454,6 +464,19 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            (unsigned long long)q.RelocFirstOffset, (unsigned long long)q.RelocFirstAddend,
            (unsigned long long)q.RelocFirstWritten, (unsigned long long)q.RelocFirstReadBack,
            q.RelocFirstStatus);
+    printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
+           q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  SYMS: symtab=0x%llx strtab=0x%llx\n", (unsigned long long)q.SymSymTabVaddr,
+           (unsigned long long)q.SymStrTabVaddr);
+    {
+        ULONG si;
+
+        for (si = 0; si < q.SymDumped && si < 16; si++)
+        {
+            printf("  SYMS: [%lu] off=0x%lx nameOff=%lu name=%.48s\n", si,
+                   q.SymRelocOffsets[si], q.SymNameOffsets[si], q.SymNames[si]);
+        }
+    }
     printf("  DYNAMIC: init=0x%llx fini=0x%llx\n", (unsigned long long)q.DynInitVaddr,
            (unsigned long long)q.DynFiniVaddr);
     {
