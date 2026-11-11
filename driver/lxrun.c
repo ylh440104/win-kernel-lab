@@ -162,6 +162,28 @@ typedef struct _LX_SYMBOL_INFO
     LX_SYMBOL_ENTRY Entries[LX_MAX_SYMBOLS];
 } LX_SYMBOL_INFO;
 
+#define LX_STUB_SIZE 16u
+#define LX_STUB_AREA_SIZE 0x1000u
+
+typedef struct _LX_SYMBOL_BINDING
+{
+    const char *Name;
+    ULONG SyscallNumber;
+} LX_SYMBOL_BINDING;
+
+typedef struct _LX_STUB_STATS
+{
+    ULONG StubCount;
+    ULONG StubFound;
+    ULONG StubUnknown;
+    ULONG StubWriteFail;
+    ULONG64 StubAreaBase;
+    ULONG64 LastStubAddress;
+    ULONG64 LastStubSyscall;
+    NTSTATUS LastStubStatus;
+    CHAR LastStubName[LX_MAX_SYMBOL_NAME];
+} LX_STUB_STATS;
+
 #define LX_PT_NULL 0u
 #define LX_PT_LOAD 1u
 #define LX_PT_DYNAMIC 2u
@@ -288,6 +310,15 @@ typedef struct _LX_QUERY_RESULT
     ULONG SymNameOffsets[16];
     ULONG SymRelocOffsets[16];
     CHAR SymNames[16][48];
+    ULONG StubCount;
+    ULONG StubFound;
+    ULONG StubUnknown;
+    ULONG StubWriteFail;
+    ULONG64 StubAreaBase;
+    ULONG64 StubLastAddress;
+    ULONG64 StubLastSyscall;
+    ULONG StubLastStatus;
+    CHAR StubLastName[48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -400,6 +431,7 @@ static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
 static LX_RELOC_STATS g_RelocStats;
 static LX_SYMBOL_INFO g_SymbolInfo;
+static LX_STUB_STATS g_StubStats;
 static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
@@ -460,6 +492,7 @@ static ULONG g_GetContextStatus = 0xFFFFFFFFu;
 #define LX_SYS_CLOSE 3
 #define LX_SYS_STAT 4
 #define LX_SYS_FSTAT 5
+#define LX_SYS_LSTAT 6
 #define LX_SYS_LSEEK 8
 #define LX_SYS_IOCTL 16
 #define LX_SYS_ACCESS 21
@@ -517,6 +550,7 @@ typedef struct _LX_LINUX_DIRENT64
 #define LX_SYS_GETRLIMIT 97
 #define LX_SYS_PRCTL 157
 #define LX_SYS_MADVISE 28
+#define LX_SYS_NANOSLEEP 35
 #define LX_SYS_MPROTECT 10
 #define LX_SYS_MUNMAP 11
 #define LX_SYS_FCNTL 72
@@ -3942,6 +3976,222 @@ static void LxDumpSymbols(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_
     }
 }
 
+static const LX_SYMBOL_BINDING g_SymbolTable[] = {
+    { "write", LX_SYS_WRITE },
+    { "read", LX_SYS_READ },
+    { "open", LX_SYS_OPEN },
+    { "openat", LX_SYS_OPENAT },
+    { "close", LX_SYS_CLOSE },
+    { "_exit", LX_SYS_EXIT },
+    { "exit", LX_SYS_EXIT },
+    { "exit_group", LX_SYS_EXIT_GROUP },
+    { "lseek", LX_SYS_LSEEK },
+    { "brk", LX_SYS_BRK },
+    { "mmap", LX_SYS_MMAP },
+    { "munmap", LX_SYS_MUNMAP },
+    { "mprotect", LX_SYS_MPROTECT },
+    { "fstat", LX_SYS_FSTAT },
+    { "stat", LX_SYS_STAT },
+    { "lstat", LX_SYS_LSTAT },
+    { "getpid", LX_SYS_GETPID },
+    { "getuid", LX_SYS_GETUID },
+    { "geteuid", LX_SYS_GETEUID },
+    { "getgid", LX_SYS_GETGID },
+    { "getegid", LX_SYS_GETEGID },
+    { "uname", LX_SYS_UNAME },
+    { "getcwd", LX_SYS_GETCWD },
+    { "gettimeofday", LX_SYS_GETTIMEOFDAY },
+    { "clock_gettime", LX_SYS_CLOCK_GETTIME },
+    { "time", LX_SYS_TIME },
+    { "access", LX_SYS_ACCESS },
+    { "readlink", LX_SYS_READLINK },
+    { "rt_sigaction", LX_SYS_RT_SIGACTION },
+    { "rt_sigprocmask", LX_SYS_RT_SIGPROCMASK },
+    { "arch_prctl", LX_SYS_ARCH_PRCTL },
+    { "set_tid_address", LX_SYS_SET_TID_ADDRESS },
+    { "set_robust_list", LX_SYS_SET_ROBUST_LIST },
+    { "getrandom", LX_SYS_GETRANDOM },
+    { "futex", LX_SYS_FUTEX },
+    { "execve", LX_SYS_EXECVE },
+    { "ioctl", LX_SYS_IOCTL },
+    { "fcntl", LX_SYS_FCNTL },
+    { "dup", LX_SYS_DUP },
+    { "dup2", LX_SYS_DUP2 },
+    { "pipe", LX_SYS_PIPE },
+    { "mkdir", LX_SYS_MKDIR },
+    { "unlink", LX_SYS_UNLINK },
+    { "rename", LX_SYS_RENAME },
+    { "getdents64", LX_SYS_GETDENTS64 },
+    { "statfs", LX_SYS_STATFS },
+    { "writev", LX_SYS_WRITEV },
+    { "readv", LX_SYS_READV },
+    { "prctl", LX_SYS_PRCTL },
+    { "madvise", LX_SYS_MADVISE },
+    { "sched_yield", LX_SYS_SCHED_YIELD },
+    { "nanosleep", LX_SYS_NANOSLEEP }
+};
+
+static ULONG LxLookupSyscallForSymbol(const char *Name)
+{
+    ULONG index;
+    ULONG count = sizeof(g_SymbolTable) / sizeof(g_SymbolTable[0]);
+
+    if (Name == NULL || Name[0] == 0)
+    {
+        return 0;
+    }
+
+    for (index = 0; index < count; index++)
+    {
+        const char *left = g_SymbolTable[index].Name;
+        const char *right = Name;
+        BOOLEAN matched = TRUE;
+
+        while (*left != 0 || *right != 0)
+        {
+            if (*left != *right)
+            {
+                matched = FALSE;
+                break;
+            }
+
+            left++;
+            right++;
+        }
+
+        if (matched)
+        {
+            return g_SymbolTable[index].SyscallNumber;
+        }
+    }
+
+    return 0;
+}
+
+static ULONG LxBuildStubCode(ULONG SyscallNumber, UCHAR *StubBuffer)
+{
+    ULONG size = 0;
+
+    StubBuffer[size++] = 0xB8;
+    StubBuffer[size++] = (UCHAR)(SyscallNumber & 0xFF);
+    StubBuffer[size++] = (UCHAR)((SyscallNumber >> 8) & 0xFF);
+    StubBuffer[size++] = (UCHAR)((SyscallNumber >> 16) & 0xFF);
+    StubBuffer[size++] = (UCHAR)((SyscallNumber >> 24) & 0xFF);
+
+    StubBuffer[size++] = 0x0F;
+    StubBuffer[size++] = 0x05;
+    StubBuffer[size++] = 0xC3;
+
+    return size;
+}
+
+static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
+                         const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
+                         LX_SYMBOL_INFO *Symbols, LX_STUB_STATS *Stats)
+{
+    ULONG64 stubAreaBase;
+
+    RtlZeroMemory(Stats, sizeof(LX_STUB_STATS));
+
+    if (ImageData == NULL || Load == NULL || Symbols == NULL || TargetProcess == NULL ||
+        Load->MinVaddr == 0 || ImageSize == 0)
+    {
+        return;
+    }
+
+    stubAreaBase = g_PoolBase + LX_POOL_SIZE - LX_STUB_AREA_SIZE;
+
+    if (g_PoolBase == 0 || stubAreaBase < g_PoolBase)
+    {
+        Stats->LastStubStatus = 0xC0000001u;
+        return;
+    }
+
+    Stats->StubAreaBase = stubAreaBase;
+
+    {
+        ULONG index;
+
+        for (index = 0; index < Symbols->DumpedCount && index < LX_MAX_SYMBOLS; index++)
+        {
+            LX_SYMBOL_ENTRY *entry = &Symbols->Entries[index];
+            ULONG syscallNumber;
+            UCHAR stubCode[LX_STUB_SIZE];
+            ULONG stubLength;
+            ULONG64 stubAddress;
+            ULONG64 relaType;
+            NTSTATUS writeStatus;
+
+            if (entry->Name[0] == 0)
+            {
+                continue;
+            }
+
+            Stats->StubCount++;
+
+            syscallNumber = LxLookupSyscallForSymbol(entry->Name);
+
+            if (syscallNumber == 0)
+            {
+                Stats->StubUnknown++;
+
+                if (Stats->LastStubName[0] == 0)
+                {
+                    ULONG copyIndex;
+
+                    for (copyIndex = 0; copyIndex + 1 < LX_MAX_SYMBOL_NAME && entry->Name[copyIndex] != 0;
+                         copyIndex++)
+                    {
+                        Stats->LastStubName[copyIndex] = entry->Name[copyIndex];
+                    }
+
+                    Stats->LastStubName[LX_MAX_SYMBOL_NAME - 1] = 0;
+                }
+
+                continue;
+            }
+
+            Stats->StubFound++;
+
+            RtlZeroMemory(stubCode, sizeof(stubCode));
+            stubLength = LxBuildStubCode(syscallNumber, stubCode);
+
+            stubAddress = stubAreaBase + (ULONG64)Stats->StubFound * LX_STUB_SIZE;
+
+            writeStatus = LxWritePicoMemory(TargetProcess, stubAddress, stubCode, stubLength);
+
+            Stats->LastStubStatus = writeStatus;
+
+            if (!NT_SUCCESS(writeStatus))
+            {
+                Stats->StubWriteFail++;
+                continue;
+            }
+
+            Stats->LastStubAddress = stubAddress;
+            Stats->LastStubSyscall = syscallNumber;
+
+            {
+                ULONG64 relocAddr = Load->MinVaddr + entry->RelocOffset;
+                ULONG64 stubValue = stubAddress;
+
+                writeStatus = LxWritePicoMemory(TargetProcess, relocAddr, &stubValue, sizeof(stubValue));
+
+                if (!NT_SUCCESS(writeStatus))
+                {
+                    Stats->StubWriteFail++;
+                    continue;
+                }
+
+                entry->Resolved = 1;
+                entry->ResolvedAddress = stubAddress;
+
+                UNREFERENCED_PARAMETER(relaType);
+            }
+        }
+    }
+}
+
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 {
     LX_ELF_LOAD *load;
@@ -4068,6 +4318,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     LxApplyRelocations(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_RelocStats);
 
     LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
+
+    LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats);
 
     ZwClose(sectionHandle);
     ObDereferenceObject(targetProcess);
@@ -4524,6 +4776,16 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->SymNameFileOffset = g_SymbolInfo.NameFileOffset;
             result->SymNameByte0 = g_SymbolInfo.NameByte0;
             result->SymNameByte1 = g_SymbolInfo.NameByte1;
+
+            result->StubCount = g_StubStats.StubCount;
+            result->StubFound = g_StubStats.StubFound;
+            result->StubUnknown = g_StubStats.StubUnknown;
+            result->StubWriteFail = g_StubStats.StubWriteFail;
+            result->StubAreaBase = g_StubStats.StubAreaBase;
+            result->StubLastAddress = g_StubStats.LastStubAddress;
+            result->StubLastSyscall = g_StubStats.LastStubSyscall;
+            result->StubLastStatus = (ULONG)g_StubStats.LastStubStatus;
+            RtlCopyMemory(result->StubLastName, g_StubStats.LastStubName, 48);
 
             for (i = 0; i < 16; i++)
             {
