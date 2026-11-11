@@ -2192,12 +2192,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             mapStatus = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &sectionAttributes, &sectionSize,
                                         PAGE_READWRITE, SEC_COMMIT, g_FdTable[mapFd].Handle);
 
+            g_LastMmapStatus = (ULONG64)mapStatus | 0x100000000ull;
+
             if (NT_SUCCESS(mapStatus))
             {
                 mapStatus = ZwMapViewOfSection(sectionHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0, 0,
                                                NULL, &viewSize, ViewUnmap, 0, desiredProtection);
 
                 ZwClose(sectionHandle);
+
+                g_LastMmapStatus = (ULONG64)mapStatus | 0x200000000ull;
 
                 if (NT_SUCCESS(mapStatus))
                 {
@@ -2207,12 +2211,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     g_LastMmapStatus = 0;
                     return g_LastMmapAddress;
                 }
-
-                g_LastMmapStatus = (ULONG64)mapStatus;
-            }
-            else
-            {
-                g_LastMmapStatus = (ULONG64)mapStatus;
             }
         }
 
