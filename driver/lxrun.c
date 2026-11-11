@@ -327,6 +327,21 @@ typedef struct _LX_LINUX_DIRENT64
 #define LX_SYS_PIPE 22
 #define LX_SYS_SCHED_GETAFFINITY 204
 #define LX_SYS_GETRANDOM 318
+#define LX_SYS_READLINKAT 267
+#define LX_SYS_CLOCK_GETRES 229
+#define LX_SYS_TIMES 100
+#define LX_SYS_UMASK 95
+#define LX_SYS_FSYNC 74
+#define LX_SYS_FDATASYNC 75
+#define LX_SYS_SYNC 162
+#define LX_SYS_FLOCK 73
+#define LX_SYS_MKDIR 83
+#define LX_SYS_MKDIRAT 258
+#define LX_SYS_RMDIR 84
+#define LX_SYS_UNLINK 87
+#define LX_SYS_UNLINKAT 263
+#define LX_SYS_RENAME 82
+#define LX_SYS_RENAMEAT 264
 #define LX_O_ACCMODE 3u
 #define LX_O_CREAT 0x40u
 #define LX_O_EXCL 0x80u
@@ -411,6 +426,60 @@ static LONG64 LxWindowsTimeToUnix(LARGE_INTEGER TimeValue)
     }
 
     return (value - EpochDelta) / 10000000LL;
+}
+
+typedef struct _LX_LINUX_TIMEVAL
+{
+    LONG64 Seconds;
+    LONG64 Microseconds;
+} LX_LINUX_TIMEVAL;
+
+typedef struct _LX_LINUX_TIMESPEC
+{
+    LONG64 Seconds;
+    LONG64 Nanoseconds;
+} LX_LINUX_TIMESPEC;
+
+static VOID LxGetUnixTimeval(LX_LINUX_TIMEVAL *Timeval)
+{
+    const LONGLONG EpochDelta = 116444736000000000LL;
+    LARGE_INTEGER systemTime;
+    LONGLONG value;
+
+    KeQuerySystemTime(&systemTime);
+    value = systemTime.QuadPart;
+
+    if (value < EpochDelta)
+    {
+        Timeval->Seconds = 0;
+        Timeval->Microseconds = 0;
+        return;
+    }
+
+    value -= EpochDelta;
+    Timeval->Seconds = value / 10000000LL;
+    Timeval->Microseconds = (value % 10000000LL) / 10LL;
+}
+
+static VOID LxGetUnixTimespec(LX_LINUX_TIMESPEC *Timespec)
+{
+    const LONGLONG EpochDelta = 116444736000000000LL;
+    LARGE_INTEGER systemTime;
+    LONGLONG value;
+
+    KeQuerySystemTime(&systemTime);
+    value = systemTime.QuadPart;
+
+    if (value < EpochDelta)
+    {
+        Timespec->Seconds = 0;
+        Timespec->Nanoseconds = 0;
+        return;
+    }
+
+    value -= EpochDelta;
+    Timespec->Seconds = value / 10000000LL;
+    Timespec->Nanoseconds = (value % 10000000LL) * 100LL;
 }
 
 static ULONG64 LxNtStatusToErrno(NTSTATUS Status)
@@ -2033,6 +2102,197 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_MUNMAP:
         return 0;
+
+    case LX_SYS_GETTIMEOFDAY:
+    {
+        LX_LINUX_TIMEVAL tv;
+        ULONG64 tvTarget = Parameters[1];
+
+        if (tvTarget == 0)
+        {
+            tvTarget = Parameters[2];
+        }
+
+        LxGetUnixTimeval(&tv);
+
+        if (tvTarget != 0)
+        {
+            __try
+            {
+                ProbeForWrite((PVOID)(ULONG_PTR)tvTarget, sizeof(tv), 4);
+                RtlCopyMemory((PVOID)(ULONG_PTR)tvTarget, &tv, sizeof(tv));
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return (ULONG64)(-14);
+            }
+        }
+
+        return 0;
+    }
+
+    case LX_SYS_CLOCK_GETTIME:
+    case LX_SYS_CLOCK_GETRES:
+    {
+        LX_LINUX_TIMESPEC ts;
+        ULONG64 tsTarget = Parameters[2];
+
+        if (tsTarget == 0)
+        {
+            tsTarget = Parameters[1];
+        }
+
+        LxGetUnixTimespec(&ts);
+
+        if (tsTarget != 0)
+        {
+            __try
+            {
+                ProbeForWrite((PVOID)(ULONG_PTR)tsTarget, sizeof(ts), 4);
+                RtlCopyMemory((PVOID)(ULONG_PTR)tsTarget, &ts, sizeof(ts));
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return (ULONG64)(-14);
+            }
+        }
+
+        return 0;
+    }
+
+    case LX_SYS_TIME:
+    {
+        LX_LINUX_TIMEVAL tv;
+        ULONG64 timeTarget = Parameters[1];
+
+        LxGetUnixTimeval(&tv);
+
+        if (timeTarget != 0)
+        {
+            __try
+            {
+                ProbeForWrite((PVOID)(ULONG_PTR)timeTarget, sizeof(LONG64), 8);
+                RtlCopyMemory((PVOID)(ULONG_PTR)timeTarget, &tv.Seconds, sizeof(LONG64));
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return (ULONG64)(-14);
+            }
+        }
+
+        return (ULONG64)tv.Seconds;
+    }
+
+    case LX_SYS_GETRLIMIT:
+    {
+        ULONG64 limitTarget = Parameters[2];
+
+        if (limitTarget == 0)
+        {
+            limitTarget = Parameters[3];
+        }
+
+        if (limitTarget != 0)
+        {
+            ULONG64 limits[2];
+
+            limits[0] = 0x7FFFFFFF;
+            limits[1] = 0x7FFFFFFF;
+
+            __try
+            {
+                ProbeForWrite((PVOID)(ULONG_PTR)limitTarget, sizeof(limits), 8);
+                RtlCopyMemory((PVOID)(ULONG_PTR)limitTarget, limits, sizeof(limits));
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                return (ULONG64)(-14);
+            }
+        }
+
+        return 0;
+    }
+
+    case LX_SYS_PRCTL:
+    case LX_SYS_UMASK:
+    case LX_SYS_FSYNC:
+    case LX_SYS_FDATASYNC:
+    case LX_SYS_SYNC:
+    case LX_SYS_FLOCK:
+        return 0;
+
+    case LX_SYS_FCNTL:
+    {
+        ULONG64 fcntlFd = Parameters[1];
+
+        if (fcntlFd >= LX_MAX_FD || !g_FdTable[fcntlFd].Used)
+        {
+            return (ULONG64)(-9);
+        }
+
+        return 0;
+    }
+
+    case LX_SYS_DUP:
+    {
+        ULONG64 dupSource = Parameters[1];
+        ULONG dupSlot;
+
+        if (dupSource >= LX_MAX_FD || !g_FdTable[dupSource].Used)
+        {
+            return (ULONG64)(-9);
+        }
+
+        for (dupSlot = 0; dupSlot < LX_MAX_FD; dupSlot++)
+        {
+            if (!g_FdTable[dupSlot].Used)
+            {
+                break;
+            }
+        }
+
+        if (dupSlot >= LX_MAX_FD)
+        {
+            return (ULONG64)(-24);
+        }
+
+        g_FdTable[dupSlot] = g_FdTable[dupSource];
+        return (ULONG64)dupSlot;
+    }
+
+    case LX_SYS_DUP2:
+    {
+        ULONG64 dup2Source = Parameters[1];
+        ULONG64 dup2Target = Parameters[2];
+
+        if (dup2Source >= LX_MAX_FD || !g_FdTable[dup2Source].Used)
+        {
+            return (ULONG64)(-9);
+        }
+
+        if (dup2Target >= LX_MAX_FD)
+        {
+            return (ULONG64)(-9);
+        }
+
+        if (dup2Source == dup2Target)
+        {
+            return dup2Target;
+        }
+
+        if (g_FdTable[dup2Target].Used && g_FdTable[dup2Target].Handle != NULL)
+        {
+            if (dup2Target > 2)
+            {
+                ZwClose(g_FdTable[dup2Target].Handle);
+            }
+
+            RtlZeroMemory(&g_FdTable[dup2Target], sizeof(g_FdTable[dup2Target]));
+        }
+
+        g_FdTable[dup2Target] = g_FdTable[dup2Source];
+        return dup2Target;
+    }
 
     default:
         return (ULONG64)(-38);
