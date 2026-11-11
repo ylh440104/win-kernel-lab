@@ -177,6 +177,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ProbeMagicWritten;
     ULONG64 ProbeMagicReadback;
     ULONG ProbeMagicOk;
+    ULONG MmapCount;
+    ULONG64 LastMmapAddress;
+    ULONG64 LastMmapStatus;
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -234,6 +237,9 @@ static ULONG g_PoolStatus = 0xFFFFFFFFu;
 static ULONG64 g_PoolBase = 0;
 static ULONG64 g_BrkCurrent = 0;
 static ULONG64 g_MmapCurrent = 0;
+static ULONG g_MmapCount = 0;
+static ULONG64 g_LastMmapAddress = 0;
+static ULONG64 g_LastMmapStatus = 0;
 static UCHAR g_WriteBuffer[512];
 static ULONG g_WriteLength = 0;
 static ULONG g_WriteCount = 0;
@@ -2125,24 +2131,96 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_MMAP:
     {
-        ULONG64 length = arg1;
-        ULONG64 address;
+        ULONG64 mapLength = Parameters[1];
+        ULONG64 mapProt = Parameters[2];
+        ULONG64 mapFlags = Parameters[3];
+        ULONG64 mapFd = Parameters[4];
+        ULONG64 mapOffset = Parameters[5];
+        ULONG64 mapAddress;
+        ULONG64 wantedAddress;
+        ULONG desiredProtection;
+        LARGE_INTEGER sectionSize;
 
-        if (length == 0)
+        if (mapLength == 0)
         {
             return (ULONG64)(-22);
         }
 
-        length = (length + 0xFFF) & ~0xFFFull;
-        address = g_MmapCurrent;
+        mapLength = (mapLength + 0xFFF) & ~0xFFFull;
 
-        if (address + length > g_PoolBase + LX_POOL_SIZE)
+        if (mapProt & 0x4u)
+        {
+            desiredProtection = PAGE_EXECUTE_READWRITE;
+        }
+        else if (mapProt & 0x2u)
+        {
+            desiredProtection = PAGE_READWRITE;
+        }
+        else
+        {
+            desiredProtection = PAGE_READONLY;
+        }
+
+        wantedAddress = Parameters[6];
+
+        if ((mapFlags & 0x10u) == 0 && wantedAddress != 0)
+        {
+            mapAddress = wantedAddress & ~0xFFFull;
+        }
+        else
+        {
+            mapAddress = g_MmapCurrent;
+        }
+
+        if (mapAddress + mapLength > g_PoolBase + LX_POOL_SIZE)
         {
             return (ULONG64)(-12);
         }
 
-        g_MmapCurrent += length;
-        return address;
+        if (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used && g_FdTable[mapFd].Handle != NULL &&
+            g_PicoProcessObject != NULL)
+        {
+            HANDLE sectionHandle = NULL;
+            OBJECT_ATTRIBUTES sectionAttributes;
+            PVOID viewBase = (PVOID)(ULONG_PTR)mapAddress;
+            SIZE_T viewSize = (SIZE_T)mapLength;
+            NTSTATUS mapStatus;
+
+            sectionSize.QuadPart = (LONGLONG)(mapOffset + mapLength);
+            InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+            mapStatus = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &sectionAttributes, &sectionSize,
+                                        PAGE_READWRITE, SEC_COMMIT, g_FdTable[mapFd].Handle);
+
+            if (NT_SUCCESS(mapStatus))
+            {
+                mapStatus = ZwMapViewOfSection(sectionHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0, 0,
+                                               NULL, &viewSize, ViewUnmap, 0, desiredProtection);
+
+                ZwClose(sectionHandle);
+
+                if (NT_SUCCESS(mapStatus))
+                {
+                    g_MmapCurrent = (ULONG64)(ULONG_PTR)viewBase + viewSize;
+                    g_MmapCount++;
+                    g_LastMmapAddress = (ULONG64)(ULONG_PTR)viewBase;
+                    g_LastMmapStatus = 0;
+                    return g_LastMmapAddress;
+                }
+
+                g_LastMmapStatus = (ULONG64)mapStatus;
+            }
+            else
+            {
+                g_LastMmapStatus = (ULONG64)mapStatus;
+            }
+        }
+
+        g_MmapCurrent = mapAddress + mapLength;
+        g_MmapCount++;
+        g_LastMmapAddress = mapAddress;
+        g_LastMmapStatus = 0xC0000004u;
+        return mapAddress;
     }
 
     case LX_SYS_ARCH_PRCTL:
@@ -3993,6 +4071,9 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->ProbeMagicWritten = g_ProbeMagicWritten;
             result->ProbeMagicReadback = g_ProbeMagicReadback;
             result->ProbeMagicOk = g_ProbeMagicOk;
+            result->MmapCount = g_MmapCount;
+            result->LastMmapAddress = g_LastMmapAddress;
+            result->LastMmapStatus = g_LastMmapStatus;
             result->SeekCount = g_SeekCount;
             result->LastSeekResult = g_LastSeekResult;
 
