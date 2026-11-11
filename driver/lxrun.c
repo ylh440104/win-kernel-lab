@@ -2774,6 +2774,69 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 }
                 else
                 {
+                    LX_APC_STATE writevApc;
+                    BOOLEAN writevAttached = FALSE;
+                    PUCHAR writevSource = (PUCHAR)(ULONG_PTR)vector[vectorIndex].Base;
+
+                    if (g_DirCacheUserAddr != 0 && g_DirCacheLen != 0 &&
+                        (ULONG64)(ULONG_PTR)writevSource >= g_DirCacheUserAddr &&
+                        (ULONG64)(ULONG_PTR)writevSource < g_DirCacheUserAddr + g_DirCacheLen)
+                    {
+                        ULONG cacheOffset = (ULONG)((ULONG64)(ULONG_PTR)writevSource - g_DirCacheUserAddr);
+
+                        if ((ULONG64)cacheOffset + vector[vectorIndex].Length > g_DirCacheLen)
+                        {
+                            vector[vectorIndex].Length = (ULONG64)(g_DirCacheLen - cacheOffset);
+                        }
+
+                        writevSource = (PUCHAR)g_DirCache + cacheOffset;
+                    }
+                    else if (g_PicoProcessObject != NULL)
+                    {
+                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&writevApc);
+                        writevAttached = TRUE;
+                    }
+
+                    if (g_WriteCount < 64 && vector[vectorIndex].Length <= 256)
+                    {
+                        CHAR writevStaging[256];
+                        BOOLEAN writevCopied = FALSE;
+
+                        __try
+                        {
+                            ProbeForRead(writevSource, (ULONG)vector[vectorIndex].Length, 1);
+                            RtlCopyMemory(writevStaging, writevSource, (ULONG)vector[vectorIndex].Length);
+                            writevCopied = TRUE;
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                            writevCopied = FALSE;
+                        }
+
+                        if (writevCopied)
+                        {
+                            ULONG writevAppend = g_WriteLength;
+
+                            if (writevAppend + (ULONG)vector[vectorIndex].Length >= sizeof(g_WriteBuffer) - 1)
+                            {
+                                writevAppend = 0;
+                            }
+
+                            RtlCopyMemory(g_WriteBuffer + writevAppend, writevStaging, (ULONG)vector[vectorIndex].Length);
+                            writevAppend += (ULONG)vector[vectorIndex].Length;
+                            g_WriteBuffer[writevAppend] = 0;
+                            g_WriteLength = writevAppend;
+                            g_WriteCount++;
+                            g_WriteFd = (ULONG)vectorFd;
+                            g_WriteStatus = 0xC0000003u;
+                        }
+                    }
+
+                    if (writevAttached)
+                    {
+                        KeUnstackDetachProcess((PVOID)&writevApc);
+                    }
+
                     vectorTotal += vector[vectorIndex].Length;
                 }
             }
