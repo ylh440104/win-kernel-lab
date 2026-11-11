@@ -46,6 +46,26 @@ typedef struct _LX_QUERY_RESULT
     ULONG ElfStatus;
     ULONG ElfMapStatus;
     ULONG64 ElfBase;
+    ULONG64 DynInterpVaddr;
+    ULONG DynHasInterp;
+    ULONG DynHasDynamic;
+    ULONG64 DynDynamicVaddr;
+    ULONG64 DynDynamicSize;
+    ULONG DynDynamicCount;
+    ULONG64 DynStrTabVaddr;
+    ULONG64 DynSymTabVaddr;
+    ULONG64 DynRelaVaddr;
+    ULONG64 DynRelaSize;
+    ULONG64 DynRelaCount;
+    ULONG64 DynJmpRelVaddr;
+    ULONG64 DynJmpRelSize;
+    ULONG64 DynJmpRelCount;
+    ULONG64 DynPltGotVaddr;
+    ULONG64 DynInitVaddr;
+    ULONG64 DynFiniVaddr;
+    ULONG64 DynSonameOffset;
+    ULONG DynNeededCount;
+    ULONG DynNeededOffsets[8];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -402,6 +422,37 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  elfStatus=0x%08lx mapStatus=0x%08lx base=0x%llx copied=%llu viewSize=0x%llx\n", q.ElfStatus,
            q.ElfMapStatus, (unsigned long long)q.ElfBase, (unsigned long long)q.ElfCopied,
            (unsigned long long)q.ElfViewSize);
+    printf("  DYNAMIC: hasInterp=%lu interpVaddr=0x%llx
+", q.DynHasInterp,
+           (unsigned long long)q.DynInterpVaddr);
+    printf("  DYNAMIC: hasDyn=%lu dynVaddr=0x%llx dynSize=0x%llx entries=%lu
+", q.DynHasDynamic,
+           (unsigned long long)q.DynDynamicVaddr, (unsigned long long)q.DynDynamicSize,
+           q.DynDynamicCount);
+    printf("  DYNAMIC: strtab=0x%llx symtab=0x%llx sonameOff=%llu needed=%lu
+",
+           (unsigned long long)q.DynStrTabVaddr, (unsigned long long)q.DynSymTabVaddr,
+           (unsigned long long)q.DynSonameOffset, q.DynNeededCount);
+    printf("  DYNAMIC: rela=0x%llx relaSize=0x%llx relaCount=%llu
+",
+           (unsigned long long)q.DynRelaVaddr, (unsigned long long)q.DynRelaSize,
+           (unsigned long long)q.DynRelaCount);
+    printf("  DYNAMIC: jmprel=0x%llx jmprelSize=0x%llx jmprelCount=%llu plgot=0x%llx
+",
+           (unsigned long long)q.DynJmpRelVaddr, (unsigned long long)q.DynJmpRelSize,
+           (unsigned long long)q.DynJmpRelCount, (unsigned long long)q.DynPltGotVaddr);
+    printf("  DYNAMIC: init=0x%llx fini=0x%llx
+", (unsigned long long)q.DynInitVaddr,
+           (unsigned long long)q.DynFiniVaddr);
+    {
+        ULONG ni;
+
+        for (ni = 0; ni < q.DynNeededCount && ni < 8; ni++)
+        {
+            printf("  DYNAMIC: needed[%lu] strOff=%llu
+", ni, (unsigned long long)q.DynNeededOffsets[ni]);
+        }
+    }
     for (i = 0; i < 4 && i < LX_ELF_MAX_SEGMENTS; i++)
     {
         printf("  seg[%lu] status=0x%08lx\n", i, q.ElfSegStatus[i]);
@@ -444,7 +495,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\mp.x64");
+        SendLoadElf(device, L"C:\\Windows\\dy.x64");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
