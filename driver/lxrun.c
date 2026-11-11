@@ -4526,7 +4526,7 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
     }
 }
 
-#define LX_BUILTIN_COUNT 6u
+#define LX_BUILTIN_COUNT 8u
 
 typedef struct _LX_BUILTIN_DEF
 {
@@ -4600,13 +4600,43 @@ static const UCHAR g_BuiltinMemcmp[] = {
     0xC3
 };
 
+static const UCHAR g_BuiltinMemmove[] = {
+    0x48, 0x89, 0xF8,
+    0x48, 0x89, 0xD1,
+    0x48, 0x39, 0xF7,
+    0x76, 0x07,
+    0x48, 0x01, 0xD6,
+    0x48, 0x01, 0xD7,
+    0xFD,
+    0xF3, 0xA4,
+    0xFC,
+    0xC3
+};
+
+static const UCHAR g_BuiltinStrncmp[] = {
+    0x31, 0xC9,
+    0x48, 0x39, 0xD1,
+    0x73, 0x18,
+    0x0F, 0xB6, 0x04, 0x0F,
+    0x44, 0x0F, 0xB6, 0x04, 0x0E,
+    0x44, 0x29, 0xC0,
+    0x75, 0x0A,
+    0x45, 0x85, 0xC0,
+    0x74, 0x05,
+    0x48, 0xFF, 0xC1,
+    0xEB, 0xE3,
+    0xC3
+};
+
 static const LX_BUILTIN_DEF g_Builtins[LX_BUILTIN_COUNT] = {
     { "memcpy", g_BuiltinMemcpy, sizeof(g_BuiltinMemcpy) },
     { "memset", g_BuiltinMemset, sizeof(g_BuiltinMemset) },
     { "strlen", g_BuiltinStrlen, sizeof(g_BuiltinStrlen) },
     { "strcmp", g_BuiltinStrcmp, sizeof(g_BuiltinStrcmp) },
     { "strcpy", g_BuiltinStrcpy, sizeof(g_BuiltinStrcpy) },
-    { "memcmp", g_BuiltinMemcmp, sizeof(g_BuiltinMemcmp) }
+    { "memcmp", g_BuiltinMemcmp, sizeof(g_BuiltinMemcmp) },
+    { "memmove", g_BuiltinMemmove, sizeof(g_BuiltinMemmove) },
+    { "strncmp", g_BuiltinStrncmp, sizeof(g_BuiltinStrncmp) }
 };
 
 static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOBAL_TABLE *Globals,
