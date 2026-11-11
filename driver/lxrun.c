@@ -62,6 +62,9 @@ typedef struct _LX_ELF_LOAD
     ULONG PhdrEntrySize;
 } LX_ELF_LOAD;
 
+#define LX_MAX_NEEDED 8u
+#define LX_MAX_INTERP 128u
+
 typedef struct _LX_ELF_DYNAMIC_INFO
 {
     ULONG64 InterpVaddr;
@@ -125,8 +128,6 @@ typedef struct _LX_ELF_DYNAMIC_INFO
 #define LX_DT_RUNPATH 29u
 #define LX_DT_FLAGS 30u
 #define LX_DT_MAX_ENTRIES 32u
-#define LX_MAX_NEEDED 8u
-#define LX_MAX_INTERP 128u
 
 #define LX_PICO_INFO_SIZE 0x58
 #define LX_PICO_ROUTINES_SIZE 0x60
