@@ -166,6 +166,20 @@ typedef struct _LX_SYMBOL_INFO
 
 #define LX_STUB_SIZE 16u
 #define LX_STUB_AREA_SIZE 0x10000u
+#define LX_BUILTIN_AREA_OFFSET 0x8000u
+#define LX_BUILTIN_MAX_SIZE 0x4000u
+
+typedef struct _LX_BUILTIN_STATS
+{
+    ULONG Written;
+    ULONG TotalBytes;
+    ULONG64 AreaBase;
+    ULONG FailCount;
+    NTSTATUS LastStatus;
+    ULONG Registered;
+    CHAR LastName[LX_MAX_SYMBOL_NAME];
+    ULONG64 LastAddress;
+} LX_BUILTIN_STATS;
 
 typedef struct _LX_SYMBOL_BINDING
 {
@@ -417,6 +431,14 @@ typedef struct _LX_QUERY_RESULT
     CHAR GlobalLastMissName[48];
     CHAR GlobalLastHitName[48];
     CHAR GlobalFirstNames[8][48];
+    ULONG BuiltinWritten;
+    ULONG BuiltinTotalBytes;
+    ULONG BuiltinFailCount;
+    ULONG BuiltinRegistered;
+    ULONG BuiltinLastStatus;
+    ULONG64 BuiltinAreaBase;
+    ULONG64 BuiltinLastAddress;
+    CHAR BuiltinLastName[48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -532,6 +554,7 @@ static LX_SYMBOL_INFO g_SymbolInfo;
 static LX_STUB_STATS g_StubStats;
 static LX_LIB_STATS g_LibStats;
 static LX_GLOBAL_TABLE g_GlobalSymbols;
+static LX_BUILTIN_STATS g_BuiltinStats;
 static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
@@ -4331,6 +4354,8 @@ static ULONG64 LxGlobalTableLookup(LX_GLOBAL_TABLE *Table, const char *Name, ULO
     return 0;
 }
 
+static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOBAL_TABLE *Globals, LX_BUILTIN_STATS *Stats);
+
 static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
                          const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
                          LX_SYMBOL_INFO *Symbols, LX_STUB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
@@ -4385,6 +4410,8 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
     }
 
     stubAreaBase = (ULONG64)(ULONG_PTR)stubViewBase;
+
+    LxInstallBuiltins(TargetProcess, stubAreaBase + LX_BUILTIN_AREA_OFFSET, Globals, &g_BuiltinStats);
 
     {
         ULONG index;
@@ -4496,6 +4523,103 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
                 entry->ResolvedAddress = stubAddress;
             }
         }
+    }
+}
+
+#define LX_BUILTIN_COUNT 3u
+
+typedef struct _LX_BUILTIN_DEF
+{
+    const char *Name;
+    const UCHAR *Code;
+    ULONG Size;
+} LX_BUILTIN_DEF;
+
+
+static const UCHAR g_BuiltinMemcpy[] = {
+    0x48, 0x89, 0xF8,
+    0x48, 0x89, 0xD1,
+    0xF3, 0xA4,
+    0xC3
+};
+
+static const UCHAR g_BuiltinMemset[] = {
+    0x48, 0x89, 0xF8,
+    0x48, 0x85, 0xD2,
+    0x74, 0x0E,
+    0x88, 0xF0,
+    0x48, 0x89, 0xD1,
+    0xF3, 0xAA,
+    0xC3
+};
+
+static const UCHAR g_BuiltinStrlen[] = {
+    0x31, 0xC0,
+    0x80, 0x3C, 0x07, 0x00,
+    0x74, 0x05,
+    0x48, 0xFF, 0xC0,
+    0xEB, 0xF6,
+    0xC3
+};
+
+static const LX_BUILTIN_DEF g_Builtins[LX_BUILTIN_COUNT] = {
+    { "memcpy", g_BuiltinMemcpy, sizeof(g_BuiltinMemcpy) },
+    { "memset", g_BuiltinMemset, sizeof(g_BuiltinMemset) },
+    { "strlen", g_BuiltinStrlen, sizeof(g_BuiltinStrlen) }
+};
+
+static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOBAL_TABLE *Globals,
+                              LX_BUILTIN_STATS *Stats)
+{
+    ULONG index;
+    ULONG64 cursor;
+
+    RtlZeroMemory(Stats, sizeof(LX_BUILTIN_STATS));
+
+    if (TargetProcess == NULL || AreaBase == 0 || Stats == NULL)
+    {
+        return;
+    }
+
+    Stats->AreaBase = AreaBase;
+    cursor = AreaBase;
+
+    for (index = 0; index < LX_BUILTIN_COUNT; index++)
+    {
+        const LX_BUILTIN_DEF *def = &g_Builtins[index];
+        ULONG64 address = (cursor + 15ull) & ~15ull;
+        NTSTATUS writeStatus;
+
+        if (address + def->Size > AreaBase + LX_BUILTIN_MAX_SIZE)
+        {
+            Stats->FailCount++;
+            break;
+        }
+
+        writeStatus = LxWritePicoMemory(TargetProcess, address, def->Code, def->Size);
+
+        Stats->LastStatus = writeStatus;
+
+        if (!NT_SUCCESS(writeStatus))
+        {
+            Stats->FailCount++;
+            continue;
+        }
+
+        Stats->Written++;
+        Stats->TotalBytes += def->Size;
+        LxCopyString(Stats->LastName, def->Name, LX_MAX_SYMBOL_NAME);
+        Stats->LastAddress = address;
+
+        if (Globals != NULL)
+        {
+            if (LxGlobalTableAdd(Globals, def->Name, address, LX_MAX_LIBS, 1, 2))
+            {
+                Stats->Registered++;
+            }
+        }
+
+        cursor = address + def->Size;
     }
 }
 
@@ -5734,6 +5858,15 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             {
                 RtlCopyMemory(result->GlobalFirstNames[i], g_GlobalSymbols.Entries[i].Name, 48);
             }
+
+            result->BuiltinWritten = g_BuiltinStats.Written;
+            result->BuiltinTotalBytes = g_BuiltinStats.TotalBytes;
+            result->BuiltinFailCount = g_BuiltinStats.FailCount;
+            result->BuiltinRegistered = g_BuiltinStats.Registered;
+            result->BuiltinLastStatus = (ULONG)g_BuiltinStats.LastStatus;
+            result->BuiltinAreaBase = g_BuiltinStats.AreaBase;
+            result->BuiltinLastAddress = g_BuiltinStats.LastAddress;
+            RtlCopyMemory(result->BuiltinLastName, g_BuiltinStats.LastName, 48);
 
             for (i = 0; i < 16; i++)
             {
