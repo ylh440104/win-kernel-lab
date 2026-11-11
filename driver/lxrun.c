@@ -1038,16 +1038,29 @@ g_GetDentsCount++;
 
                     if (written + recordLength <= sizeof(g_DirCache))
                     {
+                        ULONG64 cacheIno = (ULONG64)((index + 1) * 2);
+                        ULONG64 cacheOff = (ULONG64)(written + recordLength);
+                        USHORT cacheReclen = (USHORT)recordLength;
+                        UCHAR cacheType = isDirectory ? 4 : 8;
+
                         RtlZeroMemory(g_DirCache + written, recordLength);
-                        g_DirCache[written + 0] = (CHAR)(((index + 1) * 2) & 0xFF);
-                        g_DirCache[written + 8] = (CHAR)((written + recordLength) & 0xFF);
-                        g_DirCache[written + 16] = (CHAR)(recordLength & 0xFF);
-                        g_DirCache[written + 17] = (CHAR)((recordLength >> 8) & 0xFF);
-                        g_DirCache[written + 18] = (CHAR)(isDirectory ? 4 : 8);
+
+                        __try
+                        {
+                            RtlCopyMemory(g_DirCache + written + 0, &cacheIno, 8);
+                            RtlCopyMemory(g_DirCache + written + 8, &cacheOff, 8);
+                            RtlCopyMemory(g_DirCache + written + 16, &cacheReclen, 2);
+                            RtlCopyMemory(g_DirCache + written + 18, &cacheType, 1);
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                        }
+
                         for (m = 0; m < nameLength && (19 + m) < (LONG)recordLength; m++)
                         {
                             g_DirCache[written + 19 + m] = (CHAR)(UCHAR)info->FileName[m];
                         }
+
                         g_DirCacheLen = written + recordLength;
                     }
 
