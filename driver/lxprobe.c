@@ -593,18 +593,6 @@ printf("  writeLen=%lu\n", q.WriteLength);
                    (unsigned long long)q.MmapDebug[2], (unsigned long long)q.MmapDebug[3],
                    (unsigned long long)q.MmapDebug[4], (unsigned long long)q.MmapDebug[5],
                    (unsigned long long)q.MmapDebug[6], (unsigned long long)q.MmapDebug[7]);
-            {
-                int ci;
-
-                printf("  mmapContext (all 40 slots, +0x000..):\n");
-
-                for (ci = 0; ci < 40; ci++)
-                {
-                    printf("    +0x%03x = 0x%llx\n", ci * 8, (unsigned long long)q.MmapContext[ci]);
-                }
-
-                fflush(stdout);
-            }
             printf("  magicOk=%lu written=0x%llx readback=0x%llx\n", q.ProbeMagicOk,
                    (unsigned long long)q.ProbeMagicWritten, (unsigned long long)q.ProbeMagicReadback);
             printf("  seekCount=%llu lastSeek=0x%llx\n", (unsigned long long)q.SeekCount,
