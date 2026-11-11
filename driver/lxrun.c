@@ -168,6 +168,8 @@ typedef struct _LX_SYMBOL_INFO
 #define LX_STUB_AREA_SIZE 0x10000u
 #define LX_BUILTIN_AREA_OFFSET 0x8000u
 #define LX_BUILTIN_MAX_SIZE 0x4000u
+#define LX_BUILTIN_BRK_OFFSET 0x0E00u
+#define LX_BUILTIN_MALLOC_MAX 96u
 
 typedef struct _LX_BUILTIN_STATS
 {
@@ -4639,6 +4641,122 @@ static const LX_BUILTIN_DEF g_Builtins[LX_BUILTIN_COUNT] = {
     { "strncmp", g_BuiltinStrncmp, sizeof(g_BuiltinStrncmp) }
 };
 
+static ULONG LxBuildMallocCode(ULONG64 BrkAddress, UCHAR *Out, ULONG OutSize)
+{
+    ULONG pos = 0;
+
+    if (Out == NULL || OutSize < LX_BUILTIN_MALLOC_MAX)
+    {
+        return 0;
+    }
+
+    Out[pos++] = 0x53;
+    Out[pos++] = 0x41;
+    Out[pos++] = 0x54;
+    Out[pos++] = 0x48;
+    Out[pos++] = 0x89;
+    Out[pos++] = 0xFB;
+
+    Out[pos++] = 0x4C;
+    Out[pos++] = 0x8B;
+    Out[pos++] = 0x24;
+    Out[pos++] = 0x25;
+    Out[pos++] = (UCHAR)(BrkAddress & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 8) & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 16) & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 24) & 0xFF);
+
+    Out[pos++] = 0x4D;
+    Out[pos++] = 0x85;
+    Out[pos++] = 0xE4;
+
+    Out[pos++] = 0x75;
+    Out[pos++] = 24;
+
+    Out[pos++] = 0x48;
+    Out[pos++] = 0xC7;
+    Out[pos++] = 0xC0;
+    Out[pos++] = 12;
+    Out[pos++] = 0x00;
+    Out[pos++] = 0x00;
+    Out[pos++] = 0x00;
+
+    Out[pos++] = 0x48;
+    Out[pos++] = 0x31;
+    Out[pos++] = 0xFF;
+
+    Out[pos++] = 0x0F;
+    Out[pos++] = 0x05;
+
+    Out[pos++] = 0x49;
+    Out[pos++] = 0x89;
+    Out[pos++] = 0xC4;
+
+    Out[pos++] = 0x4C;
+    Out[pos++] = 0x89;
+    Out[pos++] = 0x24;
+    Out[pos++] = 0x25;
+    Out[pos++] = (UCHAR)(BrkAddress & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 8) & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 16) & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 24) & 0xFF);
+
+    Out[pos++] = 0x48;
+    Out[pos++] = 0x83;
+    Out[pos++] = 0xC3;
+    Out[pos++] = 0x0F;
+
+    Out[pos++] = 0x48;
+    Out[pos++] = 0x83;
+    Out[pos++] = 0xE3;
+    Out[pos++] = 0xF0;
+
+    Out[pos++] = 0x4C;
+    Out[pos++] = 0x89;
+    Out[pos++] = 0xE7;
+
+    Out[pos++] = 0x48;
+    Out[pos++] = 0x01;
+    Out[pos++] = 0xDF;
+
+    Out[pos++] = 0x48;
+    Out[pos++] = 0xC7;
+    Out[pos++] = 0xC0;
+    Out[pos++] = 12;
+    Out[pos++] = 0x00;
+    Out[pos++] = 0x00;
+    Out[pos++] = 0x00;
+
+    Out[pos++] = 0x0F;
+    Out[pos++] = 0x05;
+
+    Out[pos++] = 0x48;
+    Out[pos++] = 0x89;
+    Out[pos++] = 0x3C;
+    Out[pos++] = 0x25;
+    Out[pos++] = (UCHAR)(BrkAddress & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 8) & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 16) & 0xFF);
+    Out[pos++] = (UCHAR)((BrkAddress >> 24) & 0xFF);
+
+    Out[pos++] = 0x4C;
+    Out[pos++] = 0x89;
+    Out[pos++] = 0xE0;
+
+    Out[pos++] = 0x41;
+    Out[pos++] = 0x5C;
+
+    Out[pos++] = 0x5B;
+
+    Out[pos++] = 0xC3;
+
+    return pos;
+}
+
+static const UCHAR g_BuiltinFree[] = {
+    0xC3
+};
+
 static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOBAL_TABLE *Globals,
                               LX_BUILTIN_STATS *Stats)
 {
@@ -4691,6 +4809,75 @@ static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOB
         }
 
         cursor = address + def->Size;
+    }
+
+    {
+        UCHAR mallocCode[LX_BUILTIN_MALLOC_MAX];
+        ULONG mallocSize;
+        ULONG64 brkAddress = AreaBase + LX_BUILTIN_BRK_OFFSET;
+        ULONG64 zeroValue = 0;
+        ULONG64 mallocAddress = (cursor + 15ull) & ~15ull;
+        NTSTATUS mallocStatus;
+
+        LxWritePicoMemory(TargetProcess, brkAddress, &zeroValue, sizeof(zeroValue));
+
+        mallocSize = LxBuildMallocCode(brkAddress, mallocCode, sizeof(mallocCode));
+
+        if (mallocSize > 0 && mallocAddress + mallocSize <= AreaBase + LX_BUILTIN_MAX_SIZE)
+        {
+            mallocStatus = LxWritePicoMemory(TargetProcess, mallocAddress, mallocCode, mallocSize);
+            Stats->LastStatus = mallocStatus;
+
+            if (NT_SUCCESS(mallocStatus))
+            {
+                Stats->Written++;
+                Stats->TotalBytes += mallocSize;
+                LxCopyString(Stats->LastName, "malloc", LX_MAX_SYMBOL_NAME);
+                Stats->LastAddress = mallocAddress;
+
+                if (Globals != NULL)
+                {
+                    if (LxGlobalTableAdd(Globals, "malloc", mallocAddress, LX_MAX_LIBS, 1, 2))
+                    {
+                        Stats->Registered++;
+                    }
+                }
+
+                cursor = mallocAddress + mallocSize;
+            }
+            else
+            {
+                Stats->FailCount++;
+            }
+        }
+
+        {
+            ULONG64 freeAddress = (cursor + 15ull) & ~15ull;
+            NTSTATUS freeStatus;
+
+            freeStatus = LxWritePicoMemory(TargetProcess, freeAddress, g_BuiltinFree, sizeof(g_BuiltinFree));
+            Stats->LastStatus = freeStatus;
+
+            if (NT_SUCCESS(freeStatus))
+            {
+                Stats->Written++;
+                Stats->TotalBytes += sizeof(g_BuiltinFree);
+                LxCopyString(Stats->LastName, "free", LX_MAX_SYMBOL_NAME);
+                Stats->LastAddress = freeAddress;
+
+                if (Globals != NULL)
+                {
+                    if (LxGlobalTableAdd(Globals, "free", freeAddress, LX_MAX_LIBS, 1, 2))
+                    {
+                        Stats->Registered++;
+                    }
+                }
+            }
+            else
+            {
+                Stats->FailCount++;
+            }
+        }
     }
 }
 
