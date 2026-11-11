@@ -806,29 +806,16 @@ static ULONG64 LxReadFile(ULONG Fd, PVOID UserBuffer, ULONG Count)
     IO_STATUS_BLOCK statusBlock;
     NTSTATUS status;
     LARGE_INTEGER offset;
-    CHAR staging[512];
-    ULONG chunk;
-    ULONG delivered = 0;
-    ULONG total = 0;
 
     if (Fd >= LX_MAX_FD || !g_FdTable[Fd].Used || UserBuffer == NULL || Count == 0)
     {
         return (ULONG64)(-9);
     }
 
-    if (Count < sizeof(staging))
-    {
-        chunk = Count;
-    }
-    else
-    {
-        chunk = sizeof(staging);
-    }
-
     offset.QuadPart = (LONGLONG)g_FdTable[Fd].Offset;
 
     status = ZwReadFile(g_FdTable[Fd].Handle, NULL, NULL, NULL, &statusBlock,
-                        staging, chunk, &offset, NULL);
+                        UserBuffer, Count, &offset, NULL);
 
     g_ReadCount++;
     g_LastReadStatus = (ULONG)status;
@@ -843,54 +830,9 @@ static ULONG64 LxReadFile(ULONG Fd, PVOID UserBuffer, ULONG Count)
         return (ULONG64)(-(LONG)(status & 0xFFFF));
     }
 
-    delivered = (ULONG)statusBlock.Information;
+    g_FdTable[Fd].Offset += statusBlock.Information;
 
-    if (delivered > chunk)
-    {
-        delivered = chunk;
-    }
-
-    if (delivered > 0 && g_PicoProcessObject != NULL)
-    {
-        LX_APC_STATE pushApc;
-        BOOLEAN pushed = FALSE;
-
-        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&pushApc);
-
-        __try
-        {
-            ProbeForWrite(UserBuffer, delivered, 1);
-            RtlCopyMemory(UserBuffer, staging, delivered);
-            pushed = TRUE;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            pushed = FALSE;
-        }
-
-        KeUnstackDetachProcess((PVOID)&pushApc);
-
-        if (pushed)
-        {
-            total = delivered;
-            g_FdTable[Fd].Offset += delivered;
-        }
-    }
-    else if (delivered > 0)
-    {
-        __try
-        {
-            RtlCopyMemory(UserBuffer, staging, delivered);
-            total = delivered;
-            g_FdTable[Fd].Offset += delivered;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            total = 0;
-        }
-    }
-
-    return total;
+    return statusBlock.Information;
 }
 
 static ULONG LxKernelPathLength(const char *LinuxPath)
