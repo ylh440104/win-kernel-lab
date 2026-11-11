@@ -1415,6 +1415,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
         }
 
+        if (values[4] > 0 && values[4] < 0x10000 && values[4] != fd && values[4] != buffer)
+        {
+            length = (ULONG)values[4];
+        }
+
         g_WriteDebug[0] = values[0];
         g_WriteDebug[1] = values[1];
         g_WriteDebug[2] = values[2];
