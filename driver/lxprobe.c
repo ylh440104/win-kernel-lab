@@ -126,6 +126,14 @@ typedef struct _LX_QUERY_RESULT
     CHAR GlobalLastMissName[48];
     CHAR GlobalLastHitName[48];
     CHAR GlobalFirstNames[8][48];
+    ULONG BuiltinWritten;
+    ULONG BuiltinTotalBytes;
+    ULONG BuiltinFailCount;
+    ULONG BuiltinRegistered;
+    ULONG BuiltinLastStatus;
+    ULONG64 BuiltinAreaBase;
+    ULONG64 BuiltinLastAddress;
+    CHAR BuiltinLastName[48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -505,6 +513,12 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  BUILTIN: written=%lu bytes=%lu fail=%lu registered=%lu status=0x%08lx\n",
+           q.BuiltinWritten, q.BuiltinTotalBytes, q.BuiltinFailCount, q.BuiltinRegistered,
+           q.BuiltinLastStatus);
+    printf("  BUILTIN: area=0x%llx last=%.48s @0x%llx\n",
+           (unsigned long long)q.BuiltinAreaBase, q.BuiltinLastName,
+           (unsigned long long)q.BuiltinLastAddress);
     printf("  GLOBAL: count=%lu/%lu probe=%lu hit=%lu crossOk=%lu crossMiss=%lu\n",
            q.GlobalCount, q.GlobalCapacity, q.GlobalProbeCount, q.GlobalProbeHit,
            q.GlobalCrossResolved, q.GlobalCrossMiss);
