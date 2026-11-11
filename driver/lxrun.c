@@ -1376,14 +1376,37 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 values[6];
         ULONG64 fd = 0;
         ULONG64 buffer = 0;
-        ULONG length = 0;
+        ULONG64 length = 0;
         ULONG i;
-        BOOLEAN haveFd = FALSE;
         BOOLEAN haveBuffer = FALSE;
+        BOOLEAN haveFd = FALSE;
 
         for (i = 0; i < 6; i++)
         {
             values[i] = Parameters[i];
+        }
+
+        if (g_WriteContextDone == 0)
+        {
+            g_WriteContextDone = 1;
+
+            for (i = 0; i < 64; i++)
+            {
+                ULONG64 value = 0;
+                PUCHAR slot = (PUCHAR)(ULONG_PTR)Context + i * 8;
+
+                __try
+                {
+                    ProbeForRead(slot, 8, 8);
+                    value = *(ULONG64 *)slot;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    value = 0xDEADBEEFDEADBEEFull;
+                }
+
+                g_WriteContext[i] = value;
+            }
         }
 
         for (i = 0; i < 6; i++)
