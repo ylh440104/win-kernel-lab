@@ -62,6 +62,72 @@ typedef struct _LX_ELF_LOAD
     ULONG PhdrEntrySize;
 } LX_ELF_LOAD;
 
+typedef struct _LX_ELF_DYNAMIC_INFO
+{
+    ULONG64 InterpVaddr;
+    ULONG64 InterpOffset;
+    ULONG InterpSize;
+    ULONG HasInterp;
+    ULONG64 DynamicVaddr;
+    ULONG64 DynamicOffset;
+    ULONG64 DynamicSize;
+    ULONG HasDynamic;
+    ULONG DynamicCount;
+    ULONG64 StrTabVaddr;
+    ULONG64 SymTabVaddr;
+    ULONG64 RelaVaddr;
+    ULONG64 RelaSize;
+    ULONG64 RelaCount;
+    ULONG64 JmpRelVaddr;
+    ULONG64 JmpRelSize;
+    ULONG64 JmpRelCount;
+    ULONG64 PltGotVaddr;
+    ULONG64 InitVaddr;
+    ULONG64 FiniVaddr;
+    ULONG64 SonameOffset;
+    ULONG NeededCount;
+    ULONG NeededOffsets[LX_MAX_NEEDED];
+} LX_ELF_DYNAMIC_INFO;
+
+#define LX_PT_NULL 0u
+#define LX_PT_LOAD 1u
+#define LX_PT_DYNAMIC 2u
+#define LX_PT_INTERP 3u
+#define LX_DT_NULL 0u
+#define LX_DT_NEEDED 1u
+#define LX_DT_PLTRELSZ 2u
+#define LX_DT_PLTGOT 3u
+#define LX_DT_HASH 4u
+#define LX_DT_STRTAB 5u
+#define LX_DT_SYMTAB 6u
+#define LX_DT_RELA 7u
+#define LX_DT_RELASZ 8u
+#define LX_DT_RELAENT 9u
+#define LX_DT_STRSZ 10u
+#define LX_DT_SYMENT 11u
+#define LX_DT_INIT 12u
+#define LX_DT_FINI 13u
+#define LX_DT_SONAME 14u
+#define LX_DT_RPATH 15u
+#define LX_DT_SYMBOLIC 16u
+#define LX_DT_REL 17u
+#define LX_DT_RELSZ 18u
+#define LX_DT_RELENT 19u
+#define LX_DT_PLTREL 20u
+#define LX_DT_DEBUG 21u
+#define LX_DT_TEXTREL 22u
+#define LX_DT_JMPREL 23u
+#define LX_DT_BIND_NOW 24u
+#define LX_DT_INIT_ARRAY 25u
+#define LX_DT_FINI_ARRAY 26u
+#define LX_DT_INIT_ARRAYSZ 27u
+#define LX_DT_FINI_ARRAYSZ 28u
+#define LX_DT_RUNPATH 29u
+#define LX_DT_FLAGS 30u
+#define LX_DT_MAX_ENTRIES 32u
+#define LX_MAX_NEEDED 8u
+#define LX_MAX_INTERP 128u
+
 #define LX_PICO_INFO_SIZE 0x58
 #define LX_PICO_ROUTINES_SIZE 0x60
 
@@ -107,6 +173,26 @@ typedef struct _LX_QUERY_RESULT
     ULONG ElfStatus;
     ULONG ElfMapStatus;
     ULONG64 ElfBase;
+    ULONG64 DynInterpVaddr;
+    ULONG DynHasInterp;
+    ULONG DynHasDynamic;
+    ULONG64 DynDynamicVaddr;
+    ULONG64 DynDynamicSize;
+    ULONG DynDynamicCount;
+    ULONG64 DynStrTabVaddr;
+    ULONG64 DynSymTabVaddr;
+    ULONG64 DynRelaVaddr;
+    ULONG64 DynRelaSize;
+    ULONG64 DynRelaCount;
+    ULONG64 DynJmpRelVaddr;
+    ULONG64 DynJmpRelSize;
+    ULONG64 DynJmpRelCount;
+    ULONG64 DynPltGotVaddr;
+    ULONG64 DynInitVaddr;
+    ULONG64 DynFiniVaddr;
+    ULONG64 DynSonameOffset;
+    ULONG DynNeededCount;
+    ULONG DynNeededOffsets[8];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -216,6 +302,7 @@ static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static LX_ELF_LOAD g_ElfLoad;
+static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
@@ -3293,6 +3380,144 @@ static ULONG64 LxFindNtoskrnlBase(PDRIVER_OBJECT DriverObject)
     return 0;
 }
 
+static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
+                              LX_ELF_DYNAMIC_INFO *Info)
+{
+    ULONG index;
+
+    RtlZeroMemory(Info, sizeof(LX_ELF_DYNAMIC_INFO));
+
+    if (ImageData == NULL || ImageSize == 0 || Load->PhdrCount == 0 || Load->PhdrEntrySize < 56)
+    {
+        return;
+    }
+
+    for (index = 0; index < Load->PhdrCount && index < 64; index++)
+    {
+        ULONG64 phdrOffset;
+        const UCHAR *phdr;
+        ULONG pType;
+        ULONG64 pOffset;
+        ULONG64 pVaddr;
+        ULONG64 pFilesz;
+
+        if (Load->PhdrAddress >= Load->MinVaddr)
+        {
+            phdrOffset = (Load->PhdrAddress - Load->MinVaddr) + (ULONG64)index * Load->PhdrEntrySize;
+        }
+        else
+        {
+            break;
+        }
+
+        if (phdrOffset + 56 > ImageSize)
+        {
+            continue;
+        }
+
+        phdr = ImageData + phdrOffset;
+
+        pType = *(const ULONG *)(phdr + 0);
+        pVaddr = *(const ULONG64 *)(phdr + 16);
+        pOffset = *(const ULONG64 *)(phdr + 8);
+        pFilesz = *(const ULONG64 *)(phdr + 32);
+
+        if (pType == LX_PT_INTERP)
+        {
+            Info->HasInterp = 1;
+            Info->InterpVaddr = pVaddr;
+            Info->InterpOffset = pOffset;
+            Info->InterpSize = (ULONG)pFilesz;
+        }
+        else if (pType == LX_PT_DYNAMIC)
+        {
+            Info->HasDynamic = 1;
+            Info->DynamicVaddr = pVaddr;
+            Info->DynamicOffset = pOffset;
+            Info->DynamicSize = pFilesz;
+        }
+    }
+
+    if (Info->HasDynamic == 0 || Info->DynamicOffset + 16 > ImageSize)
+    {
+        return;
+    }
+
+    for (index = 0; index < 128; index++)
+    {
+        ULONG64 entryOffset = Info->DynamicOffset + (ULONG64)index * 16;
+        LONG64 dTag;
+        ULONG64 dVal;
+
+        if (entryOffset + 16 > ImageSize || entryOffset + 16 > Info->DynamicOffset + Info->DynamicSize)
+        {
+            break;
+        }
+
+        dTag = *(const LONG64 *)(ImageData + entryOffset);
+        dVal = *(const ULONG64 *)(ImageData + entryOffset + 8);
+
+        Info->DynamicCount++;
+
+        if (dTag == LX_DT_NULL)
+        {
+            break;
+        }
+
+        if (dTag == LX_DT_NEEDED)
+        {
+            if (Info->NeededCount < LX_MAX_NEEDED)
+            {
+                Info->NeededOffsets[Info->NeededCount] = (ULONG)dVal;
+                Info->NeededCount++;
+            }
+        }
+        else if (dTag == LX_DT_STRTAB)
+        {
+            Info->StrTabVaddr = dVal;
+        }
+        else if (dTag == LX_DT_SYMTAB)
+        {
+            Info->SymTabVaddr = dVal;
+        }
+        else if (dTag == LX_DT_RELA)
+        {
+            Info->RelaVaddr = dVal;
+        }
+        else if (dTag == LX_DT_RELASZ)
+        {
+            Info->RelaSize = dVal;
+        }
+        else if (dTag == LX_DT_JMPREL)
+        {
+            Info->JmpRelVaddr = dVal;
+        }
+        else if (dTag == LX_DT_PLTRELSZ)
+        {
+            Info->JmpRelSize = dVal;
+        }
+        else if (dTag == LX_DT_PLTGOT)
+        {
+            Info->PltGotVaddr = dVal;
+        }
+        else if (dTag == LX_DT_INIT)
+        {
+            Info->InitVaddr = dVal;
+        }
+        else if (dTag == LX_DT_FINI)
+        {
+            Info->FiniVaddr = dVal;
+        }
+        else if (dTag == LX_DT_SONAME)
+        {
+            Info->SonameOffset = dVal;
+        }
+    }
+
+    Info->RelaCount = Info->RelaSize / 24;
+    Info->JmpRelCount = Info->JmpRelSize / 24;
+}
+
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 {
     LX_ELF_LOAD *load;
@@ -3413,6 +3638,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     g_ElfStatus = 0;
     g_ElfEntry = load->EntryPoint;
     RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
+
+    LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
 
     ZwClose(sectionHandle);
     ObDereferenceObject(targetProcess);
@@ -3829,6 +4056,30 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ElfStatus = g_ElfStatus;
             result->ElfMapStatus = g_ElfMapStatus;
             result->ElfBase = g_ElfBase;
+            result->DynInterpVaddr = g_ElfDynamic.InterpVaddr;
+            result->DynHasInterp = g_ElfDynamic.HasInterp;
+            result->DynHasDynamic = g_ElfDynamic.HasDynamic;
+            result->DynDynamicVaddr = g_ElfDynamic.DynamicVaddr;
+            result->DynDynamicSize = g_ElfDynamic.DynamicSize;
+            result->DynDynamicCount = g_ElfDynamic.DynamicCount;
+            result->DynStrTabVaddr = g_ElfDynamic.StrTabVaddr;
+            result->DynSymTabVaddr = g_ElfDynamic.SymTabVaddr;
+            result->DynRelaVaddr = g_ElfDynamic.RelaVaddr;
+            result->DynRelaSize = g_ElfDynamic.RelaSize;
+            result->DynRelaCount = g_ElfDynamic.RelaCount;
+            result->DynJmpRelVaddr = g_ElfDynamic.JmpRelVaddr;
+            result->DynJmpRelSize = g_ElfDynamic.JmpRelSize;
+            result->DynJmpRelCount = g_ElfDynamic.JmpRelCount;
+            result->DynPltGotVaddr = g_ElfDynamic.PltGotVaddr;
+            result->DynInitVaddr = g_ElfDynamic.InitVaddr;
+            result->DynFiniVaddr = g_ElfDynamic.FiniVaddr;
+            result->DynSonameOffset = g_ElfDynamic.SonameOffset;
+            result->DynNeededCount = g_ElfDynamic.NeededCount;
+
+            for (i = 0; i < 8; i++)
+            {
+                result->DynNeededOffsets[i] = g_ElfDynamic.NeededOffsets[i];
+            }
             result->ElfCopied = g_ElfCopiedTotal;
             result->ElfViewSize = g_ElfViewSize;
 
