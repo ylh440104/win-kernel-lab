@@ -99,6 +99,23 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 StubLastSyscall;
     ULONG StubLastStatus;
     CHAR StubLastName[48];
+    ULONG LibAttempted;
+    ULONG LibLoaded;
+    ULONG LibFailed;
+    ULONG LibLastStatus;
+    ULONG LibTotalSymbols;
+    ULONG LibTotalRelocs;
+    ULONG LibNameResolveFail;
+    ULONG LibPathResolveFail;
+    ULONG LibUsed[4];
+    ULONG LibStatus[4];
+    ULONG LibSymCount[4];
+    ULONG LibRelaCount[4];
+    ULONG LibRelaApplied[4];
+    ULONG LibNeededCount[4];
+    ULONG64 LibBase[4];
+    ULONG64 LibImageSize[4];
+    CHAR LibNames[4][48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -478,6 +495,27 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  LIBS: attempted=%lu loaded=%lu failed=%lu lastStatus=0x%08lx\n",
+           q.LibAttempted, q.LibLoaded, q.LibFailed, q.LibLastStatus);
+    printf("  LIBS: symbols=%lu relocs=%lu nameFail=%lu pathFail=%lu\n",
+           q.LibTotalSymbols, q.LibTotalRelocs, q.LibNameResolveFail, q.LibPathResolveFail);
+    {
+        ULONG li;
+
+        for (li = 0; li < 4; li++)
+        {
+            if (q.LibUsed[li] == 0)
+            {
+                continue;
+            }
+
+            printf("  LIBS: [%lu] name=%.48s status=0x%08lx base=0x%llx size=0x%llx\n", li,
+                   q.LibNames[li], q.LibStatus[li], (unsigned long long)q.LibBase[li],
+                   (unsigned long long)q.LibImageSize[li]);
+            printf("  LIBS: [%lu] syms=%lu rela=%lu applied=%lu needed=%lu\n", li,
+                   q.LibSymCount[li], q.LibRelaCount[li], q.LibRelaApplied[li], q.LibNeededCount[li]);
+        }
+    }
     printf("  STUBS: count=%lu found=%lu unknown=%lu writeFail=%lu area=0x%llx\n",
            q.StubCount, q.StubFound, q.StubUnknown, q.StubWriteFail,
            (unsigned long long)q.StubAreaBase);
