@@ -2174,29 +2174,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_MmapDebug[6] = (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used) ? 1 : 0;
         g_MmapDebug[7] = (mapFd < LX_MAX_FD) ? (ULONG64)(ULONG_PTR)g_FdTable[mapFd].Handle : 0;
 
-        if (g_MmapContextDone == 0)
-        {
-            ULONG ctxIndex;
-
-            g_MmapContextDone = 1;
-
-            for (ctxIndex = 0; ctxIndex < 40; ctxIndex++)
-            {
-                PUCHAR ctxSlot = (PUCHAR)(ULONG_PTR)Context + ctxIndex * 8;
-
-                g_MmapContext[ctxIndex] = 0xDEADBEEFDEADBEEFull;
-
-                __try
-                {
-                    RtlCopyMemory(&g_MmapContext[ctxIndex], ctxSlot, 8);
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_MmapContext[ctxIndex] = 0xBAD0BAD0BAD0BAD0ull;
-                }
-            }
-        }
-
         mapLength = (mapLength + 0xFFF) & ~0xFFFull;
 
         if (mapProt & 0x4u)
@@ -2234,20 +2211,22 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             OBJECT_ATTRIBUTES sectionAttributes;
             PVOID viewBase = (PVOID)(ULONG_PTR)mapAddress;
             SIZE_T viewSize = (SIZE_T)mapLength;
+            LARGE_INTEGER sectionOffset;
             NTSTATUS mapStatus;
 
-            sectionSize.QuadPart = (LONGLONG)(mapOffset + mapLength);
+            sectionSize.QuadPart = 0;
+            sectionOffset.QuadPart = (LONGLONG)mapOffset;
             InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
             mapStatus = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &sectionAttributes, &sectionSize,
-                                        PAGE_READWRITE, SEC_COMMIT, g_FdTable[mapFd].Handle);
+                                        PAGE_READONLY, SEC_COMMIT, g_FdTable[mapFd].Handle);
 
             g_LastMmapStatus = (ULONG64)mapStatus | 0x100000000ull;
 
             if (NT_SUCCESS(mapStatus))
             {
                 mapStatus = ZwMapViewOfSection(sectionHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0, 0,
-                                               NULL, &viewSize, ViewUnmap, 0, desiredProtection);
+                                               &sectionOffset, &viewSize, ViewUnmap, 0, PAGE_READONLY);
 
                 ZwClose(sectionHandle);
 
