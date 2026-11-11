@@ -355,6 +355,21 @@ typedef struct _LX_LINUX_DIRENT64
 #define LX_SYS_EVENTFD 284
 #define LX_SYS_EPOLL_CREATE1 291
 #define LX_SYS_EVENTFD2 290
+#define LX_SYS_STATFS 137
+#define LX_SYS_FSTATFS 138
+#define LX_SYS_READV 19
+#define LX_SYS_WRITEV 20
+#define LX_SYS_SENDTO 44
+#define LX_SYS_RECVFROM 45
+#define LX_SYS_SOCKET 41
+#define LX_SYS_CONNECT 42
+#define LX_SYS_SHUTDOWN 48
+#define LX_SYS_SETSOCKOPT 54
+#define LX_SYS_GETSOCKOPT 55
+#define LX_SYS_CLONE 56
+#define LX_SYS_FORK 57
+#define LX_SYS_VFORK 58
+#define LX_SYS_EXECVE 59
 #define LX_O_ACCMODE 3u
 #define LX_O_CREAT 0x40u
 #define LX_O_EXCL 0x80u
@@ -449,6 +464,28 @@ typedef struct _LX_FILE_BASIC_INFORMATION
     LARGE_INTEGER ChangeTime;
     ULONG FileAttributes;
 } LX_FILE_BASIC_INFORMATION;
+
+typedef struct _LX_LINUX_STATFS
+{
+    LONG64 Type;
+    LONG64 BlockSize;
+    ULONG64 Blocks;
+    ULONG64 BlocksFree;
+    ULONG64 BlocksAvailable;
+    ULONG64 Files;
+    ULONG64 FilesFree;
+    LONG64 FileSystemId;
+    LONG64 NameLength;
+    LONG64 FragmentSize;
+    LONG64 MountFlags;
+    LONG64 Spare[4];
+} LX_LINUX_STATFS;
+
+typedef struct _LX_IOVEC
+{
+    ULONG64 Base;
+    ULONG64 Length;
+} LX_IOVEC;
 
 static LONG64 LxWindowsTimeToUnix(LARGE_INTEGER TimeValue)
 {
@@ -2580,6 +2617,194 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_EPOLL_WAIT:
         return (ULONG64)(-11);
+
+    case LX_SYS_READLINK:
+    case LX_SYS_READLINKAT:
+    {
+        static const CHAR SelfExe[] = "/mnt/c/Windows/mk.x64";
+        ULONG64 linkBuffer;
+        ULONG64 linkSize;
+        ULONG linkLength = (ULONG)(sizeof(SelfExe) - 1);
+
+        if (Number == LX_SYS_READLINKAT)
+        {
+            linkBuffer = Parameters[3];
+            linkSize = Parameters[4];
+        }
+        else
+        {
+            linkBuffer = Parameters[2];
+            linkSize = Parameters[3];
+        }
+
+        if (linkBuffer == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (linkSize < linkLength)
+        {
+            return (ULONG64)(-22);
+        }
+
+        __try
+        {
+            ProbeForWrite((PVOID)(ULONG_PTR)linkBuffer, linkLength, 1);
+            RtlCopyMemory((PVOID)(ULONG_PTR)linkBuffer, (const VOID *)SelfExe, linkLength);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return (ULONG64)(-14);
+        }
+
+        return (ULONG64)linkLength;
+    }
+
+    case LX_SYS_STATFS:
+    case LX_SYS_FSTATFS:
+    {
+        LX_LINUX_STATFS statfs;
+        ULONG64 statfsTarget = Parameters[2];
+
+        if (Number == LX_SYS_FSTATFS)
+        {
+            ULONG64 statfsFd = Parameters[1];
+
+            if (statfsFd >= LX_MAX_FD || !g_FdTable[statfsFd].Used)
+            {
+                return (ULONG64)(-9);
+            }
+
+            statfsTarget = Parameters[2];
+        }
+
+        if (statfsTarget == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        RtlZeroMemory(&statfs, sizeof(statfs));
+        statfs.Type = 0x01021997;
+        statfs.BlockSize = 4096;
+        statfs.Blocks = 0x4000000;
+        statfs.BlocksFree = 0x2000000;
+        statfs.BlocksAvailable = 0x2000000;
+        statfs.Files = 0x100000;
+        statfs.FilesFree = 0x80000;
+        statfs.FileSystemId = 0x4C585255;
+        statfs.NameLength = 255;
+        statfs.FragmentSize = 4096;
+
+        __try
+        {
+            ProbeForWrite((PVOID)(ULONG_PTR)statfsTarget, sizeof(statfs), 8);
+            RtlCopyMemory((PVOID)(ULONG_PTR)statfsTarget, &statfs, sizeof(statfs));
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return (ULONG64)(-14);
+        }
+
+        return 0;
+    }
+
+    case LX_SYS_READV:
+    case LX_SYS_WRITEV:
+    {
+        ULONG64 vectorFd = Parameters[1];
+        ULONG64 vectorBase = Parameters[2];
+        ULONG64 vectorCount = Parameters[3];
+        ULONG64 vectorTotal = 0;
+        ULONG64 vectorIndex;
+        LX_APC_STATE vectorApc;
+        BOOLEAN vectorAttached = FALSE;
+
+        if (vectorFd >= LX_MAX_FD || !g_FdTable[vectorFd].Used)
+        {
+            return (ULONG64)(-9);
+        }
+
+        if (vectorBase == 0 || vectorCount == 0 || vectorCount > 64)
+        {
+            return (ULONG64)(-22);
+        }
+
+        if (g_PicoProcessObject != NULL)
+        {
+            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&vectorApc);
+            vectorAttached = TRUE;
+        }
+
+        __try
+        {
+            LX_IOVEC vector[64];
+            ULONG vectorBytes = (ULONG)(vectorCount * sizeof(LX_IOVEC));
+
+            ProbeForRead((PVOID)(ULONG_PTR)vectorBase, vectorBytes, 8);
+            RtlCopyMemory(vector, (PVOID)(ULONG_PTR)vectorBase, vectorBytes);
+
+            for (vectorIndex = 0; vectorIndex < vectorCount; vectorIndex++)
+            {
+                if (vector[vectorIndex].Length == 0)
+                {
+                    continue;
+                }
+
+                if (Number == LX_SYS_READV)
+                {
+                    ULONG64 got = LxReadFile((ULONG)vectorFd,
+                                             (PVOID)(ULONG_PTR)vector[vectorIndex].Base,
+                                             (ULONG)vector[vectorIndex].Length);
+
+                    if ((LONG64)got < 0)
+                    {
+                        if (vectorTotal == 0)
+                        {
+                            vectorTotal = got;
+                        }
+                        break;
+                    }
+
+                    vectorTotal += got;
+
+                    if (got < vector[vectorIndex].Length)
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    vectorTotal += vector[vectorIndex].Length;
+                }
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            vectorTotal = (ULONG64)(-14);
+        }
+
+        if (vectorAttached)
+        {
+            KeUnstackDetachProcess((PVOID)&vectorApc);
+        }
+
+        return vectorTotal;
+    }
+
+    case LX_SYS_SOCKET:
+    case LX_SYS_CONNECT:
+    case LX_SYS_SENDTO:
+    case LX_SYS_RECVFROM:
+    case LX_SYS_SHUTDOWN:
+    case LX_SYS_SETSOCKOPT:
+    case LX_SYS_GETSOCKOPT:
+        return (ULONG64)(-97);
+
+    case LX_SYS_CLONE:
+    case LX_SYS_FORK:
+    case LX_SYS_VFORK:
+    case LX_SYS_EXECVE:
+        return (ULONG64)(-38);
 
     case LX_SYS_PRCTL:
     case LX_SYS_FSYNC:
