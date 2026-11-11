@@ -153,6 +153,9 @@ typedef struct _LX_SYMBOL_INFO
     ULONG Truncated;
     ULONG StrTabReadable;
     ULONG StrTabStatus;
+    ULONG64 NameFileOffset;
+    ULONG NameByte0;
+    ULONG NameByte1;
     ULONG64 StrTabVaddr;
     ULONG64 SymTabVaddr;
     ULONG64 SymCount;
