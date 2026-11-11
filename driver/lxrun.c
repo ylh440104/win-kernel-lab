@@ -88,6 +88,8 @@ typedef struct _LX_ELF_DYNAMIC_INFO
     ULONG64 InitVaddr;
     ULONG64 FiniVaddr;
     ULONG64 SonameOffset;
+    ULONG64 HashVaddr;
+    ULONG64 SymCountFromHash;
     ULONG NeededCount;
     ULONG NeededOffsets[LX_MAX_NEEDED];
 } LX_ELF_DYNAMIC_INFO;
@@ -3742,10 +3744,29 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
         {
             Info->SonameOffset = dVal;
         }
+        else if (dTag == LX_DT_HASH)
+        {
+            Info->HashVaddr = dVal;
+        }
     }
 
     Info->RelaCount = Info->RelaSize / 24;
     Info->JmpRelCount = Info->JmpRelSize / 24;
+
+    if (Info->HashVaddr != 0 && Info->HashVaddr >= Load->MinVaddr)
+    {
+        ULONG64 hashOffset = Info->HashVaddr - Load->MinVaddr;
+
+        if (hashOffset + 8 <= ImageSize)
+        {
+            ULONG nchain = *(const ULONG *)(ImageData + hashOffset + 4);
+
+            if (nchain > 0 && nchain < 4096)
+            {
+                Info->SymCountFromHash = nchain;
+            }
+        }
+    }
 }
 
 static NTSTATUS LxWritePicoMemory(PEPROCESS TargetProcess, ULONG64 Address, const VOID *LocalBuffer, ULONG Length)
@@ -4913,7 +4934,14 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                 ULONG64 strTabOffset = libDynamic.StrTabVaddr - minVaddr;
                 ULONG symWalk;
 
-                for (symWalk = 1; symWalk < LX_MAX_LIB_SYMBOLS; symWalk++)
+                ULONG symLimit = LX_MAX_LIB_SYMBOLS;
+
+                if (libDynamic.SymCountFromHash > 0 && libDynamic.SymCountFromHash < symLimit)
+                {
+                    symLimit = (ULONG)libDynamic.SymCountFromHash;
+                }
+
+                for (symWalk = 1; symWalk < symLimit; symWalk++)
                 {
                     ULONG64 symEntryOffset = symTabOffset + (ULONG64)symWalk * sizeof(LX_ELF_SYM);
                     LX_ELF_SYM sym;
