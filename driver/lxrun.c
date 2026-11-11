@@ -2154,8 +2154,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             RtlCopyMemory(&mapProt, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
             RtlCopyMemory(&mapFlags, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
-            RtlCopyMemory(&mapFd, (PUCHAR)(ULONG_PTR)Context + 0x050, 8);
-            RtlCopyMemory(&mapOffset, (PUCHAR)(ULONG_PTR)Context + 0x058, 8);
+            RtlCopyMemory(&mapFd, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
+            RtlCopyMemory(&mapOffset, (PUCHAR)(ULONG_PTR)Context + 0x050, 8);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
