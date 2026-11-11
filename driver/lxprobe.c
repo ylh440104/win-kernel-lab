@@ -422,35 +422,28 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  elfStatus=0x%08lx mapStatus=0x%08lx base=0x%llx copied=%llu viewSize=0x%llx\n", q.ElfStatus,
            q.ElfMapStatus, (unsigned long long)q.ElfBase, (unsigned long long)q.ElfCopied,
            (unsigned long long)q.ElfViewSize);
-    printf("  DYNAMIC: hasInterp=%lu interpVaddr=0x%llx
-", q.DynHasInterp,
+    printf("  DYNAMIC: hasInterp=%lu interpVaddr=0x%llx\n", q.DynHasInterp,
            (unsigned long long)q.DynInterpVaddr);
-    printf("  DYNAMIC: hasDyn=%lu dynVaddr=0x%llx dynSize=0x%llx entries=%lu
-", q.DynHasDynamic,
+    printf("  DYNAMIC: hasDyn=%lu dynVaddr=0x%llx dynSize=0x%llx entries=%lu\n", q.DynHasDynamic,
            (unsigned long long)q.DynDynamicVaddr, (unsigned long long)q.DynDynamicSize,
            q.DynDynamicCount);
-    printf("  DYNAMIC: strtab=0x%llx symtab=0x%llx sonameOff=%llu needed=%lu
-",
+    printf("  DYNAMIC: strtab=0x%llx symtab=0x%llx sonameOff=%llu needed=%lu\n",
            (unsigned long long)q.DynStrTabVaddr, (unsigned long long)q.DynSymTabVaddr,
            (unsigned long long)q.DynSonameOffset, q.DynNeededCount);
-    printf("  DYNAMIC: rela=0x%llx relaSize=0x%llx relaCount=%llu
-",
+    printf("  DYNAMIC: rela=0x%llx relaSize=0x%llx relaCount=%llu\n",
            (unsigned long long)q.DynRelaVaddr, (unsigned long long)q.DynRelaSize,
            (unsigned long long)q.DynRelaCount);
-    printf("  DYNAMIC: jmprel=0x%llx jmprelSize=0x%llx jmprelCount=%llu plgot=0x%llx
-",
+    printf("  DYNAMIC: jmprel=0x%llx jmprelSize=0x%llx jmprelCount=%llu plgot=0x%llx\n",
            (unsigned long long)q.DynJmpRelVaddr, (unsigned long long)q.DynJmpRelSize,
            (unsigned long long)q.DynJmpRelCount, (unsigned long long)q.DynPltGotVaddr);
-    printf("  DYNAMIC: init=0x%llx fini=0x%llx
-", (unsigned long long)q.DynInitVaddr,
+    printf("  DYNAMIC: init=0x%llx fini=0x%llx\n", (unsigned long long)q.DynInitVaddr,
            (unsigned long long)q.DynFiniVaddr);
     {
         ULONG ni;
 
         for (ni = 0; ni < q.DynNeededCount && ni < 8; ni++)
         {
-            printf("  DYNAMIC: needed[%lu] strOff=%llu
-", ni, (unsigned long long)q.DynNeededOffsets[ni]);
+            printf("  DYNAMIC: needed[%lu] strOff=%llu\n", ni, (unsigned long long)q.DynNeededOffsets[ni]);
         }
     }
     for (i = 0; i < 4 && i < LX_ELF_MAX_SEGMENTS; i++)
