@@ -92,6 +92,37 @@ typedef struct _LX_ELF_DYNAMIC_INFO
     ULONG NeededOffsets[LX_MAX_NEEDED];
 } LX_ELF_DYNAMIC_INFO;
 
+typedef struct _LX_ELF_RELA
+{
+    ULONG64 Offset;
+    ULONG64 Info;
+    LONG64 Addend;
+} LX_ELF_RELA;
+
+#define LX_R_X86_64_NONE 0u
+#define LX_R_X86_64_64 1u
+#define LX_R_X86_64_GLOB_DAT 6u
+#define LX_R_X86_64_JUMP_SLOT 7u
+#define LX_R_X86_64_RELATIVE 8u
+#define LX_R_X86_64_DTPMOD64 16u
+#define LX_R_X86_64_IRELATIVE 37u
+#define LX_MAX_RELOCATIONS 256u
+
+typedef struct _LX_RELOC_STATS
+{
+    ULONG RelativeCount;
+    ULONG JumpSlotCount;
+    ULONG GlobDatCount;
+    ULONG UnsupportedCount;
+    ULONG WriteFailCount;
+    ULONG TotalCount;
+    ULONG64 FirstOffset;
+    ULONG64 FirstAddend;
+    ULONG64 FirstWritten;
+    ULONG64 FirstReadBack;
+    NTSTATUS FirstWriteStatus;
+} LX_RELOC_STATS;
+
 #define LX_PT_NULL 0u
 #define LX_PT_LOAD 1u
 #define LX_PT_DYNAMIC 2u
@@ -194,6 +225,17 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 DynSonameOffset;
     ULONG DynNeededCount;
     ULONG DynNeededOffsets[8];
+    ULONG RelocRelativeCount;
+    ULONG RelocJumpSlotCount;
+    ULONG RelocGlobDatCount;
+    ULONG RelocUnsupportedCount;
+    ULONG RelocWriteFailCount;
+    ULONG RelocTotalCount;
+    ULONG64 RelocFirstOffset;
+    ULONG64 RelocFirstAddend;
+    ULONG64 RelocFirstWritten;
+    ULONG64 RelocFirstReadBack;
+    ULONG RelocFirstStatus;
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -304,6 +346,8 @@ static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
+static LX_RELOC_STATS g_RelocStats;
+static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
@@ -3519,6 +3563,183 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
     Info->JmpRelCount = Info->JmpRelSize / 24;
 }
 
+static NTSTATUS LxWritePicoMemory(PEPROCESS TargetProcess, ULONG64 Address, const VOID *LocalBuffer, ULONG Length)
+{
+    SIZE_T written = 0;
+    NTSTATUS status;
+
+    if (TargetProcess == NULL || LocalBuffer == NULL || Length == 0)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    status = MmCopyVirtualMemory(PsGetCurrentProcess(), (PVOID)LocalBuffer, TargetProcess,
+                                 (PVOID)(ULONG_PTR)Address, (SIZE_T)Length, KernelMode, &written);
+
+    if (!NT_SUCCESS(status))
+    {
+        g_LastRelocKernelStatus = (ULONG)status;
+        return status;
+    }
+
+    if (written != Length)
+    {
+        g_LastRelocKernelStatus = 0xC0000001u;
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    g_LastRelocKernelStatus = 0;
+
+    return STATUS_SUCCESS;
+}
+
+static void LxApplyRelocations(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
+                               const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess, LX_RELOC_STATS *Stats)
+{
+    ULONG pass;
+    ULONG limit;
+
+    RtlZeroMemory(Stats, sizeof(LX_RELOC_STATS));
+
+    if (ImageData == NULL || ImageSize == 0 || TargetProcess == NULL || Load->MinVaddr == 0)
+    {
+        return;
+    }
+
+    limit = LX_MAX_RELOCATIONS;
+
+    for (pass = 0; pass < 2; pass++)
+    {
+        ULONG64 tableOffset;
+        ULONG64 tableSize;
+        ULONG entryCount;
+        ULONG entryIndex;
+
+        if (pass == 0)
+        {
+            if (Info->RelaVaddr == 0 || Info->RelaSize == 0)
+            {
+                continue;
+            }
+
+            tableOffset = Info->RelaVaddr - Load->MinVaddr;
+            tableSize = Info->RelaSize;
+        }
+        else
+        {
+            if (Info->JmpRelVaddr == 0 || Info->JmpRelSize == 0)
+            {
+                continue;
+            }
+
+            if (Info->JmpRelVaddr == Info->RelaVaddr && Info->JmpRelSize == Info->RelaSize)
+            {
+                continue;
+            }
+
+            tableOffset = Info->JmpRelVaddr - Load->MinVaddr;
+            tableSize = Info->JmpRelSize;
+        }
+
+        if (tableOffset >= ImageSize)
+        {
+            continue;
+        }
+
+        entryCount = (ULONG)(tableSize / sizeof(LX_ELF_RELA));
+
+        if (entryCount > limit)
+        {
+            entryCount = limit;
+        }
+
+        for (entryIndex = 0; entryIndex < entryCount; entryIndex++)
+        {
+            ULONG64 entryOffset = tableOffset + (ULONG64)entryIndex * sizeof(LX_ELF_RELA);
+            LX_ELF_RELA rela;
+            ULONG relocType;
+            ULONG64 targetAddress;
+            ULONG64 newValue;
+            NTSTATUS writeStatus;
+
+            if (entryOffset + sizeof(LX_ELF_RELA) > ImageSize)
+            {
+                break;
+            }
+
+            RtlCopyMemory(&rela, ImageData + entryOffset, sizeof(LX_ELF_RELA));
+
+            relocType = (ULONG)(rela.Info & 0xFFFFFFFFull);
+            targetAddress = Load->MinVaddr + rela.Offset;
+
+            Stats->TotalCount++;
+
+            if (relocType == LX_R_X86_64_NONE)
+            {
+                continue;
+            }
+
+            if (relocType == LX_R_X86_64_RELATIVE)
+            {
+                newValue = Load->MinVaddr + (ULONG64)rela.Addend;
+                Stats->RelativeCount++;
+            }
+            else if (relocType == LX_R_X86_64_JUMP_SLOT)
+            {
+                newValue = 0;
+                Stats->JumpSlotCount++;
+            }
+            else if (relocType == LX_R_X86_64_GLOB_DAT)
+            {
+                newValue = 0;
+                Stats->GlobDatCount++;
+            }
+            else
+            {
+                Stats->UnsupportedCount++;
+                continue;
+            }
+
+            if (Stats->FirstOffset == 0)
+            {
+                Stats->FirstOffset = rela.Offset;
+                Stats->FirstAddend = (ULONG64)rela.Addend;
+                Stats->FirstWritten = newValue;
+            }
+
+            writeStatus = LxWritePicoMemory(TargetProcess, targetAddress, &newValue, sizeof(newValue));
+
+            Stats->FirstWriteStatus = writeStatus;
+
+            if (!NT_SUCCESS(writeStatus))
+            {
+                Stats->WriteFailCount++;
+                continue;
+            }
+
+            if (Stats->FirstReadBack == 0)
+            {
+                ULONG64 readBack = 0;
+                SIZE_T copied = 0;
+                NTSTATUS readStatus;
+
+                readStatus = MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)targetAddress,
+                                                 PsGetCurrentProcess(), &readBack, sizeof(readBack),
+                                                 KernelMode, &copied);
+
+                if (NT_SUCCESS(readStatus) && copied == sizeof(readBack))
+                {
+                    Stats->FirstReadBack = readBack;
+                }
+                else
+                {
+                    Stats->FirstReadBack = 0xFFFFFFFFDEADBEEFull;
+                }
+            }
+        }
+    }
+}
+
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 {
     LX_ELF_LOAD *load;
@@ -3641,6 +3862,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
 
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
+
+    LxApplyRelocations(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_RelocStats);
 
     ZwClose(sectionHandle);
     ObDereferenceObject(targetProcess);
@@ -4076,6 +4299,17 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->DynFiniVaddr = g_ElfDynamic.FiniVaddr;
             result->DynSonameOffset = g_ElfDynamic.SonameOffset;
             result->DynNeededCount = g_ElfDynamic.NeededCount;
+            result->RelocRelativeCount = g_RelocStats.RelativeCount;
+            result->RelocJumpSlotCount = g_RelocStats.JumpSlotCount;
+            result->RelocGlobDatCount = g_RelocStats.GlobDatCount;
+            result->RelocUnsupportedCount = g_RelocStats.UnsupportedCount;
+            result->RelocWriteFailCount = g_RelocStats.WriteFailCount;
+            result->RelocTotalCount = g_RelocStats.TotalCount;
+            result->RelocFirstOffset = g_RelocStats.FirstOffset;
+            result->RelocFirstAddend = g_RelocStats.FirstAddend;
+            result->RelocFirstWritten = g_RelocStats.FirstWritten;
+            result->RelocFirstReadBack = g_RelocStats.FirstReadBack;
+            result->RelocFirstStatus = (ULONG)g_RelocStats.FirstWriteStatus;
 
             for (i = 0; i < 8; i++)
             {
