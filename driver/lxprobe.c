@@ -438,7 +438,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\tm.x64");
+        SendLoadElf(device, L"C:\\Windows\\mk.x64");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
