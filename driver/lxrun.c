@@ -2133,7 +2133,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             return arg0;
         }
         return g_BrkCurrent;
-    }
 
     case LX_SYS_MMAP:
     {
