@@ -173,6 +173,7 @@ typedef struct _LX_QUERY_RESULT
     CHAR SlotText[8][48];
     ULONG64 SeekCount;
     ULONG64 LastSeekResult;
+    ULONG PicoProcessObjectSet;
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -2667,6 +2668,7 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->SelfTestSystemRoot = g_SelfTestSystemRoot;
             result->SelfTestGlobal = g_SelfTestGlobal;
             result->SelfTestDosDevices = g_SelfTestDosDevices;
+            result->PicoProcessObjectSet = (g_PicoProcessObject != NULL) ? 1 : 0;
             result->SeekCount = g_SeekCount;
             result->LastSeekResult = g_LastSeekResult;
 
