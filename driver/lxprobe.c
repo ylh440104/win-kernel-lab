@@ -82,6 +82,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG SymTruncated;
     ULONG SymStrTabReadable;
     ULONG SymStrTabStatus;
+    ULONG64 SymNameFileOffset;
+    ULONG SymNameByte0;
+    ULONG SymNameByte1;
     ULONG64 SymSymTabVaddr;
     ULONG64 SymStrTabVaddr;
     ULONG SymNameOffsets[16];
@@ -466,6 +469,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  SYMS: nameFileOff=0x%llx byte0=0x%lx byte1=0x%lx\n",
+           (unsigned long long)q.SymNameFileOffset, q.SymNameByte0, q.SymNameByte1);
     printf("  SYMS: symtab=0x%llx strtab=0x%llx\n", (unsigned long long)q.SymSymTabVaddr,
            (unsigned long long)q.SymStrTabVaddr);
     {
