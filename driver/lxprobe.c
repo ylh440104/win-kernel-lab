@@ -116,6 +116,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ProbeMagicWritten;
     ULONG64 ProbeMagicReadback;
     ULONG ProbeMagicOk;
+    ULONG MmapCount;
+    ULONG64 LastMmapAddress;
+    ULONG64 LastMmapStatus;
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -438,7 +441,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\rl.x64");
+        SendLoadElf(device, L"C:\\Windows\\mp.x64");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
@@ -580,6 +583,9 @@ printf("  writeLen=%lu\n", q.WriteLength);
                 fflush(stderr);
             }
             printf("  picoProcessObjectSet=%lu\n", q.PicoProcessObjectSet);
+            printf("  mmapCount=%lu lastMmap=0x%llx mmapStatus=0x%llx\n", q.MmapCount,
+                   (unsigned long long)q.LastMmapAddress,
+                   (unsigned long long)q.LastMmapStatus);
             printf("  magicOk=%lu written=0x%llx readback=0x%llx\n", q.ProbeMagicOk,
                    (unsigned long long)q.ProbeMagicWritten, (unsigned long long)q.ProbeMagicReadback);
             printf("  seekCount=%llu lastSeek=0x%llx\n", (unsigned long long)q.SeekCount,
