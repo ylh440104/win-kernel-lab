@@ -264,7 +264,7 @@ static ULONG g_GetContextStatus = 0xFFFFFFFFu;
 #define LX_SYS_FSTAT 5
 #define LX_SYS_LSEEK 8
 #define LX_SYS_IOCTL 16
-#define LX_SYS_ACCESS 33
+#define LX_SYS_ACCESS 21
 #define LX_SYS_OPENAT 257
 
 #define LX_MAX_FD 64
@@ -293,6 +293,40 @@ typedef struct _LX_LINUX_DIRENT64
 #define LX_SYS_GETDENTS64 217
 #define LX_SYS_STATX 332
 #define LX_SYS_AT_FDCWD 0xFFFFFF9Cu
+
+#define LX_SYS_GETCWD 79
+#define LX_SYS_READLINK 89
+#define LX_SYS_UNAME 63
+#define LX_SYS_GETUID 102
+#define LX_SYS_GETGID 104
+#define LX_SYS_GETEUID 107
+#define LX_SYS_GETEGID 108
+#define LX_SYS_GETPID 39
+#define LX_SYS_GETPPID 110
+#define LX_SYS_GETTID 186
+#define LX_SYS_SET_ROBUST_LIST 273
+#define LX_SYS_GETTIMEOFDAY 96
+#define LX_SYS_CLOCK_GETTIME 228
+#define LX_SYS_TIME 201
+#define LX_SYS_SYSINFO 99
+#define LX_SYS_GETRUSAGE 98
+#define LX_SYS_SCHED_YIELD 24
+#define LX_SYS_RT_SIGACTION 13
+#define LX_SYS_RT_SIGPROCMASK 14
+#define LX_SYS_RT_SIGRETURN 15
+#define LX_SYS_SIGALTSTACK 131
+#define LX_SYS_FUTEX 202
+#define LX_SYS_GETRLIMIT 97
+#define LX_SYS_PRCTL 157
+#define LX_SYS_MADVISE 28
+#define LX_SYS_MPROTECT 10
+#define LX_SYS_MUNMAP 11
+#define LX_SYS_FCNTL 72
+#define LX_SYS_DUP 32
+#define LX_SYS_DUP2 33
+#define LX_SYS_PIPE 22
+#define LX_SYS_SCHED_GETAFFINITY 204
+#define LX_SYS_GETRANDOM 318
 #define LX_O_ACCMODE 3u
 #define LX_O_CREAT 0x40u
 #define LX_O_EXCL 0x80u
@@ -355,6 +389,16 @@ typedef struct _LX_LINUX_STAT
     ULONG64 ChangeNanoseconds;
     ULONG64 Reserved[3];
 } LX_LINUX_STAT;
+
+typedef struct _LX_LINUX_UTSNAME
+{
+    CHAR SysName[65];
+    CHAR NodeName[65];
+    CHAR Release[65];
+    CHAR Version[65];
+    CHAR Machine[65];
+    CHAR DomainName[65];
+} LX_LINUX_UTSNAME;
 
 static LONG64 LxWindowsTimeToUnix(LARGE_INTEGER TimeValue)
 {
@@ -650,6 +694,42 @@ static ULONG LxBuildNtPath(const char *LinuxPath, WCHAR *OutBuffer, ULONG OutCha
 
     OutBuffer[out] = 0;
     return out;
+}
+
+static NTSTATUS LxQueryExists(const WCHAR *NtPath)
+{
+    UNICODE_STRING path;
+    OBJECT_ATTRIBUTES attributes;
+    IO_STATUS_BLOCK statusBlock;
+    HANDLE handle = NULL;
+    NTSTATUS status;
+    ULONG chars = 0;
+
+    while (chars < 259 && NtPath[chars] != 0)
+    {
+        chars++;
+    }
+
+    if (chars == 0)
+    {
+        return 0xC0000033u;
+    }
+
+    path.Buffer = (PWCH)NtPath;
+    path.Length = (USHORT)(chars * sizeof(WCHAR));
+    path.MaximumLength = (USHORT)((chars + 1) * sizeof(WCHAR));
+    InitializeObjectAttributes(&attributes, &path, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
+
+    status = ZwCreateFile(&handle, FILE_READ_ATTRIBUTES | SYNCHRONIZE, &attributes, &statusBlock, NULL,
+                          FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                          FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT, NULL, 0);
+
+    if (NT_SUCCESS(status))
+    {
+        ZwClose(handle);
+    }
+
+    return status;
 }
 
 static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
@@ -1371,7 +1451,33 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     }
 
     case LX_SYS_ACCESS:
+    {
+        CHAR accessPath[260];
+        WCHAR accessNt[300];
+        ULONG accessLength;
+        NTSTATUS accessStatus;
+
+        accessLength = LxCopyLinuxPath(Parameters[1], accessPath, sizeof(accessPath));
+
+        if (accessLength == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (LxBuildNtPath(accessPath, accessNt, RTL_NUMBER_OF(accessNt)) == 0)
+        {
+            return (ULONG64)(-2);
+        }
+
+        accessStatus = LxQueryExists(accessNt);
+
+        if (!NT_SUCCESS(accessStatus))
+        {
+            return (ULONG64)(-2);
+        }
+
         return 0;
+    }
 
     case LX_SYS_LSEEK:
     {
@@ -1790,6 +1896,141 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_EXIT_GROUP:
         g_ExitCode = arg0;
         g_ExitCalled = 1;
+        return 0;
+
+    case LX_SYS_UNAME:
+    {
+        LX_LINUX_UTSNAME uts;
+        ULONG64 utsTarget = Parameters[1];
+
+        if (utsTarget == 0)
+        {
+            utsTarget = Parameters[2];
+        }
+
+        if (utsTarget == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        RtlZeroMemory(&uts, sizeof(uts));
+        RtlCopyMemory(uts.SysName, (const VOID *)"Linux", 5);
+        RtlCopyMemory(uts.NodeName, (const VOID *)"lxrun", 5);
+        RtlCopyMemory(uts.Release, (const VOID *)"5.15.0-lxrun", 12);
+        RtlCopyMemory(uts.Version, (const VOID *)"#1 SMP lxrun", 12);
+        RtlCopyMemory(uts.Machine, (const VOID *)"x86_64", 6);
+        RtlCopyMemory(uts.DomainName, (const VOID *)"(none)", 6);
+
+        __try
+        {
+            ProbeForWrite((PVOID)(ULONG_PTR)utsTarget, sizeof(uts), 4);
+            RtlCopyMemory((PVOID)(ULONG_PTR)utsTarget, &uts, sizeof(uts));
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return (ULONG64)(-14);
+        }
+
+        return 0;
+    }
+
+    case LX_SYS_GETCWD:
+    {
+        static const char Cwd[] = "/";
+        ULONG64 cwdBuffer = Parameters[1];
+        ULONG64 cwdSize = Parameters[2];
+        ULONG cwdNeeded = (ULONG)sizeof(Cwd);
+
+        if (cwdBuffer == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (cwdSize < cwdNeeded)
+        {
+            return (ULONG64)(-34);
+        }
+
+        __try
+        {
+            ProbeForWrite((PVOID)(ULONG_PTR)cwdBuffer, cwdNeeded, 1);
+            RtlCopyMemory((PVOID)(ULONG_PTR)cwdBuffer, Cwd, cwdNeeded);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return (ULONG64)(-14);
+        }
+
+        return cwdNeeded;
+    }
+
+    case LX_SYS_GETRANDOM:
+    {
+        ULONG64 randomBuffer = Parameters[1];
+        ULONG64 randomLength = Parameters[2];
+        LARGE_INTEGER counter;
+        ULONG offset;
+
+        if (randomBuffer == 0 || randomLength == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (randomLength > 256)
+        {
+            randomLength = 256;
+        }
+
+        KeQueryPerformanceCounter(&counter);
+        offset = (ULONG)(counter.QuadPart & 0xFF);
+
+        __try
+        {
+            UCHAR temp[256];
+            ULONG ri;
+
+            for (ri = 0; ri < randomLength; ri++)
+            {
+                temp[ri] = (UCHAR)((counter.QuadPart >> ((ri + offset) & 63)) & 0xFF);
+            }
+
+            ProbeForWrite((PVOID)(ULONG_PTR)randomBuffer, (ULONG)randomLength, 1);
+            RtlCopyMemory((PVOID)(ULONG_PTR)randomBuffer, temp, (ULONG)randomLength);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return (ULONG64)(-14);
+        }
+
+        return (ULONG64)randomLength;
+    }
+
+    case LX_SYS_GETUID:
+    case LX_SYS_GETEUID:
+        return 0;
+
+    case LX_SYS_GETGID:
+    case LX_SYS_GETEGID:
+        return 0;
+
+    case LX_SYS_GETPID:
+        return 1;
+
+    case LX_SYS_GETPPID:
+        return 0;
+
+    case LX_SYS_GETTID:
+        return 1;
+
+    case LX_SYS_SET_ROBUST_LIST:
+    case LX_SYS_SCHED_YIELD:
+    case LX_SYS_MADVISE:
+        return 0;
+
+    case LX_SYS_MPROTECT:
+        return 0;
+
+    case LX_SYS_MUNMAP:
         return 0;
 
     default:
