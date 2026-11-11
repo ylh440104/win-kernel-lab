@@ -212,6 +212,7 @@ typedef struct _LX_LIB_ENTRY
     ULONG SymDumped;
     ULONG LoadStatus;
     CHAR Name[LX_MAX_SYMBOL_NAME];
+    CHAR FirstSymbol[LX_MAX_SYMBOL_NAME];
 } LX_LIB_ENTRY;
 
 typedef struct _LX_LIB_STATS
@@ -4755,10 +4756,10 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                                 break;
                             }
 
-                            Entry->Name[probeIndex] = (CHAR)fileBuffer[pos];
+                            Entry->FirstSymbol[probeIndex] = (CHAR)fileBuffer[pos];
                         }
 
-                        Entry->Name[LX_MAX_SYMBOL_NAME - 1] = 0;
+                        Entry->FirstSymbol[LX_MAX_SYMBOL_NAME - 1] = 0;
                     }
 
                     UNREFERENCED_PARAMETER(charIndex);
