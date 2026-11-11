@@ -190,6 +190,7 @@ static ULONG g_OldFlag = 0xFFFFFFFFu;
 static ULONG64 g_FlagAddr = 0;
 static ULONG64 g_CreatePicoFn = 0;
 static ULONG64 g_LastPicoHandle = 0;
+static PEPROCESS g_PicoProcessObject = NULL;
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfBase = 0;
@@ -942,26 +943,49 @@ static ULONG64 LxGetDents64(ULONG Fd, PVOID UserBuffer, ULONG Count)
                 {
                     break;
                 }
-
-                __try
                 {
-                    entry->Inode = (ULONG64)((index + 1) * 2);
-                    entry->Offset = written + recordLength;
-                    entry->RecordLength = (USHORT)recordLength;
-                    entry->Type = isDirectory ? 4 : 8;
+                    LX_APC_STATE apcState;
+                    BOOLEAN ok = FALSE;
+                    BOOLEAN attached = FALSE;
 
-                    for (m = 0; m < nameLength; m++)
+                    if (g_PicoProcessObject != NULL)
                     {
-                        entry->Name[m] = (CHAR)(UCHAR)info->FileName[m];
+                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&apcState);
+                        attached = TRUE;
                     }
-                    entry->Name[nameLength] = 0;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    ExFreePoolWithTag(buffer, 'rDxL');
-                    ZwClose(directoryHandle);
-                    g_GetDentsStatus = 0xC0000005u;
-                    return (ULONG64)(-14);
+
+                    __try
+                    {
+                        entry->Inode = (ULONG64)((index + 1) * 2);
+                        entry->Offset = written + recordLength;
+                        entry->RecordLength = (USHORT)recordLength;
+                        entry->Type = isDirectory ? 4 : 8;
+
+                        for (m = 0; m < nameLength; m++)
+                        {
+                            entry->Name[m] = (CHAR)(UCHAR)info->FileName[m];
+                        }
+
+                        entry->Name[nameLength] = 0;
+                        ok = TRUE;
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        ok = FALSE;
+                    }
+
+                    if (attached)
+                    {
+                        KeUnstackDetachProcess((PVOID)&apcState);
+                    }
+
+                    if (!ok)
+                    {
+                        ExFreePoolWithTag(buffer, 'rDxL');
+                        ZwClose(directoryHandle);
+                        g_GetDentsStatus = 0xC0000005u;
+                        return (ULONG64)(-14);
+                    }
                 }
 
                 written += recordLength;
@@ -1805,6 +1829,15 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     }
 
     targetProcess = (PEPROCESS)processObject;
+
+    if (g_PicoProcessObject != NULL)
+    {
+        ObDereferenceObject(g_PicoProcessObject);
+        g_PicoProcessObject = NULL;
+    }
+
+    ObReferenceObject(targetProcess);
+    g_PicoProcessObject = targetProcess;
 
     maximumSize.QuadPart = (LONGLONG)((load->ImageSize + 0xFFF) & ~0xFFFull);
     InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
