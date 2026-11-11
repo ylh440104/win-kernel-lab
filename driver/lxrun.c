@@ -123,6 +123,42 @@ typedef struct _LX_RELOC_STATS
     NTSTATUS FirstWriteStatus;
 } LX_RELOC_STATS;
 
+typedef struct _LX_ELF_SYM
+{
+    ULONG NameOffset;
+    UCHAR Info;
+    UCHAR Other;
+    USHORT Shndx;
+    ULONG64 Value;
+    ULONG64 Size;
+} LX_ELF_SYM;
+
+#define LX_MAX_SYMBOLS 16u
+#define LX_MAX_SYMBOL_NAME 48u
+
+typedef struct _LX_SYMBOL_ENTRY
+{
+    ULONG NameOffset;
+    ULONG RelocOffset;
+    ULONG64 RelocAddend;
+    ULONG Resolved;
+    ULONG64 ResolvedAddress;
+    CHAR Name[LX_MAX_SYMBOL_NAME];
+} LX_SYMBOL_ENTRY;
+
+typedef struct _LX_SYMBOL_INFO
+{
+    ULONG TotalSyms;
+    ULONG DumpedCount;
+    ULONG Truncated;
+    ULONG StrTabReadable;
+    ULONG StrTabStatus;
+    ULONG64 StrTabVaddr;
+    ULONG64 SymTabVaddr;
+    ULONG64 SymCount;
+    LX_SYMBOL_ENTRY Entries[LX_MAX_SYMBOLS];
+} LX_SYMBOL_INFO;
+
 #define LX_PT_NULL 0u
 #define LX_PT_LOAD 1u
 #define LX_PT_DYNAMIC 2u
@@ -236,6 +272,16 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 RelocFirstWritten;
     ULONG64 RelocFirstReadBack;
     ULONG RelocFirstStatus;
+    ULONG SymTotal;
+    ULONG SymDumped;
+    ULONG SymTruncated;
+    ULONG SymStrTabReadable;
+    ULONG SymStrTabStatus;
+    ULONG64 SymSymTabVaddr;
+    ULONG64 SymStrTabVaddr;
+    ULONG SymNameOffsets[16];
+    ULONG SymRelocOffsets[16];
+    CHAR SymNames[16][48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -347,6 +393,7 @@ static ULONG64 g_ElfEntry = 0;
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
 static LX_RELOC_STATS g_RelocStats;
+static LX_SYMBOL_INFO g_SymbolInfo;
 static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
@@ -3740,6 +3787,144 @@ static void LxApplyRelocations(const UCHAR *ImageData, ULONG ImageSize, const LX
     }
 }
 
+static void LxDumpSymbols(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
+                          const LX_ELF_DYNAMIC_INFO *Info, LX_SYMBOL_INFO *Symbols)
+{
+    ULONG64 relaOffset;
+    ULONG relaCount;
+    ULONG index;
+    ULONG64 strTabOffset;
+    ULONG64 symTabOffset;
+
+    RtlZeroMemory(Symbols, sizeof(LX_SYMBOL_INFO));
+
+    if (ImageData == NULL || ImageSize == 0 || Load->MinVaddr == 0)
+    {
+        return;
+    }
+
+    Symbols->SymTabVaddr = Info->SymTabVaddr;
+    Symbols->StrTabVaddr = Info->StrTabVaddr;
+
+    if (Info->SymTabVaddr != 0 && Info->SymTabVaddr >= Load->MinVaddr)
+    {
+        symTabOffset = Info->SymTabVaddr - Load->MinVaddr;
+    }
+    else
+    {
+        symTabOffset = 0;
+    }
+
+    if (Info->StrTabVaddr != 0 && Info->StrTabVaddr >= Load->MinVaddr)
+    {
+        strTabOffset = Info->StrTabVaddr - Load->MinVaddr;
+
+        if (strTabOffset < ImageSize)
+        {
+            Symbols->StrTabReadable = 1;
+            Symbols->StrTabStatus = 0;
+        }
+        else
+        {
+            Symbols->StrTabReadable = 0;
+            Symbols->StrTabStatus = 0xC0000001u;
+        }
+    }
+    else
+    {
+        strTabOffset = 0;
+        Symbols->StrTabReadable = 0;
+        Symbols->StrTabStatus = Info->StrTabVaddr == 0 ? 0xC0000225u : 0xC0000001u;
+    }
+
+    if (Info->RelaVaddr == 0 || Info->RelaSize == 0 || Info->RelaVaddr < Load->MinVaddr)
+    {
+        return;
+    }
+
+    relaOffset = Info->RelaVaddr - Load->MinVaddr;
+
+    if (relaOffset >= ImageSize)
+    {
+        return;
+    }
+
+    relaCount = (ULONG)(Info->RelaSize / sizeof(LX_ELF_RELA));
+
+    if (relaCount > LX_MAX_SYMBOLS)
+    {
+        Symbols->Truncated = 1;
+        relaCount = LX_MAX_SYMBOLS;
+    }
+
+    Symbols->TotalSyms = (ULONG)(Info->RelaSize / sizeof(LX_ELF_RELA));
+
+    for (index = 0; index < relaCount; index++)
+    {
+        ULONG64 entryOffset = relaOffset + (ULONG64)index * sizeof(LX_ELF_RELA);
+        LX_ELF_RELA rela;
+        ULONG symIndex;
+        LX_SYMBOL_ENTRY *entry;
+
+        if (entryOffset + sizeof(LX_ELF_RELA) > ImageSize)
+        {
+            break;
+        }
+
+        RtlCopyMemory(&rela, ImageData + entryOffset, sizeof(LX_ELF_RELA));
+
+        entry = &Symbols->Entries[Symbols->DumpedCount];
+        entry->RelocOffset = (ULONG)rela.Offset;
+        entry->RelocAddend = (ULONG64)rela.Addend;
+
+        symIndex = (ULONG)(rela.Info >> 32);
+
+        if (symTabOffset != 0 && symIndex != 0)
+        {
+            ULONG64 symEntryOffset = symTabOffset + (ULONG64)symIndex * sizeof(LX_ELF_SYM);
+
+            if (symEntryOffset + sizeof(LX_ELF_SYM) <= ImageSize)
+            {
+                LX_ELF_SYM sym;
+
+                RtlCopyMemory(&sym, ImageData + symEntryOffset, sizeof(LX_ELF_SYM));
+
+                entry->NameOffset = sym.NameOffset;
+
+                if (Symbols->StrTabReadable && sym.NameOffset != 0)
+                {
+                    ULONG64 nameOffset = strTabOffset + sym.NameOffset;
+                    ULONG charIndex;
+
+                    if (nameOffset < ImageSize)
+                    {
+                        for (charIndex = 0; charIndex + 1 < LX_MAX_SYMBOL_NAME; charIndex++)
+                        {
+                            ULONG64 pos = nameOffset + charIndex;
+
+                            if (pos >= ImageSize)
+                            {
+                                break;
+                            }
+
+                            entry->Name[charIndex] = (CHAR)ImageData[pos];
+
+                            if (entry->Name[charIndex] == 0)
+                            {
+                                break;
+                            }
+                        }
+
+                        entry->Name[LX_MAX_SYMBOL_NAME - 1] = 0;
+                    }
+                }
+            }
+        }
+
+        Symbols->DumpedCount++;
+    }
+}
+
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 {
     LX_ELF_LOAD *load;
@@ -3864,6 +4049,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
 
     LxApplyRelocations(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_RelocStats);
+
+    LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
 
     ZwClose(sectionHandle);
     ObDereferenceObject(targetProcess);
@@ -4310,6 +4497,20 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->RelocFirstWritten = g_RelocStats.FirstWritten;
             result->RelocFirstReadBack = g_RelocStats.FirstReadBack;
             result->RelocFirstStatus = (ULONG)g_RelocStats.FirstWriteStatus;
+            result->SymTotal = g_SymbolInfo.TotalSyms;
+            result->SymDumped = g_SymbolInfo.DumpedCount;
+            result->SymTruncated = g_SymbolInfo.Truncated;
+            result->SymStrTabReadable = g_SymbolInfo.StrTabReadable;
+            result->SymStrTabStatus = g_SymbolInfo.StrTabStatus;
+            result->SymSymTabVaddr = g_SymbolInfo.SymTabVaddr;
+            result->SymStrTabVaddr = g_SymbolInfo.StrTabVaddr;
+
+            for (i = 0; i < 16; i++)
+            {
+                result->SymNameOffsets[i] = g_SymbolInfo.Entries[i].NameOffset;
+                result->SymRelocOffsets[i] = g_SymbolInfo.Entries[i].RelocOffset;
+                RtlCopyMemory(result->SymNames[i], g_SymbolInfo.Entries[i].Name, 48);
+            }
 
             for (i = 0; i < 8; i++)
             {
