@@ -520,10 +520,63 @@ printf("  writeLen=%lu\n", q.WriteLength);
 
                 for (di = 0; di < q.WriteLength && di < 128; di++)
                 {
-                    fprintf(stderr, " %c", (unsigned char)q.WriteBuffer[di]);
+                    unsigned char ch = (unsigned char)q.WriteBuffer[di];
+
+                    if (ch >= 32 && ch < 127)
+                    {
+                        fprintf(stderr, " %c", ch);
+                    }
+                    else
+                    {
+                        fprintf(stderr, " %02x", ch);
+                    }
                 }
 
                 fprintf(stderr, "\n");
+                fflush(stderr);
+            }
+            {
+                unsigned char *raw = (unsigned char *)q.WriteBuffer;
+                unsigned long long off = 0;
+
+                fprintf(stderr, "  DIRENT parsed:\n");
+
+                while (off + 19 <= q.WriteLength)
+                {
+                    unsigned long long ino;
+                    unsigned long long doff;
+                    unsigned short reclen;
+                    unsigned char dtype;
+                    char nm[260];
+                    int k;
+
+                    memcpy(&ino, raw + off + 0, 8);
+                    memcpy(&doff, raw + off + 8, 8);
+                    memcpy(&reclen, raw + off + 16, 2);
+                    dtype = raw[off + 18];
+
+                    if (reclen == 0 || off + reclen > q.WriteLength)
+                    {
+                        fprintf(stderr, "    [stop off=%llu reclen=%u]\n", off, reclen);
+                        break;
+                    }
+
+                    for (k = 0; k < 255 && (unsigned)(off + 19 + k) < q.WriteLength; k++)
+                    {
+                        nm[k] = (char)raw[off + 19 + k];
+
+                        if (nm[k] == 0)
+                        {
+                            break;
+                        }
+                    }
+
+                    nm[k] = 0;
+                    fprintf(stderr, "    off=%llu ino=%llu type=%u name=[%s]\n",
+                            off, ino, dtype, nm);
+                    off += reclen;
+                }
+
                 fflush(stderr);
             }
             printf("  picoProcessObjectSet=%lu\n", q.PicoProcessObjectSet);
