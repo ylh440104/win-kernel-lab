@@ -508,29 +508,19 @@ int main(void)
                    (unsigned long long)q.ReadDebug[2], (unsigned long long)q.ReadDebug[3],
                    (unsigned long long)q.ReadDebug[4], (unsigned long long)q.ReadDebug[5],
                    (unsigned long long)q.ReadDebug[6]);
-            printf("  writeLen=%lu WRITE_OUT=[%.*s]\n", q.WriteLength, q.WriteLength < 64 ? (int)q.WriteLength : 64,
-                   q.WriteBuffer);
+printf("  writeLen=%lu\n", q.WriteLength);
+            fflush(stdout);
+            fprintf(stderr, "  RAWDBG len=%lu bytes:", q.WriteLength);
             {
-                ULONG dumpLen = q.WriteLength < 128 ? q.WriteLength : 128;
                 ULONG di;
 
-                printf("  writeHex(%lu):", dumpLen);
-
-                for (di = 0; di < dumpLen; di++)
+                for (di = 0; di < q.WriteLength && di < 128; di++)
                 {
-                    printf(" %02x", (unsigned char)q.WriteBuffer[di]);
+                    fprintf(stderr, " %c", (unsigned char)q.WriteBuffer[di]);
                 }
 
-                printf("\n  writeAscii:");
-                printf(" |");
-
-                for (di = 0; di < dumpLen; di++)
-                {
-                    unsigned char ch = (unsigned char)q.WriteBuffer[di];
-                    putchar((ch >= 0x20 && ch < 0x7F) ? ch : '.');
-                }
-
-                printf("|\n");
+                fprintf(stderr, "\n");
+                fflush(stderr);
             }
             printf("  seekCount=%llu lastSeek=0x%llx\n", (unsigned long long)q.SeekCount,
                    (unsigned long long)q.LastSeekResult);
