@@ -428,6 +428,28 @@ typedef struct _LX_LINUX_UTSNAME
     CHAR DomainName[65];
 } LX_LINUX_UTSNAME;
 
+typedef struct _LX_FILE_DISPOSITION_INFORMATION
+{
+    BOOLEAN DeleteFile;
+} LX_FILE_DISPOSITION_INFORMATION;
+
+typedef struct _LX_FILE_RENAME_INFORMATION
+{
+    BOOLEAN ReplaceIfExists;
+    HANDLE RootDirectory;
+    ULONG FileNameLength;
+    WCHAR FileName[1];
+} LX_FILE_RENAME_INFORMATION;
+
+typedef struct _LX_FILE_BASIC_INFORMATION
+{
+    LARGE_INTEGER CreationTime;
+    LARGE_INTEGER LastAccessTime;
+    LARGE_INTEGER LastWriteTime;
+    LARGE_INTEGER ChangeTime;
+    ULONG FileAttributes;
+} LX_FILE_BASIC_INFORMATION;
+
 static LONG64 LxWindowsTimeToUnix(LARGE_INTEGER TimeValue)
 {
     const LONGLONG EpochDelta = 116444736000000000LL;
@@ -822,7 +844,7 @@ static NTSTATUS LxCreateDirectory(const WCHAR *NtPath, ULONG Mode)
     HANDLE handle = NULL;
     NTSTATUS status;
     ULONG chars = 0;
-    FILE_BASIC_INFORMATION basicInfo;
+    LX_FILE_BASIC_INFORMATION basicInfo;
 
     while (chars < 259 && NtPath[chars] != 0)
     {
@@ -870,7 +892,7 @@ static NTSTATUS LxRemoveEntry(const WCHAR *NtPath, BOOLEAN IsDirectory)
     HANDLE handle = NULL;
     NTSTATUS status;
     ULONG chars = 0;
-    FILE_DISPOSITION_INFORMATION disposition;
+    LX_FILE_DISPOSITION_INFORMATION disposition;
 
     while (chars < 259 && NtPath[chars] != 0)
     {
@@ -919,7 +941,7 @@ static NTSTATUS LxRenameEntry(const WCHAR *SourceNtPath, const WCHAR *TargetNtPa
     ULONG sourceChars = 0;
     ULONG targetChars = 0;
     ULONG bytesNeeded;
-    PFILE_RENAME_INFORMATION renameInfo;
+    LX_FILE_RENAME_INFORMATION *renameInfo;
 
     while (sourceChars < 259 && SourceNtPath[sourceChars] != 0)
     {
@@ -950,8 +972,8 @@ static NTSTATUS LxRenameEntry(const WCHAR *SourceNtPath, const WCHAR *TargetNtPa
         return status;
     }
 
-    bytesNeeded = sizeof(FILE_RENAME_INFORMATION) + targetChars * sizeof(WCHAR);
-    renameInfo = (PFILE_RENAME_INFORMATION)ExAllocatePoolWithTag(NonPagedPool, bytesNeeded, 'nExL');
+    bytesNeeded = sizeof(LX_FILE_RENAME_INFORMATION) + targetChars * sizeof(WCHAR);
+    renameInfo = (LX_FILE_RENAME_INFORMATION *)ExAllocatePoolWithTag(NonPagedPool, bytesNeeded, 'nExL');
 
     if (renameInfo == NULL)
     {
