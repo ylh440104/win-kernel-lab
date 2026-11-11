@@ -277,6 +277,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG SymTruncated;
     ULONG SymStrTabReadable;
     ULONG SymStrTabStatus;
+    ULONG64 SymNameFileOffset;
+    ULONG SymNameByte0;
+    ULONG SymNameByte1;
     ULONG64 SymSymTabVaddr;
     ULONG64 SymStrTabVaddr;
     ULONG SymNameOffsets[16];
@@ -3896,6 +3899,17 @@ static void LxDumpSymbols(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_
                     ULONG64 nameOffset = strTabOffset + sym.NameOffset;
                     ULONG charIndex;
 
+                    if (Symbols->DumpedCount == 1)
+                    {
+                        Symbols->NameFileOffset = nameOffset;
+                        Symbols->NameByte0 = (ULONG)ImageData[nameOffset];
+
+                        if (nameOffset + 1 < ImageSize)
+                        {
+                            Symbols->NameByte1 = (ULONG)ImageData[nameOffset + 1];
+                        }
+                    }
+
                     if (nameOffset < ImageSize)
                     {
                         for (charIndex = 0; charIndex + 1 < LX_MAX_SYMBOL_NAME; charIndex++)
@@ -4504,6 +4518,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->SymStrTabStatus = g_SymbolInfo.StrTabStatus;
             result->SymSymTabVaddr = g_SymbolInfo.SymTabVaddr;
             result->SymStrTabVaddr = g_SymbolInfo.StrTabVaddr;
+            result->SymNameFileOffset = g_SymbolInfo.NameFileOffset;
+            result->SymNameByte0 = g_SymbolInfo.NameByte0;
+            result->SymNameByte1 = g_SymbolInfo.NameByte1;
 
             for (i = 0; i < 16; i++)
             {
