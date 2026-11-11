@@ -2143,7 +2143,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 mapFd = 0;
         ULONG64 mapOffset = 0;
         ULONG desiredProtection;
-        LARGE_INTEGER sectionSize;
 
         if (mapLength == 0)
         {
@@ -2214,11 +2213,10 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             LARGE_INTEGER sectionOffset;
             NTSTATUS mapStatus;
 
-            sectionSize.QuadPart = 0;
             sectionOffset.QuadPart = (LONGLONG)mapOffset;
             InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
-            mapStatus = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &sectionAttributes, &sectionSize,
+            mapStatus = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &sectionAttributes, NULL,
                                         PAGE_READONLY, SEC_COMMIT, g_FdTable[mapFd].Handle);
 
             g_LastMmapStatus = (ULONG64)mapStatus | 0x100000000ull;
