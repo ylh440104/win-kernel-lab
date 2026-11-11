@@ -2211,13 +2211,39 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             PVOID viewBase = (PVOID)(ULONG_PTR)mapAddress;
             SIZE_T viewSize = (SIZE_T)mapLength;
             LARGE_INTEGER sectionOffset;
+            LARGE_INTEGER fileSize;
+            IO_STATUS_BLOCK sectionIosb;
+            FILE_STANDARD_INFORMATION fileInfo;
             NTSTATUS mapStatus;
+
+            __try
+            {
+                RtlZeroMemory(&fileInfo, sizeof(fileInfo));
+                mapStatus = ZwQueryInformationFile(g_FdTable[mapFd].Handle, &sectionIosb, &fileInfo,
+                                                   sizeof(fileInfo), FileStandardInformation);
+
+                g_MmapDebug[6] = (ULONG64)mapStatus;
+
+                if (NT_SUCCESS(mapStatus))
+                {
+                    fileSize.QuadPart = fileInfo.EndOfFile.QuadPart;
+                    g_MmapDebug[7] = (ULONG64)fileSize.QuadPart;
+                }
+                else
+                {
+                    fileSize.QuadPart = (LONGLONG)(mapOffset + mapLength);
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                fileSize.QuadPart = (LONGLONG)(mapOffset + mapLength);
+            }
 
             sectionOffset.QuadPart = (LONGLONG)mapOffset;
             InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
-            mapStatus = ZwCreateSection(&sectionHandle, SECTION_MAP_READ, &sectionAttributes, NULL,
-                                        PAGE_READONLY, 0, g_FdTable[mapFd].Handle);
+            mapStatus = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &sectionAttributes, &fileSize,
+                                        PAGE_READWRITE, SEC_COMMIT, g_FdTable[mapFd].Handle);
 
             g_LastMmapStatus = (ULONG64)mapStatus | 0x100000000ull;
 
