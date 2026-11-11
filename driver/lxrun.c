@@ -1408,6 +1408,24 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
         }
 
+        {
+            ULONG64 contextCount = 0;
+
+            __try
+            {
+                RtlCopyMemory(&contextCount, (PUCHAR)(ULONG_PTR)Context + 0x40, 8);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                contextCount = 0;
+            }
+
+            if (contextCount > 0 && contextCount < 0x10000)
+            {
+                length = (ULONG)contextCount;
+            }
+        }
+
         for (i = 0; i < 6; i++)
         {
             if (!haveBuffer &&
