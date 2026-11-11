@@ -182,6 +182,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LastMmapStatus;
     ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
+    UCHAR MmapBytes[16];
+    UCHAR MmapBytes[16];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -244,6 +246,7 @@ static ULONG64 g_LastMmapAddress = 0;
 static ULONG64 g_LastMmapStatus = 0;
 static ULONG64 g_MmapDebug[8];
 static ULONG64 g_MmapContext[40];
+static UCHAR g_MmapBytes[16];
 static ULONG g_MmapContextDone = 0;
 static UCHAR g_WriteBuffer[512];
 static ULONG g_WriteLength = 0;
@@ -2264,6 +2267,28 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     g_MmapCount++;
                     g_LastMmapAddress = (ULONG64)(ULONG_PTR)viewBase;
                     g_LastMmapStatus = 0;
+
+                    {
+                        UCHAR probeBytes[16];
+                        ULONG probeIndex;
+
+                        RtlZeroMemory(probeBytes, sizeof(probeBytes));
+
+                        __try
+                        {
+                            RtlCopyMemory(probeBytes, viewBase, 16);
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                            probeBytes[0] = 0xEE;
+                        }
+
+                        for (probeIndex = 0; probeIndex < 16; probeIndex++)
+                        {
+                            g_MmapBytes[probeIndex] = probeBytes[probeIndex];
+                        }
+                    }
+
                     return g_LastMmapAddress;
                 }
             }
@@ -4136,6 +4161,16 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             for (i = 0; i < 40; i++)
             {
                 result->MmapContext[i] = g_MmapContext[i];
+            }
+
+            for (i = 0; i < 16; i++)
+            {
+                result->MmapBytes[i] = g_MmapBytes[i];
+            }
+
+            for (i = 0; i < 16; i++)
+            {
+                result->MmapBytes[i] = g_MmapBytes[i];
             }
             result->SeekCount = g_SeekCount;
             result->LastSeekResult = g_LastSeekResult;
