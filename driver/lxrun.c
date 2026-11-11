@@ -2246,6 +2246,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                                         PAGE_READONLY, SEC_COMMIT, g_FdTable[mapFd].Handle);
 
             g_LastMmapStatus = (ULONG64)mapStatus | 0x100000000ull;
+            g_MmapDebug[6] = (ULONG64)mapStatus;
+            g_MmapDebug[7] = fileSize.QuadPart;
 
             if (NT_SUCCESS(mapStatus))
             {
