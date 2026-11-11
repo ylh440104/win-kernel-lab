@@ -116,6 +116,16 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LibBase[4];
     ULONG64 LibImageSize[4];
     CHAR LibNames[4][48];
+    ULONG GlobalCount;
+    ULONG GlobalCapacity;
+    ULONG GlobalProbeCount;
+    ULONG GlobalProbeHit;
+    ULONG GlobalCrossResolved;
+    ULONG GlobalCrossMiss;
+    ULONG64 GlobalLastHitAddress;
+    CHAR GlobalLastMissName[48];
+    CHAR GlobalLastHitName[48];
+    CHAR GlobalFirstNames[8][48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -495,6 +505,19 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  GLOBAL: count=%lu/%lu probe=%lu hit=%lu crossOk=%lu crossMiss=%lu\n",
+           q.GlobalCount, q.GlobalCapacity, q.GlobalProbeCount, q.GlobalProbeHit,
+           q.GlobalCrossResolved, q.GlobalCrossMiss);
+    printf("  GLOBAL: lastHit=%.48s @0x%llx lastMiss=%.48s\n",
+           q.GlobalLastHitName, (unsigned long long)q.GlobalLastHitAddress, q.GlobalLastMissName);
+    {
+        ULONG gi;
+
+        for (gi = 0; gi < q.GlobalCount && gi < 8; gi++)
+        {
+            printf("  GLOBAL: [%lu] %.48s\n", gi, q.GlobalFirstNames[gi]);
+        }
+    }
     printf("  LIBS: attempted=%lu loaded=%lu failed=%lu lastStatus=0x%08lx\n",
            q.LibAttempted, q.LibLoaded, q.LibFailed, q.LibLastStatus);
     printf("  LIBS: symbols=%lu relocs=%lu nameFail=%lu pathFail=%lu\n",
