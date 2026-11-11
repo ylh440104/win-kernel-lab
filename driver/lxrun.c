@@ -2133,15 +2133,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             return arg0;
         }
         return g_BrkCurrent;
+    }
 
     case LX_SYS_MMAP:
     {
         ULONG64 mapAddress = Parameters[1];
         ULONG64 mapLength = Parameters[2];
-        ULONG64 mapProt = Parameters[3];
-        ULONG64 mapFlags = Parameters[4];
-        ULONG64 mapFd = Parameters[5];
-        ULONG64 mapOffset = Parameters[6];
+        ULONG64 mapProt = 0;
+        ULONG64 mapFlags = 0;
+        ULONG64 mapFd = 0;
+        ULONG64 mapOffset = 0;
         ULONG desiredProtection;
         LARGE_INTEGER sectionSize;
 
@@ -2150,12 +2151,27 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             return (ULONG64)(-22);
         }
 
-        g_MmapDebug[0] = Parameters[1];
-        g_MmapDebug[1] = Parameters[2];
-        g_MmapDebug[2] = Parameters[3];
-        g_MmapDebug[3] = Parameters[4];
-        g_MmapDebug[4] = Parameters[5];
-        g_MmapDebug[5] = Parameters[6];
+        __try
+        {
+            RtlCopyMemory(&mapProt, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+            RtlCopyMemory(&mapFlags, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
+            RtlCopyMemory(&mapFd, (PUCHAR)(ULONG_PTR)Context + 0x050, 8);
+            RtlCopyMemory(&mapOffset, (PUCHAR)(ULONG_PTR)Context + 0x058, 8);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            mapProt = 0;
+            mapFlags = 0;
+            mapFd = 0;
+            mapOffset = 0;
+        }
+
+        g_MmapDebug[0] = mapAddress;
+        g_MmapDebug[1] = mapLength;
+        g_MmapDebug[2] = mapProt;
+        g_MmapDebug[3] = mapFlags;
+        g_MmapDebug[4] = mapFd;
+        g_MmapDebug[5] = mapOffset;
         g_MmapDebug[6] = (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used) ? 1 : 0;
         g_MmapDebug[7] = (mapFd < LX_MAX_FD) ? (ULONG64)(ULONG_PTR)g_FdTable[mapFd].Handle : 0;
 
