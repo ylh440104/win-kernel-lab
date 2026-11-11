@@ -228,6 +228,31 @@ typedef struct _LX_LIB_STATS
     LX_LIB_ENTRY Libs[LX_MAX_LIBS];
 } LX_LIB_STATS;
 
+#define LX_MAX_GLOBAL_SYMBOLS 128u
+
+typedef struct _LX_GLOBAL_SYMBOL
+{
+    CHAR Name[LX_MAX_SYMBOL_NAME];
+    ULONG64 Address;
+    ULONG LibIndex;
+    ULONG IsFunction;
+    ULONG Source;
+} LX_GLOBAL_SYMBOL;
+
+typedef struct _LX_GLOBAL_TABLE
+{
+    ULONG Count;
+    ULONG Capacity;
+    ULONG ProbeCount;
+    ULONG ProbeHit;
+    ULONG CrossResolved;
+    ULONG CrossMiss;
+    CHAR LastMissName[LX_MAX_SYMBOL_NAME];
+    CHAR LastHitName[LX_MAX_SYMBOL_NAME];
+    ULONG64 LastHitAddress;
+    LX_GLOBAL_SYMBOL Entries[LX_MAX_GLOBAL_SYMBOLS];
+} LX_GLOBAL_TABLE;
+
 #define LX_PT_NULL 0u
 #define LX_PT_LOAD 1u
 #define LX_PT_DYNAMIC 2u
@@ -380,6 +405,16 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LibBase[4];
     ULONG64 LibImageSize[4];
     CHAR LibNames[4][48];
+    ULONG GlobalCount;
+    ULONG GlobalCapacity;
+    ULONG GlobalProbeCount;
+    ULONG GlobalProbeHit;
+    ULONG GlobalCrossResolved;
+    ULONG GlobalCrossMiss;
+    ULONG64 GlobalLastHitAddress;
+    CHAR GlobalLastMissName[48];
+    CHAR GlobalLastHitName[48];
+    CHAR GlobalFirstNames[8][48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -494,6 +529,7 @@ static LX_RELOC_STATS g_RelocStats;
 static LX_SYMBOL_INFO g_SymbolInfo;
 static LX_STUB_STATS g_StubStats;
 static LX_LIB_STATS g_LibStats;
+static LX_GLOBAL_TABLE g_GlobalSymbols;
 static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
@@ -4147,9 +4183,136 @@ static ULONG LxBuildStubCode(ULONG SyscallNumber, UCHAR *StubBuffer)
     return size;
 }
 
+static BOOLEAN LxStringEqual(const char *Left, const char *Right)
+{
+    if (Left == NULL || Right == NULL)
+    {
+        return FALSE;
+    }
+
+    while (*Left != 0 || *Right != 0)
+    {
+        if (*Left != *Right)
+        {
+            return FALSE;
+        }
+
+        Left++;
+        Right++;
+    }
+
+    return TRUE;
+}
+
+static void LxCopyString(CHAR *Dest, const char *Src, ULONG DestSize)
+{
+    ULONG index;
+
+    if (Dest == NULL || Src == NULL || DestSize == 0)
+    {
+        return;
+    }
+
+    for (index = 0; index + 1 < DestSize; index++)
+    {
+        Dest[index] = Src[index];
+
+        if (Src[index] == 0)
+        {
+            return;
+        }
+    }
+
+    Dest[DestSize - 1] = 0;
+}
+
+static void LxGlobalTableReset(LX_GLOBAL_TABLE *Table)
+{
+    if (Table == NULL)
+    {
+        return;
+    }
+
+    RtlZeroMemory(Table, sizeof(LX_GLOBAL_TABLE));
+    Table->Capacity = LX_MAX_GLOBAL_SYMBOLS;
+}
+
+static BOOLEAN LxGlobalTableAdd(LX_GLOBAL_TABLE *Table, const char *Name, ULONG64 Address,
+                                ULONG LibIndex, ULONG IsFunction, ULONG Source)
+{
+    LX_GLOBAL_SYMBOL *slot;
+    ULONG index;
+
+    if (Table == NULL || Name == NULL || Name[0] == 0 || Address == 0)
+    {
+        return FALSE;
+    }
+
+    for (index = 0; index < Table->Count; index++)
+    {
+        if (LxStringEqual(Table->Entries[index].Name, Name))
+        {
+            return FALSE;
+        }
+    }
+
+    if (Table->Count >= Table->Capacity)
+    {
+        return FALSE;
+    }
+
+    slot = &Table->Entries[Table->Count];
+
+    LxCopyString(slot->Name, Name, LX_MAX_SYMBOL_NAME);
+    slot->Address = Address;
+    slot->LibIndex = LibIndex;
+    slot->IsFunction = IsFunction;
+    slot->Source = Source;
+
+    Table->Count++;
+
+    return TRUE;
+}
+
+static ULONG64 LxGlobalTableLookup(LX_GLOBAL_TABLE *Table, const char *Name, ULONG *OutLibIndex)
+{
+    ULONG index;
+
+    if (Table == NULL || Name == NULL || Name[0] == 0)
+    {
+        return 0;
+    }
+
+    Table->ProbeCount++;
+
+    for (index = 0; index < Table->Count; index++)
+    {
+        if (LxStringEqual(Table->Entries[index].Name, Name))
+        {
+            Table->ProbeHit++;
+            LxCopyString(Table->LastHitName, Name, LX_MAX_SYMBOL_NAME);
+            Table->LastHitAddress = Table->Entries[index].Address;
+
+            if (OutLibIndex != NULL)
+            {
+                *OutLibIndex = Table->Entries[index].LibIndex;
+            }
+
+            return Table->Entries[index].Address;
+        }
+    }
+
+    if (Table->LastMissName[0] == 0)
+    {
+        LxCopyString(Table->LastMissName, Name, LX_MAX_SYMBOL_NAME);
+    }
+
+    return 0;
+}
+
 static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
                          const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
-                         LX_SYMBOL_INFO *Symbols, LX_STUB_STATS *Stats)
+                         LX_SYMBOL_INFO *Symbols, LX_STUB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
 {
     ULONG64 stubAreaBase;
 
@@ -4222,6 +4385,39 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
             Stats->StubCount++;
 
             syscallNumber = LxLookupSyscallForSymbol(entry->Name);
+
+            if (syscallNumber == 0 && Globals != NULL)
+            {
+                ULONG hitLib = 0;
+                ULONG64 crossAddress = LxGlobalTableLookup(Globals, entry->Name, &hitLib);
+
+                if (crossAddress != 0)
+                {
+                    ULONG64 relocAddr = Load->MinVaddr + entry->RelocOffset;
+                    NTSTATUS crossStatus;
+
+                    crossStatus = LxWritePicoMemory(TargetProcess, relocAddr, &crossAddress,
+                                                    sizeof(crossAddress));
+
+                    Globals->CrossResolved++;
+
+                    if (NT_SUCCESS(crossStatus))
+                    {
+                        Stats->StubFound++;
+                        Stats->LastStubAddress = crossAddress;
+                        Stats->LastStubSyscall = 0;
+                        Stats->LastStubStatus = crossStatus;
+                        entry->Resolved = 1;
+                        entry->ResolvedAddress = crossAddress;
+                        continue;
+                    }
+
+                    Stats->StubWriteFail++;
+                    continue;
+                }
+
+                Globals->CrossMiss++;
+            }
 
             if (syscallNumber == 0)
             {
@@ -4418,7 +4614,7 @@ static ULONG64 LxTryLoadLibraryFile(const char *Name, UCHAR **OutBuffer, ULONG *
 }
 
 static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, ULONG LibIndex,
-                                   LX_LIB_ENTRY *Entry, LX_LIB_STATS *Stats)
+                                   LX_LIB_ENTRY *Entry, LX_LIB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
 {
     UCHAR *fileBuffer = NULL;
     ULONG fileLength = 0;
@@ -4743,23 +4939,48 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                         continue;
                     }
 
-                    if (symWalk == 1)
                     {
-                        ULONG probeIndex;
+                        CHAR symbolName[LX_MAX_SYMBOL_NAME];
+                        ULONG nameCharIndex;
+                        ULONG64 symbolAddress;
 
-                        for (probeIndex = 0; probeIndex + 1 < LX_MAX_SYMBOL_NAME; probeIndex++)
+                        RtlZeroMemory(symbolName, sizeof(symbolName));
+
+                        for (nameCharIndex = 0; nameCharIndex + 1 < LX_MAX_SYMBOL_NAME; nameCharIndex++)
                         {
-                            ULONG64 pos = nameOffset + probeIndex;
+                            ULONG64 pos = nameOffset + nameCharIndex;
 
                             if (pos >= fileLength || fileBuffer[pos] == 0)
                             {
                                 break;
                             }
 
-                            Entry->FirstSymbol[probeIndex] = (CHAR)fileBuffer[pos];
+                            symbolName[nameCharIndex] = (CHAR)fileBuffer[pos];
                         }
 
-                        Entry->FirstSymbol[LX_MAX_SYMBOL_NAME - 1] = 0;
+                        symbolName[LX_MAX_SYMBOL_NAME - 1] = 0;
+
+                        if (symWalk == 1)
+                        {
+                            LxCopyString(Entry->FirstSymbol, symbolName, LX_MAX_SYMBOL_NAME);
+                        }
+
+                        symbolAddress = 0;
+
+                        if (sym.Value != 0)
+                        {
+                            symbolAddress = Entry->BaseAddress + sym.Value;
+                        }
+
+                        if (symbolAddress == 0 && sym.NameOffset != 0)
+                        {
+                            symbolAddress = Entry->BaseAddress;
+                        }
+
+                        if (Globals != NULL && symbolName[0] != 0 && symbolAddress != 0)
+                        {
+                            LxGlobalTableAdd(Globals, symbolName, symbolAddress, LibIndex, 1, 1);
+                        }
                     }
 
                     UNREFERENCED_PARAMETER(charIndex);
@@ -4780,7 +5001,8 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
 }
 
 static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
-                                  const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess, LX_LIB_STATS *Stats)
+                                  const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
+                                  LX_LIB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
 {
     ULONG neededIndex;
 
@@ -4844,7 +5066,7 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
             continue;
         }
 
-        LxLoadSharedLibrary(libName, TargetProcess, neededIndex, &Stats->Libs[neededIndex], Stats);
+        LxLoadSharedLibrary(libName, TargetProcess, neededIndex, &Stats->Libs[neededIndex], Stats, Globals);
     }
 }
 
@@ -4975,9 +5197,13 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 
     LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
 
-    LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats);
+    LxGlobalTableReset(&g_GlobalSymbols);
 
-    LxLoadNeededLibraries(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_LibStats);
+    LxLoadNeededLibraries(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_LibStats,
+                          &g_GlobalSymbols);
+
+    LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats,
+                 &g_GlobalSymbols);
 
     ZwClose(sectionHandle);
     ObDereferenceObject(targetProcess);
@@ -5464,6 +5690,21 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
                 RtlCopyMemory(result->LibNames[i], g_LibStats.Libs[i].Name, 48);
+            }
+
+            result->GlobalCount = g_GlobalSymbols.Count;
+            result->GlobalCapacity = g_GlobalSymbols.Capacity;
+            result->GlobalProbeCount = g_GlobalSymbols.ProbeCount;
+            result->GlobalProbeHit = g_GlobalSymbols.ProbeHit;
+            result->GlobalCrossResolved = g_GlobalSymbols.CrossResolved;
+            result->GlobalCrossMiss = g_GlobalSymbols.CrossMiss;
+            result->GlobalLastHitAddress = g_GlobalSymbols.LastHitAddress;
+            RtlCopyMemory(result->GlobalLastMissName, g_GlobalSymbols.LastMissName, 48);
+            RtlCopyMemory(result->GlobalLastHitName, g_GlobalSymbols.LastHitName, 48);
+
+            for (i = 0; i < 8; i++)
+            {
+                RtlCopyMemory(result->GlobalFirstNames[i], g_GlobalSymbols.Entries[i].Name, 48);
             }
 
             for (i = 0; i < 16; i++)
