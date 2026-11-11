@@ -183,7 +183,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
-    UCHAR MmapBytes[16];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -4168,10 +4167,6 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
                 result->MmapBytes[i] = g_MmapBytes[i];
             }
 
-            for (i = 0; i < 16; i++)
-            {
-                result->MmapBytes[i] = g_MmapBytes[i];
-            }
             result->SeekCount = g_SeekCount;
             result->LastSeekResult = g_LastSeekResult;
 
