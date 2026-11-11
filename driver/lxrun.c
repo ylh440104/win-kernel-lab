@@ -4094,20 +4094,51 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
     RtlZeroMemory(Stats, sizeof(LX_STUB_STATS));
 
     if (ImageData == NULL || Load == NULL || Symbols == NULL || TargetProcess == NULL ||
-        Load->MinVaddr == 0 || ImageSize == 0)
+        Load->MinVaddr == 0 || ImageSize == 0 || g_LastPicoHandle == 0)
     {
         return;
     }
 
-    stubAreaBase = g_PoolBase + LX_POOL_SIZE - LX_STUB_AREA_SIZE;
+    HANDLE stubSectionHandle = NULL;
+    OBJECT_ATTRIBUTES stubAttributes;
+    LARGE_INTEGER stubSectionSize;
+    PVOID stubViewBase;
+    SIZE_T stubViewSize;
+    NTSTATUS stubMapStatus;
 
-    if (g_PoolBase == 0 || stubAreaBase < g_PoolBase)
-    {
-        Stats->LastStubStatus = 0xC0000001u;
-        return;
-    }
+    stubAreaBase = (Load->MinVaddr + (ULONG64)ImageSize + 0xFFFull) & ~0xFFFull;
 
+    stubSectionSize.QuadPart = LX_STUB_AREA_SIZE;
+    InitializeObjectAttributes(&stubAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    stubMapStatus = ZwCreateSection(&stubSectionHandle, SECTION_ALL_ACCESS, &stubAttributes, &stubSectionSize,
+                                    PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL);
+
+    Stats->LastStubStatus = stubMapStatus;
     Stats->StubAreaBase = stubAreaBase;
+
+    if (!NT_SUCCESS(stubMapStatus))
+    {
+        return;
+    }
+
+    stubViewBase = (PVOID)(ULONG_PTR)stubAreaBase;
+    stubViewSize = 0;
+
+    stubMapStatus = ZwMapViewOfSection(stubSectionHandle, (HANDLE)g_LastPicoHandle, &stubViewBase, 0, 0,
+                                       NULL, &stubViewSize, ViewUnmap, 0, PAGE_EXECUTE_READWRITE);
+
+    ZwClose(stubSectionHandle);
+
+    Stats->LastStubStatus = stubMapStatus;
+    Stats->StubAreaBase = (ULONG64)(ULONG_PTR)stubViewBase;
+
+    if (!NT_SUCCESS(stubMapStatus))
+    {
+        return;
+    }
+
+    stubAreaBase = (ULONG64)(ULONG_PTR)stubViewBase;
 
     {
         ULONG index;
