@@ -181,6 +181,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
     ULONG64 MmapDebug[8];
+    ULONG64 MmapContext[40];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -242,6 +243,8 @@ static ULONG g_MmapCount = 0;
 static ULONG64 g_LastMmapAddress = 0;
 static ULONG64 g_LastMmapStatus = 0;
 static ULONG64 g_MmapDebug[8];
+static ULONG64 g_MmapContext[40];
+static ULONG g_MmapContextDone = 0;
 static UCHAR g_WriteBuffer[512];
 static ULONG g_WriteLength = 0;
 static ULONG g_WriteCount = 0;
@@ -2155,6 +2158,29 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_MmapDebug[5] = Parameters[6];
         g_MmapDebug[6] = (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used) ? 1 : 0;
         g_MmapDebug[7] = (mapFd < LX_MAX_FD) ? (ULONG64)(ULONG_PTR)g_FdTable[mapFd].Handle : 0;
+
+        if (g_MmapContextDone == 0)
+        {
+            ULONG ctxIndex;
+
+            g_MmapContextDone = 1;
+
+            for (ctxIndex = 0; ctxIndex < 40; ctxIndex++)
+            {
+                PUCHAR ctxSlot = (PUCHAR)(ULONG_PTR)Context + ctxIndex * 8;
+
+                g_MmapContext[ctxIndex] = 0xDEADBEEFDEADBEEFull;
+
+                __try
+                {
+                    RtlCopyMemory(&g_MmapContext[ctxIndex], ctxSlot, 8);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    g_MmapContext[ctxIndex] = 0xBAD0BAD0BAD0BAD0ull;
+                }
+            }
+        }
 
         mapLength = (mapLength + 0xFFF) & ~0xFFFull;
 
@@ -4085,6 +4111,11 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             for (i = 0; i < 8; i++)
             {
                 result->MmapDebug[i] = g_MmapDebug[i];
+            }
+
+            for (i = 0; i < 40; i++)
+            {
+                result->MmapContext[i] = g_MmapContext[i];
             }
             result->SeekCount = g_SeekCount;
             result->LastSeekResult = g_LastSeekResult;
