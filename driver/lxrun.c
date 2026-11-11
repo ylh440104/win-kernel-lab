@@ -184,6 +184,49 @@ typedef struct _LX_STUB_STATS
     CHAR LastStubName[LX_MAX_SYMBOL_NAME];
 } LX_STUB_STATS;
 
+#define LX_MAX_LIBS 4u
+#define LX_LIB_BASE_STEP 0x4000000ull
+#define LX_LIB_IMAGE_MAX 0x800000u
+#define LX_MAX_LIB_SYMBOLS 64u
+
+typedef struct _LX_LIB_ENTRY
+{
+    ULONG Used;
+    ULONG Index;
+    ULONG64 BaseAddress;
+    ULONG64 ImageSize;
+    ULONG64 EntryPoint;
+    ULONG64 PhdrAddress;
+    ULONG PhdrCount;
+    ULONG PhdrEntrySize;
+    ULONG HasDynamic;
+    ULONG64 DynamicOffset;
+    ULONG64 DynamicSize;
+    ULONG64 StrTabVaddr;
+    ULONG64 SymTabVaddr;
+    ULONG NeededCount;
+    ULONG NeededOffsets[LX_MAX_NEEDED];
+    ULONG RelaCount;
+    ULONG RelaApplied;
+    ULONG SymCount;
+    ULONG SymDumped;
+    ULONG LoadStatus;
+    CHAR Name[LX_MAX_SYMBOL_NAME];
+} LX_LIB_ENTRY;
+
+typedef struct _LX_LIB_STATS
+{
+    ULONG Attempted;
+    ULONG Loaded;
+    ULONG Failed;
+    ULONG LastStatus;
+    ULONG TotalSymbols;
+    ULONG TotalRelocs;
+    ULONG NameResolveFail;
+    ULONG PathResolveFail;
+    LX_LIB_ENTRY Libs[LX_MAX_LIBS];
+} LX_LIB_STATS;
+
 #define LX_PT_NULL 0u
 #define LX_PT_LOAD 1u
 #define LX_PT_DYNAMIC 2u
@@ -319,6 +362,23 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 StubLastSyscall;
     ULONG StubLastStatus;
     CHAR StubLastName[48];
+    ULONG LibAttempted;
+    ULONG LibLoaded;
+    ULONG LibFailed;
+    ULONG LibLastStatus;
+    ULONG LibTotalSymbols;
+    ULONG LibTotalRelocs;
+    ULONG LibNameResolveFail;
+    ULONG LibPathResolveFail;
+    ULONG LibUsed[4];
+    ULONG LibStatus[4];
+    ULONG LibSymCount[4];
+    ULONG LibRelaCount[4];
+    ULONG LibRelaApplied[4];
+    ULONG LibNeededCount[4];
+    ULONG64 LibBase[4];
+    ULONG64 LibImageSize[4];
+    CHAR LibNames[4][48];
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -432,6 +492,7 @@ static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
 static LX_RELOC_STATS g_RelocStats;
 static LX_SYMBOL_INFO g_SymbolInfo;
 static LX_STUB_STATS g_StubStats;
+static LX_LIB_STATS g_LibStats;
 static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
@@ -4150,7 +4211,6 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
             UCHAR stubCode[LX_STUB_SIZE];
             ULONG stubLength;
             ULONG64 stubAddress;
-            ULONG64 relaType;
             NTSTATUS writeStatus;
 
             if (entry->Name[0] == 0)
@@ -4216,10 +4276,574 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
 
                 entry->Resolved = 1;
                 entry->ResolvedAddress = stubAddress;
-
-                UNREFERENCED_PARAMETER(relaType);
             }
         }
+    }
+}
+
+static ULONG64 LxTryLoadLibraryFile(const char *Name, UCHAR **OutBuffer, ULONG *OutLength, ULONG *OutStatus)
+{
+    static const char *Prefixes[] = {
+        "/lib/x86_64-linux-gnu/",
+        "/usr/lib/x86_64-linux-gnu/",
+        "/lib64/",
+        "/usr/lib64/",
+        "/lib/",
+        "/usr/lib/"
+    };
+    CHAR fullPath[192];
+    ULONG prefixIndex;
+    ULONG nameLength = 0;
+
+    *OutBuffer = NULL;
+    *OutLength = 0;
+    *OutStatus = 0xC0000001u;
+
+    if (Name == NULL || Name[0] == 0)
+    {
+        return 0;
+    }
+
+    while (Name[nameLength] != 0 && nameLength + 1 < LX_MAX_SYMBOL_NAME)
+    {
+        nameLength++;
+    }
+
+    if (nameLength == 0)
+    {
+        return 0;
+    }
+
+    for (prefixIndex = 0; prefixIndex < RTL_NUMBER_OF(Prefixes); prefixIndex++)
+    {
+        const char *prefix = Prefixes[prefixIndex];
+        ULONG prefixLength = 0;
+        ULONG buildIndex;
+        WCHAR ntPath[260];
+        UNICODE_STRING uniPath;
+        OBJECT_ATTRIBUTES attributes;
+        IO_STATUS_BLOCK statusBlock;
+        HANDLE fileHandle = NULL;
+        FILE_STANDARD_INFORMATION fileInfo;
+        NTSTATUS status;
+        ULONG pathLength;
+
+        while (prefix[prefixLength] != 0)
+        {
+            prefixLength++;
+        }
+
+        if (prefixLength + nameLength + 1 >= RTL_NUMBER_OF(fullPath))
+        {
+            continue;
+        }
+
+        for (buildIndex = 0; buildIndex < prefixLength; buildIndex++)
+        {
+            fullPath[buildIndex] = prefix[buildIndex];
+        }
+
+        for (buildIndex = 0; buildIndex < nameLength; buildIndex++)
+        {
+            fullPath[prefixLength + buildIndex] = Name[buildIndex];
+        }
+
+        fullPath[prefixLength + nameLength] = 0;
+
+        pathLength = LxBuildNtPath(fullPath, ntPath, RTL_NUMBER_OF(ntPath));
+
+        if (pathLength == 0)
+        {
+            continue;
+        }
+
+        RtlInitUnicodeString(&uniPath, ntPath);
+        InitializeObjectAttributes(&attributes, &uniPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+        status = ZwOpenFile(&fileHandle, GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE, &attributes,
+                            &statusBlock, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT);
+
+        *OutStatus = (ULONG)status;
+
+        if (!NT_SUCCESS(status))
+        {
+            continue;
+        }
+
+        RtlZeroMemory(&fileInfo, sizeof(fileInfo));
+
+        status = ZwQueryInformationFile(fileHandle, &statusBlock, &fileInfo, sizeof(fileInfo),
+                                        FileStandardInformation);
+
+        if (!NT_SUCCESS(status) || fileInfo.EndOfFile.QuadPart <= 0 ||
+            fileInfo.EndOfFile.QuadPart > (LONGLONG)LX_LIB_IMAGE_MAX)
+        {
+            *OutStatus = NT_SUCCESS(status) ? 0xC0000023u : (ULONG)status;
+            ZwClose(fileHandle);
+            continue;
+        }
+
+        {
+            ULONG length = (ULONG)fileInfo.EndOfFile.QuadPart;
+            PVOID buffer = ExAllocatePool2(POOL_FLAG_NON_PAGED, length, 'bilL');
+
+            if (buffer == NULL)
+            {
+                *OutStatus = 0xC000009Au;
+                ZwClose(fileHandle);
+                continue;
+            }
+
+            status = ZwReadFile(fileHandle, NULL, NULL, NULL, &statusBlock, buffer, length, NULL, NULL);
+
+            ZwClose(fileHandle);
+            *OutStatus = (ULONG)status;
+
+            if (!NT_SUCCESS(status))
+            {
+                ExFreePool(buffer);
+                continue;
+            }
+
+            *OutBuffer = (UCHAR *)buffer;
+            *OutLength = (ULONG)statusBlock.Information;
+
+            return (ULONG64)*OutLength;
+        }
+    }
+
+    return 0;
+}
+
+static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, ULONG LibIndex,
+                                   LX_LIB_ENTRY *Entry, LX_LIB_STATS *Stats)
+{
+    UCHAR *fileBuffer = NULL;
+    ULONG fileLength = 0;
+    ULONG openStatus = 0;
+    ULONG64 baseAddress;
+    ULONG64 minVaddr = 0xFFFFFFFFFFFFFFFFull;
+    ULONG64 maxEnd = 0;
+    ULONG phdrIndex;
+    HANDLE sectionHandle = NULL;
+    OBJECT_ATTRIBUTES sectionAttributes;
+    LARGE_INTEGER sectionSize;
+    PVOID viewBase;
+    SIZE_T viewSize = 0;
+    NTSTATUS status;
+    ULONG copiedName;
+
+    RtlZeroMemory(Entry, sizeof(LX_LIB_ENTRY));
+
+    for (copiedName = 0; copiedName + 1 < LX_MAX_SYMBOL_NAME && Name[copiedName] != 0; copiedName++)
+    {
+        Entry->Name[copiedName] = Name[copiedName];
+    }
+
+    Entry->Index = LibIndex;
+    Entry->Used = 1;
+
+    Stats->Attempted++;
+
+    if (LxTryLoadLibraryFile(Name, &fileBuffer, &fileLength, &openStatus) == 0 || fileBuffer == NULL)
+    {
+        Entry->LoadStatus = openStatus == 0 ? 0xC0000001u : openStatus;
+        Stats->Failed++;
+        Stats->LastStatus = Entry->LoadStatus;
+        Stats->PathResolveFail++;
+        return 0;
+    }
+
+    if (fileLength < sizeof(LX_ELF_LOAD) || fileLength < 64)
+    {
+        Entry->LoadStatus = 0xC000000Du;
+        Stats->Failed++;
+        Stats->LastStatus = Entry->LoadStatus;
+        ExFreePool(fileBuffer);
+        return 0;
+    }
+
+    if (fileBuffer[0] != 0x7F || fileBuffer[1] != 'E' || fileBuffer[2] != 'L' || fileBuffer[3] != 'F')
+    {
+        Entry->LoadStatus = 0xC000007Bu;
+        Stats->Failed++;
+        Stats->LastStatus = Entry->LoadStatus;
+        ExFreePool(fileBuffer);
+        return 0;
+    }
+
+    {
+        ULONG64 phoff = *(ULONG64 *)(fileBuffer + 32);
+        USHORT phnum = *(USHORT *)(fileBuffer + 56);
+        USHORT phentsize = *(USHORT *)(fileBuffer + 54);
+
+        Entry->PhdrCount = phnum;
+        Entry->PhdrEntrySize = phentsize;
+
+        if (phoff + (ULONG64)phnum * phentsize > fileLength || phentsize < 56 || phnum == 0)
+        {
+            Entry->LoadStatus = 0xC000000Du;
+            Stats->Failed++;
+            Stats->LastStatus = Entry->LoadStatus;
+            ExFreePool(fileBuffer);
+            return 0;
+        }
+
+        for (phdrIndex = 0; phdrIndex < phnum && phdrIndex < 64; phdrIndex++)
+        {
+            const UCHAR *phdr = fileBuffer + phoff + (ULONG64)phdrIndex * phentsize;
+            ULONG pType = *(ULONG *)(phdr + 0);
+            ULONG64 pVaddr = *(ULONG64 *)(phdr + 16);
+            ULONG64 pMemsz = *(ULONG64 *)(phdr + 40);
+
+            if (pType != LX_PT_LOAD)
+            {
+                continue;
+            }
+
+            if ((pVaddr & ~0xFFFull) < minVaddr)
+            {
+                minVaddr = pVaddr & ~0xFFFull;
+            }
+
+            if (((pVaddr + pMemsz) + 0xFFFull) > maxEnd)
+            {
+                maxEnd = ((pVaddr + pMemsz) + 0xFFFull) & ~0xFFFull;
+            }
+        }
+
+        if (minVaddr == 0xFFFFFFFFFFFFFFFFull || maxEnd <= minVaddr)
+        {
+            Entry->LoadStatus = 0xC000000Du;
+            Stats->Failed++;
+            Stats->LastStatus = Entry->LoadStatus;
+            ExFreePool(fileBuffer);
+            return 0;
+        }
+
+        Entry->ImageSize = maxEnd - minVaddr;
+
+        {
+            const UCHAR *firstLoad = NULL;
+            ULONG scanIndex;
+
+            for (scanIndex = 0; scanIndex < phnum && scanIndex < 64; scanIndex++)
+            {
+                const UCHAR *phdr = fileBuffer + phoff + (ULONG64)scanIndex * phentsize;
+
+                if (*(ULONG *)(phdr + 0) == LX_PT_LOAD)
+                {
+                    firstLoad = phdr;
+                    break;
+                }
+            }
+
+            if (firstLoad != NULL)
+            {
+                ULONG64 firstOffset = *(ULONG64 *)(firstLoad + 8);
+                Entry->PhdrAddress = minVaddr + (phoff - firstOffset);
+            }
+        }
+    }
+
+    baseAddress = 0x10000000ull + (ULONG64)LibIndex * LX_LIB_BASE_STEP;
+    Entry->BaseAddress = baseAddress;
+
+    sectionSize.QuadPart = (LONGLONG)((Entry->ImageSize + 0xFFFull) & ~0xFFFull);
+    InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    status = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &sectionAttributes, &sectionSize,
+                             PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL);
+
+    Entry->LoadStatus = (ULONG)status;
+
+    if (!NT_SUCCESS(status))
+    {
+        Stats->Failed++;
+        Stats->LastStatus = Entry->LoadStatus;
+        ExFreePool(fileBuffer);
+        return 0;
+    }
+
+    viewBase = (PVOID)(ULONG_PTR)baseAddress;
+    viewSize = 0;
+
+    status = ZwMapViewOfSection(sectionHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0, 0, NULL, &viewSize,
+                                ViewUnmap, 0, PAGE_EXECUTE_READWRITE);
+
+    ZwClose(sectionHandle);
+
+    Entry->LoadStatus = (ULONG)status;
+
+    if (!NT_SUCCESS(status))
+    {
+        Stats->Failed++;
+        Stats->LastStatus = Entry->LoadStatus;
+        ExFreePool(fileBuffer);
+        return 0;
+    }
+
+    Entry->BaseAddress = (ULONG64)(ULONG_PTR)viewBase;
+
+    {
+        ULONG64 phoff = *(ULONG64 *)(fileBuffer + 32);
+        USHORT phnum = *(USHORT *)(fileBuffer + 56);
+        USHORT phentsize = *(USHORT *)(fileBuffer + 54);
+        ULONG segIndex;
+
+        for (segIndex = 0; segIndex < phnum && segIndex < 64; segIndex++)
+        {
+            const UCHAR *phdr = fileBuffer + phoff + (ULONG64)segIndex * phentsize;
+            ULONG pType = *(ULONG *)(phdr + 0);
+            ULONG64 pOffset;
+            ULONG64 pVaddr;
+            ULONG64 pFilesz;
+            ULONG64 destAddress;
+            SIZE_T copied = 0;
+            NTSTATUS copyStatus;
+
+            if (pType != LX_PT_LOAD)
+            {
+                continue;
+            }
+
+            pOffset = *(ULONG64 *)(phdr + 8);
+            pVaddr = *(ULONG64 *)(phdr + 16);
+            pFilesz = *(ULONG64 *)(phdr + 32);
+
+            if (pFilesz == 0 || pOffset + pFilesz > fileLength)
+            {
+                continue;
+            }
+
+            destAddress = Entry->BaseAddress + (pVaddr - minVaddr);
+
+            copyStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), fileBuffer + pOffset, TargetProcess,
+                                             (PVOID)(ULONG_PTR)destAddress, (SIZE_T)pFilesz, KernelMode, &copied);
+
+            if (!NT_SUCCESS(copyStatus))
+            {
+                Entry->LoadStatus = (ULONG)copyStatus;
+                Stats->Failed++;
+                Stats->LastStatus = Entry->LoadStatus;
+                ExFreePool(fileBuffer);
+                return 0;
+            }
+        }
+    }
+
+    {
+        LX_ELF_LOAD libLoad;
+
+        RtlZeroMemory(&libLoad, sizeof(libLoad));
+        libLoad.ImageSize = Entry->ImageSize;
+        libLoad.MinVaddr = minVaddr;
+        libLoad.DataSize = fileLength;
+        libLoad.PhdrAddress = Entry->PhdrAddress;
+        libLoad.PhdrCount = Entry->PhdrCount;
+        libLoad.PhdrEntrySize = Entry->PhdrEntrySize;
+        libLoad.SegmentCount = 1;
+
+        {
+            LX_ELF_DYNAMIC_INFO libDynamic;
+
+            LxParseElfDynamic(fileBuffer, fileLength, &libLoad, &libDynamic);
+
+            Entry->HasDynamic = libDynamic.HasDynamic;
+            Entry->DynamicOffset = libDynamic.DynamicOffset;
+            Entry->DynamicSize = libDynamic.DynamicSize;
+            Entry->StrTabVaddr = libDynamic.StrTabVaddr;
+            Entry->SymTabVaddr = libDynamic.SymTabVaddr;
+            Entry->NeededCount = libDynamic.NeededCount;
+            Entry->RelaCount = libDynamic.RelaCount;
+
+            for (phdrIndex = 0; phdrIndex < libDynamic.NeededCount && phdrIndex < LX_MAX_NEEDED; phdrIndex++)
+            {
+                Entry->NeededOffsets[phdrIndex] = libDynamic.NeededOffsets[phdrIndex];
+            }
+
+            if (libDynamic.HasDynamic && libDynamic.RelaSize > 0 && libDynamic.RelaVaddr != 0)
+            {
+                ULONG64 relaOffset = libDynamic.RelaVaddr - minVaddr;
+                ULONG relaCount = (ULONG)(libDynamic.RelaSize / sizeof(LX_ELF_RELA));
+                ULONG relaIndex;
+
+                if (relaCount > LX_MAX_RELOCATIONS)
+                {
+                    relaCount = LX_MAX_RELOCATIONS;
+                }
+
+                for (relaIndex = 0; relaIndex < relaCount; relaIndex++)
+                {
+                    ULONG64 entryOffset = relaOffset + (ULONG64)relaIndex * sizeof(LX_ELF_RELA);
+                    LX_ELF_RELA rela;
+                    ULONG relocType;
+                    ULONG64 destAddress;
+                    ULONG64 newValue;
+                    SIZE_T written = 0;
+
+                    if (entryOffset + sizeof(LX_ELF_RELA) > fileLength)
+                    {
+                        break;
+                    }
+
+                    RtlCopyMemory(&rela, fileBuffer + entryOffset, sizeof(LX_ELF_RELA));
+
+                    relocType = (ULONG)(rela.Info & 0xFFFFFFFFull);
+
+                    if (relocType != LX_R_X86_64_RELATIVE)
+                    {
+                        continue;
+                    }
+
+                    destAddress = Entry->BaseAddress + rela.Offset;
+                    newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
+
+                    if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &newValue, TargetProcess,
+                                                       (PVOID)(ULONG_PTR)destAddress, sizeof(newValue),
+                                                       KernelMode, &written)))
+                    {
+                        Entry->RelaApplied++;
+                        Stats->TotalRelocs++;
+                    }
+                }
+            }
+
+            if (libDynamic.SymTabVaddr != 0 && libDynamic.StrTabVaddr != 0)
+            {
+                ULONG64 symTabOffset = libDynamic.SymTabVaddr - minVaddr;
+                ULONG64 strTabOffset = libDynamic.StrTabVaddr - minVaddr;
+                ULONG symWalk;
+
+                for (symWalk = 1; symWalk < LX_MAX_LIB_SYMBOLS; symWalk++)
+                {
+                    ULONG64 symEntryOffset = symTabOffset + (ULONG64)symWalk * sizeof(LX_ELF_SYM);
+                    LX_ELF_SYM sym;
+                    ULONG64 nameOffset;
+                    ULONG charIndex;
+
+                    if (symEntryOffset + sizeof(LX_ELF_SYM) > fileLength)
+                    {
+                        break;
+                    }
+
+                    RtlCopyMemory(&sym, fileBuffer + symEntryOffset, sizeof(LX_ELF_SYM));
+
+                    if (sym.NameOffset == 0)
+                    {
+                        continue;
+                    }
+
+                    nameOffset = strTabOffset + sym.NameOffset;
+
+                    if (nameOffset >= fileLength)
+                    {
+                        continue;
+                    }
+
+                    if (symWalk == 1)
+                    {
+                        ULONG probeIndex;
+
+                        for (probeIndex = 0; probeIndex + 1 < LX_MAX_SYMBOL_NAME; probeIndex++)
+                        {
+                            ULONG64 pos = nameOffset + probeIndex;
+
+                            if (pos >= fileLength || fileBuffer[pos] == 0)
+                            {
+                                break;
+                            }
+
+                            Entry->Name[probeIndex] = (CHAR)fileBuffer[pos];
+                        }
+
+                        Entry->Name[LX_MAX_SYMBOL_NAME - 1] = 0;
+                    }
+
+                    UNREFERENCED_PARAMETER(charIndex);
+                    Entry->SymCount++;
+                    Stats->TotalSymbols++;
+                }
+            }
+        }
+    }
+
+    Entry->LoadStatus = 0;
+    Stats->Loaded++;
+    Stats->LastStatus = 0;
+
+    ExFreePool(fileBuffer);
+
+    return Entry->BaseAddress;
+}
+
+static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
+                                  const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess, LX_LIB_STATS *Stats)
+{
+    ULONG neededIndex;
+
+    RtlZeroMemory(Stats, sizeof(LX_LIB_STATS));
+
+    if (ImageData == NULL || Load == NULL || Info == NULL || TargetProcess == NULL)
+    {
+        return;
+    }
+
+    if (Info->NeededCount == 0 || Info->StrTabVaddr == 0)
+    {
+        return;
+    }
+
+    for (neededIndex = 0; neededIndex < Info->NeededCount && neededIndex < LX_MAX_LIBS; neededIndex++)
+    {
+        ULONG64 nameOffset = Info->StrTabVaddr + Info->NeededOffsets[neededIndex];
+        ULONG64 strTabOffset;
+        CHAR libName[LX_MAX_SYMBOL_NAME];
+        ULONG charIndex;
+
+        RtlZeroMemory(libName, sizeof(libName));
+
+        if (nameOffset < Load->MinVaddr)
+        {
+            Stats->NameResolveFail++;
+            continue;
+        }
+
+        strTabOffset = nameOffset - Load->MinVaddr;
+
+        if (strTabOffset >= ImageSize)
+        {
+            Stats->NameResolveFail++;
+            continue;
+        }
+
+        for (charIndex = 0; charIndex + 1 < LX_MAX_SYMBOL_NAME; charIndex++)
+        {
+            ULONG64 pos = strTabOffset + charIndex;
+
+            if (pos >= ImageSize)
+            {
+                break;
+            }
+
+            libName[charIndex] = (CHAR)ImageData[pos];
+
+            if (libName[charIndex] == 0)
+            {
+                break;
+            }
+        }
+
+        libName[LX_MAX_SYMBOL_NAME - 1] = 0;
+
+        if (libName[0] == 0)
+        {
+            Stats->NameResolveFail++;
+            continue;
+        }
+
+        LxLoadSharedLibrary(libName, TargetProcess, neededIndex, &Stats->Libs[neededIndex], Stats);
     }
 }
 
@@ -4351,6 +4975,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
 
     LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats);
+
+    LxLoadNeededLibraries(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_LibStats);
 
     ZwClose(sectionHandle);
     ObDereferenceObject(targetProcess);
@@ -4817,6 +5443,27 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StubLastSyscall = g_StubStats.LastStubSyscall;
             result->StubLastStatus = (ULONG)g_StubStats.LastStubStatus;
             RtlCopyMemory(result->StubLastName, g_StubStats.LastStubName, 48);
+            result->LibAttempted = g_LibStats.Attempted;
+            result->LibLoaded = g_LibStats.Loaded;
+            result->LibFailed = g_LibStats.Failed;
+            result->LibLastStatus = g_LibStats.LastStatus;
+            result->LibTotalSymbols = g_LibStats.TotalSymbols;
+            result->LibTotalRelocs = g_LibStats.TotalRelocs;
+            result->LibNameResolveFail = g_LibStats.NameResolveFail;
+            result->LibPathResolveFail = g_LibStats.PathResolveFail;
+
+            for (i = 0; i < 4; i++)
+            {
+                result->LibUsed[i] = g_LibStats.Libs[i].Used;
+                result->LibStatus[i] = g_LibStats.Libs[i].LoadStatus;
+                result->LibSymCount[i] = g_LibStats.Libs[i].SymCount;
+                result->LibRelaCount[i] = g_LibStats.Libs[i].RelaCount;
+                result->LibRelaApplied[i] = g_LibStats.Libs[i].RelaApplied;
+                result->LibNeededCount[i] = g_LibStats.Libs[i].NeededCount;
+                result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
+                result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
+                RtlCopyMemory(result->LibNames[i], g_LibStats.Libs[i].Name, 48);
+            }
 
             for (i = 0; i < 16; i++)
             {
