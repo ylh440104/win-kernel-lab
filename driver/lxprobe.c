@@ -113,6 +113,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 SeekCount;
     ULONG64 LastSeekResult;
     ULONG PicoProcessObjectSet;
+    ULONG64 ProbeMagicWritten;
+    ULONG64 ProbeMagicReadback;
+    ULONG ProbeMagicOk;
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -524,6 +527,8 @@ printf("  writeLen=%lu\n", q.WriteLength);
                 fflush(stderr);
             }
             printf("  picoProcessObjectSet=%lu\n", q.PicoProcessObjectSet);
+            printf("  magicOk=%lu written=0x%llx readback=0x%llx\n", q.ProbeMagicOk,
+                   (unsigned long long)q.ProbeMagicWritten, (unsigned long long)q.ProbeMagicReadback);
             printf("  seekCount=%llu lastSeek=0x%llx\n", (unsigned long long)q.SeekCount,
                    (unsigned long long)q.LastSeekResult);
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
