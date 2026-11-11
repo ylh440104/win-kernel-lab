@@ -180,6 +180,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG MmapCount;
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
+    ULONG64 MmapDebug[8];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -240,6 +241,7 @@ static ULONG64 g_MmapCurrent = 0;
 static ULONG g_MmapCount = 0;
 static ULONG64 g_LastMmapAddress = 0;
 static ULONG64 g_LastMmapStatus = 0;
+static ULONG64 g_MmapDebug[8];
 static UCHAR g_WriteBuffer[512];
 static ULONG g_WriteLength = 0;
 static ULONG g_WriteCount = 0;
@@ -2144,6 +2146,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             return (ULONG64)(-22);
         }
+
+        g_MmapDebug[0] = Parameters[1];
+        g_MmapDebug[1] = Parameters[2];
+        g_MmapDebug[2] = Parameters[3];
+        g_MmapDebug[3] = Parameters[4];
+        g_MmapDebug[4] = Parameters[5];
+        g_MmapDebug[5] = Parameters[6];
+        g_MmapDebug[6] = (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used) ? 1 : 0;
+        g_MmapDebug[7] = (mapFd < LX_MAX_FD) ? (ULONG64)(ULONG_PTR)g_FdTable[mapFd].Handle : 0;
 
         mapLength = (mapLength + 0xFFF) & ~0xFFFull;
 
@@ -4070,6 +4081,11 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->MmapCount = g_MmapCount;
             result->LastMmapAddress = g_LastMmapAddress;
             result->LastMmapStatus = g_LastMmapStatus;
+
+            for (i = 0; i < 8; i++)
+            {
+                result->MmapDebug[i] = g_MmapDebug[i];
+            }
             result->SeekCount = g_SeekCount;
             result->LastSeekResult = g_LastSeekResult;
 
