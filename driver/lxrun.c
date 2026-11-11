@@ -2217,7 +2217,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
             mapStatus = ZwCreateSection(&sectionHandle, SECTION_MAP_READ, &sectionAttributes, NULL,
-                                        PAGE_READONLY, SEC_COMMIT, g_FdTable[mapFd].Handle);
+                                        PAGE_READONLY, 0, g_FdTable[mapFd].Handle);
 
             g_LastMmapStatus = (ULONG64)mapStatus | 0x100000000ull;
 
