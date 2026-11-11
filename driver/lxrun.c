@@ -2131,13 +2131,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_MMAP:
     {
-        ULONG64 mapLength = Parameters[1];
-        ULONG64 mapProt = Parameters[2];
-        ULONG64 mapFlags = Parameters[3];
-        ULONG64 mapFd = Parameters[4];
-        ULONG64 mapOffset = Parameters[5];
-        ULONG64 mapAddress;
-        ULONG64 wantedAddress;
+        ULONG64 mapAddress = Parameters[1];
+        ULONG64 mapLength = Parameters[2];
+        ULONG64 mapProt = Parameters[3];
+        ULONG64 mapFlags = Parameters[4];
+        ULONG64 mapFd = Parameters[5];
+        ULONG64 mapOffset = Parameters[6];
         ULONG desiredProtection;
         LARGE_INTEGER sectionSize;
 
@@ -2161,13 +2160,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             desiredProtection = PAGE_READONLY;
         }
 
-        wantedAddress = Parameters[6];
-
-        if ((mapFlags & 0x10u) == 0 && wantedAddress != 0)
+        if ((mapFlags & 0x10u) == 0)
         {
-            mapAddress = wantedAddress & ~0xFFFull;
+            mapAddress = mapAddress & ~0xFFFull;
         }
-        else
+
+        if (mapAddress == 0)
         {
             mapAddress = g_MmapCurrent;
         }
