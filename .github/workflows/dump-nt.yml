@@ -1,0 +1,38 @@
+name: dump ntoskrnl pico
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: verify ntoskrnl
+        shell: cmd
+        run: |
+          dir C:\Windows\System32\ntoskrnl.exe
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: dump pico related bytes
+        shell: cmd
+        run: |
+          python tools\dumpnt.py C:\Windows\System32\ntoskrnl.exe
+
+      - name: dump raw slice to file
+        shell: cmd
+        run: |
+          python -c "import shutil;shutil.copy(r'C:\Windows\System32\ntoskrnl.exe','ntoskrnl.exe')"
+          dir ntoskrnl.exe
+
+      - name: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ntoskrnl
+          path: ntoskrnl.exe
+          retention-days: 1
