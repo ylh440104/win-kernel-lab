@@ -1397,8 +1397,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
                 __try
                 {
-                    ProbeForRead(slot, 8, 8);
-                    value = *(ULONG64 *)slot;
+                    RtlCopyMemory(&value, slot, 8);
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
                 {
