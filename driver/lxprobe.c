@@ -112,6 +112,7 @@ typedef struct _LX_QUERY_RESULT
     CHAR SlotText[8][48];
     ULONG64 SeekCount;
     ULONG64 LastSeekResult;
+    ULONG PicoProcessObjectSet;
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -522,6 +523,7 @@ printf("  writeLen=%lu\n", q.WriteLength);
                 fprintf(stderr, "\n");
                 fflush(stderr);
             }
+            printf("  picoProcessObjectSet=%lu\n", q.PicoProcessObjectSet);
             printf("  seekCount=%llu lastSeek=0x%llx\n", (unsigned long long)q.SeekCount,
                    (unsigned long long)q.LastSeekResult);
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
