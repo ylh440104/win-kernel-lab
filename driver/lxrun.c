@@ -1601,71 +1601,100 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     g_WriteLength = 0;
                 }
 
-__try
                 {
                     ULONG appendAt = g_WriteLength;
-                    PUCHAR source = (PUCHAR)(ULONG_PTR)buffer;
-                    BOOLEAN fromCache = FALSE;
+                    BOOLEAN stored = FALSE;
 
                     if (appendAt + length >= sizeof(g_WriteBuffer) - 1)
                     {
                         appendAt = 0;
                     }
 
-                    if (g_DirCacheUserAddr != 0 && g_DirCacheLen != 0 &&
-                        (ULONG64)(ULONG_PTR)buffer >= g_DirCacheUserAddr &&
-                        (ULONG64)(ULONG_PTR)buffer < g_DirCacheUserAddr + g_DirCacheLen)
+                    do
                     {
-                        ULONG offset = (ULONG)((ULONG64)(ULONG_PTR)buffer - g_DirCacheUserAddr);
-
-                        if (offset + length > g_DirCacheLen)
+                        if (length > 0 && length <= 256 && g_PicoProcessObject != NULL)
                         {
-                            length = (ULONG)(g_DirCacheLen - offset);
-                        }
+                            CHAR staging[256];
+                            LX_APC_STATE pullApc;
+                            BOOLEAN pulled = FALSE;
 
-                        source = (PUCHAR)g_DirCache + offset;
-                        fromCache = TRUE;
-                    }
+                            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&pullApc);
 
-                    if (!fromCache && length > 0)
-                    {
-                        ULONG i2;
-                        BOOLEAN anyNonZero = FALSE;
-                        PUCHAR probe = (PUCHAR)(ULONG_PTR)buffer;
-
-                        for (i2 = 0; i2 < length; i2++)
-                        {
-                            if (probe[i2] != 0)
+                            __try
                             {
-                                anyNonZero = TRUE;
-                                break;
+                                ProbeForRead((PVOID)(ULONG_PTR)buffer, length, 1);
+                                RtlCopyMemory(staging, (PVOID)(ULONG_PTR)buffer, length);
+                                pulled = TRUE;
+                            }
+                            __except (EXCEPTION_EXECUTE_HANDLER)
+                            {
+                                pulled = FALSE;
+                            }
+
+                            KeUnstackDetachProcess((PVOID)&pullApc);
+
+                            if (pulled)
+                            {
+                                ULONG pi;
+                                ULONG nonZero = 0;
+
+                                for (pi = 0; pi < length; pi++)
+                                {
+                                    if ((UCHAR)staging[pi] != 0)
+                                    {
+                                        nonZero++;
+                                    }
+                                }
+
+                                if (nonZero > 0)
+                                {
+                                    RtlCopyMemory(g_WriteBuffer + appendAt, staging, length);
+                                    appendAt += length;
+                                    g_WriteBuffer[appendAt] = 0;
+                                    g_WriteLength = appendAt;
+                                    g_WriteCount++;
+                                    g_WriteFd = (ULONG)fd;
+                                    g_WriteStatus = 0xC0000002u;
+                                    stored = TRUE;
+                                    break;
+                                }
                             }
                         }
 
-                        if (!anyNonZero && g_DirCacheUserAddr != 0 && g_DirCacheLen > 0)
+                        if (g_DirCacheUserAddr != 0 && g_DirCacheLen != 0 &&
+                            (ULONG64)(ULONG_PTR)buffer >= g_DirCacheUserAddr &&
+                            (ULONG64)(ULONG_PTR)buffer < g_DirCacheUserAddr + g_DirCacheLen)
                         {
                             ULONG offset = (ULONG)((ULONG64)(ULONG_PTR)buffer - g_DirCacheUserAddr);
+                            ULONG take = length;
 
-                            if ((ULONG64)(ULONG_PTR)buffer >= g_DirCacheUserAddr &&
-                                offset + length <= g_DirCacheLen)
+                            if (offset + take > g_DirCacheLen)
                             {
-                                source = (PUCHAR)g_DirCache + offset;
-                                fromCache = TRUE;
+                                take = (ULONG)(g_DirCacheLen - offset);
                             }
-                        }
-                    }
 
-                    RtlCopyMemory(g_WriteBuffer + appendAt, source, length);
-                    appendAt += length;
-                    g_WriteBuffer[appendAt] = 0;
-                    g_WriteLength = appendAt;
-                    g_WriteCount++;
-                    g_WriteFd = (ULONG)fd;
-                    g_WriteStatus = fromCache ? 0xC0000001u : 0;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_WriteStatus = 0xE0000004u;
+                            RtlCopyMemory(g_WriteBuffer + appendAt, g_DirCache + offset, take);
+                            appendAt += take;
+                            g_WriteBuffer[appendAt] = 0;
+                            g_WriteLength = appendAt;
+                            g_WriteCount++;
+                            g_WriteFd = (ULONG)fd;
+                            g_WriteStatus = 0xC0000001u;
+                            stored = TRUE;
+                            break;
+                        }
+
+                        RtlCopyMemory(g_WriteBuffer + appendAt, (PVOID)(ULONG_PTR)buffer, length);
+                        appendAt += length;
+                        g_WriteBuffer[appendAt] = 0;
+                        g_WriteLength = appendAt;
+                        g_WriteCount++;
+                        g_WriteFd = (ULONG)fd;
+                        g_WriteStatus = 0;
+                        stored = TRUE;
+                    } while (0);
+
+                    UNREFERENCED_PARAMETER(stored);
                 }
             }
         }
