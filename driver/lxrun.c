@@ -321,6 +321,9 @@ static ULONG64 g_GetDentsBytes = 0;
 static ULONG64 g_ProbeMagicWritten = 0;
 static ULONG64 g_ProbeMagicReadback = 0;
 static ULONG g_ProbeMagicOk = 0;
+static CHAR g_DirCache[4096];
+static ULONG g_DirCacheLen = 0;
+static ULONG64 g_DirCacheUserAddr = 0;
 static CHAR g_LastDirectoryPath[260];
 static ULONG64 g_StatCount = 0;
 static ULONG64 g_LastStatStatus = 0xFFFFFFFFu;
@@ -1016,7 +1019,6 @@ g_GetDentsCount++;
                         entry->Offset = written + recordLength;
                         entry->RecordLength = (USHORT)recordLength;
                         entry->Type = isDirectory ? 4 : 8;
-
                         for (m = 0; m < nameLength; m++)
                         {
                             entry->Name[m] = (CHAR)(UCHAR)info->FileName[m];
@@ -1029,10 +1031,24 @@ g_GetDentsCount++;
                     {
                         ok = FALSE;
                     }
-
                     if (attached)
                     {
                         KeUnstackDetachProcess((PVOID)&apcState);
+                    }
+
+                    if (written + recordLength <= sizeof(g_DirCache))
+                    {
+                        RtlZeroMemory(g_DirCache + written, recordLength);
+                        g_DirCache[written + 0] = (CHAR)(((index + 1) * 2) & 0xFF);
+                        g_DirCache[written + 8] = (CHAR)((written + recordLength) & 0xFF);
+                        g_DirCache[written + 16] = (CHAR)(recordLength & 0xFF);
+                        g_DirCache[written + 17] = (CHAR)((recordLength >> 8) & 0xFF);
+                        g_DirCache[written + 18] = (CHAR)(isDirectory ? 4 : 8);
+                        for (m = 0; m < nameLength && (19 + m) < (LONG)recordLength; m++)
+                        {
+                            g_DirCache[written + 19 + m] = (CHAR)(UCHAR)info->FileName[m];
+                        }
+                        g_DirCacheLen = written + recordLength;
                     }
 
                     if (!ok)
@@ -1063,6 +1079,7 @@ g_GetDentsCount++;
 
     g_GetDentsStatus = (ULONG)status;
     g_GetDentsBytes = written;
+    g_DirCacheUserAddr = (ULONG64)(ULONG_PTR)UserBuffer;
 
     if (written == 0 && !NT_SUCCESS(status))
     {
@@ -1571,22 +1588,67 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     g_WriteLength = 0;
                 }
 
-                __try
+__try
                 {
                     ULONG appendAt = g_WriteLength;
+                    PUCHAR source = (PUCHAR)(ULONG_PTR)buffer;
+                    BOOLEAN fromCache = FALSE;
 
                     if (appendAt + length >= sizeof(g_WriteBuffer) - 1)
                     {
                         appendAt = 0;
                     }
 
-                    RtlCopyMemory(g_WriteBuffer + appendAt, (PVOID)(ULONG_PTR)buffer, length);
+                    if (g_DirCacheUserAddr != 0 && g_DirCacheLen != 0 &&
+                        (ULONG64)(ULONG_PTR)buffer >= g_DirCacheUserAddr &&
+                        (ULONG64)(ULONG_PTR)buffer < g_DirCacheUserAddr + g_DirCacheLen)
+                    {
+                        ULONG offset = (ULONG)((ULONG64)(ULONG_PTR)buffer - g_DirCacheUserAddr);
+
+                        if (offset + length > g_DirCacheLen)
+                        {
+                            length = (ULONG)(g_DirCacheLen - offset);
+                        }
+
+                        source = (PUCHAR)g_DirCache + offset;
+                        fromCache = TRUE;
+                    }
+
+                    if (!fromCache && length > 0)
+                    {
+                        ULONG i2;
+                        BOOLEAN anyNonZero = FALSE;
+                        PUCHAR probe = (PUCHAR)(ULONG_PTR)buffer;
+
+                        for (i2 = 0; i2 < length; i2++)
+                        {
+                            if (probe[i2] != 0)
+                            {
+                                anyNonZero = TRUE;
+                                break;
+                            }
+                        }
+
+                        if (!anyNonZero && g_DirCacheUserAddr != 0 && g_DirCacheLen > 0)
+                        {
+                            ULONG offset = (ULONG)((ULONG64)(ULONG_PTR)buffer - g_DirCacheUserAddr);
+
+                            if ((ULONG64)(ULONG_PTR)buffer >= g_DirCacheUserAddr &&
+                                offset + length <= g_DirCacheLen)
+                            {
+                                source = (PUCHAR)g_DirCache + offset;
+                                fromCache = TRUE;
+                            }
+                        }
+                    }
+
+                    RtlCopyMemory(g_WriteBuffer + appendAt, source, length);
                     appendAt += length;
                     g_WriteBuffer[appendAt] = 0;
                     g_WriteLength = appendAt;
                     g_WriteCount++;
                     g_WriteFd = (ULONG)fd;
-                    g_WriteStatus = 0;
+                    g_WriteStatus = fromCache ? 0xC0000001u : 0;
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
                 {
