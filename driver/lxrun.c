@@ -174,6 +174,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 SeekCount;
     ULONG64 LastSeekResult;
     ULONG PicoProcessObjectSet;
+    ULONG64 ProbeMagicWritten;
+    ULONG64 ProbeMagicReadback;
+    ULONG ProbeMagicOk;
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -315,6 +318,9 @@ static ULONG64 g_LastSeekResult = 0;
 static ULONG g_GetDentsCount = 0;
 static ULONG64 g_GetDentsStatus = 0xFFFFFFFFu;
 static ULONG64 g_GetDentsBytes = 0;
+static ULONG64 g_ProbeMagicWritten = 0;
+static ULONG64 g_ProbeMagicReadback = 0;
+static ULONG g_ProbeMagicOk = 0;
 static CHAR g_LastDirectoryPath[260];
 static ULONG64 g_StatCount = 0;
 static ULONG64 g_LastStatStatus = 0xFFFFFFFFu;
@@ -856,8 +862,57 @@ static ULONG64 LxGetDents64(ULONG Fd, PVOID UserBuffer, ULONG Count)
     {
         return (ULONG64)(-9);
     }
+g_GetDentsCount++;
 
-    g_GetDentsCount++;
+    if (g_ProbeMagicWritten == 0)
+    {
+        ULONG64 magic = 0x4C5852554E4B3031ull;
+        ULONG64 readback = 0;
+        LX_APC_STATE probeApc;
+        BOOLEAN probeAttached = FALSE;
+
+        g_ProbeMagicWritten = magic;
+        g_ProbeMagicReadback = 0;
+        g_ProbeMagicOk = 0;
+
+        if (g_PicoProcessObject != NULL)
+        {
+            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&probeApc);
+            probeAttached = TRUE;
+        }
+
+        __try
+        {
+            RtlCopyMemory(UserBuffer, &magic, 8);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            g_ProbeMagicOk = 0xEE;
+        }
+
+        __try
+        {
+            RtlCopyMemory(&readback, UserBuffer, 8);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            readback = 0;
+            g_ProbeMagicOk = 0xEF;
+        }
+
+        if (probeAttached)
+        {
+            KeUnstackDetachProcess((PVOID)&probeApc);
+        }
+
+        g_ProbeMagicReadback = readback;
+
+        if (g_ProbeMagicOk == 0)
+        {
+            g_ProbeMagicOk = (readback == magic) ? 1 : 2;
+        }
+    }
+
 
     if (!g_FdTable[Fd].IsDirectory)
     {
@@ -2669,6 +2724,9 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->SelfTestGlobal = g_SelfTestGlobal;
             result->SelfTestDosDevices = g_SelfTestDosDevices;
             result->PicoProcessObjectSet = (g_PicoProcessObject != NULL) ? 1 : 0;
+            result->ProbeMagicWritten = g_ProbeMagicWritten;
+            result->ProbeMagicReadback = g_ProbeMagicReadback;
+            result->ProbeMagicOk = g_ProbeMagicOk;
             result->SeekCount = g_SeekCount;
             result->LastSeekResult = g_LastSeekResult;
 
