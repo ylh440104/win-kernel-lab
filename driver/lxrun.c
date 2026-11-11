@@ -1565,7 +1565,21 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
             if (g_WriteCount < 64)
             {
-                RtlZeroMemory(g_WriteBuffer, sizeof(g_WriteBuffer));
+                if (g_WriteCount == 0)
+                {
+                    RtlZeroMemory(g_WriteBuffer, sizeof(g_WriteBuffer));
+                    g_WriteLength = 0;
+                }
+
+                {
+                LX_APC_STATE writeApc;
+                BOOLEAN writeAttached = FALSE;
+
+                if (g_PicoProcessObject != NULL)
+                {
+                    KeStackAttachProcess(g_PicoProcessObject, (PVOID)&writeApc);
+                    writeAttached = TRUE;
+                }
 
                 __try
                 {
@@ -1587,6 +1601,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 __except (EXCEPTION_EXECUTE_HANDLER)
                 {
                     g_WriteStatus = 0xE0000004u;
+                }
+
+                if (writeAttached)
+                {
+                    KeUnstackDetachProcess((PVOID)&writeApc);
                 }
             }
         }
