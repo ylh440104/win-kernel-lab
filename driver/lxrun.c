@@ -2209,7 +2209,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             HANDLE sectionHandle = NULL;
             OBJECT_ATTRIBUTES sectionAttributes;
             PVOID viewBase = (PVOID)(ULONG_PTR)mapAddress;
-            SIZE_T viewSize = (SIZE_T)mapLength;
+            SIZE_T viewSize = 0;
             LARGE_INTEGER sectionOffset;
             LARGE_INTEGER fileSize;
             IO_STATUS_BLOCK sectionIosb;
