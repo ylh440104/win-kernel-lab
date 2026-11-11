@@ -1894,6 +1894,46 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             values[i] = Parameters[i];
         }
 
+        for (i = 0; i < 6; i++)
+        {
+            if (!haveFd && (values[i] == 1 || values[i] == 2))
+            {
+                fd = values[i];
+                haveFd = TRUE;
+            }
+        }
+
+        buffer = values[2];
+        haveBuffer = TRUE;
+
+        __try
+        {
+            ULONG64 writeCount = 0;
+
+            RtlCopyMemory(&writeCount, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+
+            g_WriteDebug[7] = writeCount;
+
+            length = writeCount;
+
+            if (length == 0 || length > 0x100000)
+            {
+                length = 4096;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            length = 4096;
+        }
+
+        g_WriteDebug[0] = values[0];
+        g_WriteDebug[1] = values[1];
+        g_WriteDebug[2] = values[2];
+        g_WriteDebug[3] = buffer;
+        g_WriteDebug[4] = fd;
+        g_WriteDebug[5] = values[3];
+        g_WriteDebug[6] = length;
+
         if (g_WriteContextDone == 0)
         {
             g_WriteContextDone = 1;
@@ -1916,7 +1956,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
         }
 
-        {
+{
             ULONG64 contextCount = 0;
 
             __try
@@ -1928,54 +1968,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 contextCount = 0;
             }
 
-            if (contextCount > 0 && contextCount < 0x10000)
-            {
-                length = (ULONG)contextCount;
-            }
+            UNREFERENCED_PARAMETER(contextCount);
         }
-
-        for (i = 0; i < 6; i++)
-        {
-            if (!haveBuffer &&
-                ((values[i] >= 0x400000ull && values[i] < 0x520000ull) ||
-                 (values[i] >= 0x7fff00000000ull && values[i] < 0x800000000000ull) ||
-                 (values[i] >= 0x100000000ull && values[i] < 0x101000000ull)))
-            {
-                buffer = values[i];
-                haveBuffer = TRUE;
-            }
-        }
-
-        for (i = 0; i < 6; i++)
-        {
-            if (!haveFd && (values[i] == 1 || values[i] == 2))
-            {
-                fd = values[i];
-                haveFd = TRUE;
-            }
-        }
-
-        for (i = 0; i < 6; i++)
-        {
-            if (length == 0 && values[i] > 0 && values[i] < 0x10000 && values[i] != fd)
-            {
-                length = (ULONG)values[i];
-            }
-        }
-
-        if (values[4] > 0 && values[4] < 0x10000 && values[4] != fd && values[4] != buffer)
-        {
-            length = (ULONG)values[4];
-        }
-
-        g_WriteDebug[0] = values[0];
-        g_WriteDebug[1] = values[1];
-        g_WriteDebug[2] = values[2];
-        g_WriteDebug[3] = buffer;
-        g_WriteDebug[4] = values[3];
-        g_WriteDebug[5] = values[4];
-        g_WriteDebug[6] = values[5];
-        g_WriteDebug[7] = (ULONG64)length;
 
         if (haveBuffer && length == 0)
         {
