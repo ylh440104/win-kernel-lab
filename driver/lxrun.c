@@ -163,7 +163,7 @@ typedef struct _LX_SYMBOL_INFO
 } LX_SYMBOL_INFO;
 
 #define LX_STUB_SIZE 16u
-#define LX_STUB_AREA_SIZE 0x1000u
+#define LX_STUB_AREA_SIZE 0x10000u
 
 typedef struct _LX_SYMBOL_BINDING
 {
@@ -4106,7 +4106,7 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
     SIZE_T stubViewSize;
     NTSTATUS stubMapStatus;
 
-    stubAreaBase = (Load->MinVaddr + (ULONG64)ImageSize + 0xFFFull) & ~0xFFFull;
+    stubAreaBase = (Load->MinVaddr + 0x100000ull) & ~0xFFFFFull;
 
     stubSectionSize.QuadPart = LX_STUB_AREA_SIZE;
     InitializeObjectAttributes(&stubAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
