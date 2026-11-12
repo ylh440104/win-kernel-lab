@@ -443,6 +443,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 BuiltinAreaBase;
     ULONG64 BuiltinLastAddress;
     CHAR BuiltinLastName[48];
+    ULONG64 BrkAddress;
+    ULONG BrkInitStatus;
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
