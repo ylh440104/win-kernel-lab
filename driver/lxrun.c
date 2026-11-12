@@ -4605,7 +4605,7 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
     }
 }
 
-#define LX_BUILTIN_COUNT 14u
+#define LX_BUILTIN_COUNT 12u
 
 typedef struct _LX_BUILTIN_DEF
 {
