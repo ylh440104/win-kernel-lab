@@ -2515,30 +2515,41 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     }
 
     case LX_SYS_BRK:
-        g_BrkDebug[0] = Parameters[0];
-        g_BrkDebug[1] = Parameters[1];
-        g_BrkDebug[2] = Parameters[2];
-        g_BrkDebug[3] = Context;
-        g_BrkDebug[4] = arg0;
-        g_BrkDebug[5] = 0;
-        g_BrkDumpCount++;
-
-        if (arg0 == 0)
         {
+            ULONG64 brkTarget = arg1;
+
+            if (brkTarget == 0 && arg0 != 0)
+            {
+                brkTarget = arg0;
+            }
+
+            g_BrkDebug[0] = arg0;
+            g_BrkDebug[1] = arg1;
+            g_BrkDebug[2] = Parameters[2];
+            g_BrkDebug[3] = Context;
+            g_BrkDebug[4] = brkTarget;
+            g_BrkDebug[5] = 0;
+            g_BrkDumpCount++;
+
+            if (brkTarget == 0)
+            {
+                return g_BrkCurrent;
+            }
+
+            if (brkTarget >= g_PoolBase && brkTarget <= g_PoolBase + LX_POOL_SIZE)
+            {
+                g_BrkCurrent = brkTarget;
+                g_BrkOk++;
+                return brkTarget;
+            }
+
+            g_BrkReject++;
+            if (g_BrkLastBad == 0)
+            {
+                g_BrkLastBad = brkTarget;
+            }
             return g_BrkCurrent;
         }
-        if (arg0 >= g_PoolBase && arg0 <= g_PoolBase + LX_POOL_SIZE)
-        {
-            g_BrkCurrent = arg0;
-            g_BrkOk++;
-            return arg0;
-        }
-        g_BrkReject++;
-        if (g_BrkLastBad == 0)
-        {
-            g_BrkLastBad = arg0;
-        }
-        return g_BrkCurrent;
 
     case LX_SYS_MMAP:
     {
