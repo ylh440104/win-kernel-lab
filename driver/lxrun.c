@@ -135,7 +135,7 @@ typedef struct _LX_ELF_SYM
     ULONG64 Size;
 } LX_ELF_SYM;
 
-#define LX_MAX_SYMBOLS 16u
+#define LX_MAX_SYMBOLS 32u
 #define LX_MAX_SYMBOL_NAME 48u
 
 typedef struct _LX_SYMBOL_ENTRY
@@ -407,9 +407,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG SymNameByte1;
     ULONG64 SymSymTabVaddr;
     ULONG64 SymStrTabVaddr;
-    ULONG SymNameOffsets[16];
-    ULONG SymRelocOffsets[16];
-    CHAR SymNames[16][48];
+    ULONG SymNameOffsets[32];
+    ULONG SymRelocOffsets[32];
+    CHAR SymNames[32][48];
     ULONG StubCount;
     ULONG StubFound;
     ULONG StubUnknown;
@@ -6375,7 +6375,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->BrkLastBad = g_BrkLastBad;
             result->BrkInitStatus = g_BuiltinStats.BrkInitStatus;
 
-            for (i = 0; i < 16; i++)
+            for (i = 0; i < 32; i++)
             {
                 result->SymNameOffsets[i] = g_SymbolInfo.Entries[i].NameOffset;
                 result->SymRelocOffsets[i] = g_SymbolInfo.Entries[i].RelocOffset;
