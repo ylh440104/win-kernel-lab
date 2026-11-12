@@ -4375,6 +4375,14 @@ static BOOLEAN LxGlobalTableAdd(LX_GLOBAL_TABLE *Table, const char *Name, ULONG6
     {
         if (LxStringEqual(Table->Entries[index].Name, Name))
         {
+            if (Source >= 2 && Table->Entries[index].Source < 2)
+            {
+                Table->Entries[index].Address = Address;
+                Table->Entries[index].LibIndex = LibIndex;
+                Table->Entries[index].IsFunction = IsFunction;
+                Table->Entries[index].Source = Source;
+                return TRUE;
+            }
             return FALSE;
         }
     }
