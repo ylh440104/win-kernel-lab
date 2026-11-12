@@ -2497,9 +2497,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_BrkDebug[0] = Parameters[0];
         g_BrkDebug[1] = Parameters[1];
         g_BrkDebug[2] = Parameters[2];
-        g_BrkDebug[3] = Parameters[3];
-        g_BrkDebug[4] = Context;
-        g_BrkDebug[5] = arg0;
+        g_BrkDebug[3] = Context;
+        g_BrkDebug[4] = arg0;
+        g_BrkDebug[5] = 0;
         g_BrkDumpCount++;
 
         if (arg0 == 0)
