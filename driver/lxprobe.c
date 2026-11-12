@@ -529,9 +529,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  BRKDUMP: n=%lu p0=0x%llx p1=0x%llx p2=0x%llx\n",
            q.BrkDumpCount, (unsigned long long)q.BrkDbg0,
            (unsigned long long)q.BrkDbg1, (unsigned long long)q.BrkDbg2);
-    printf("  BRKDUMP: p3=0x%llx ctx=0x%llx arg0=0x%llx\n",
-           (unsigned long long)q.BrkDbg3, (unsigned long long)q.BrkDbg4,
-           (unsigned long long)q.BrkDbg5);
+    printf("  BRKDUMP: ctx=0x%llx arg0=0x%llx\n",
+           (unsigned long long)q.BrkDbg3, (unsigned long long)q.BrkDbg4);
     printf("  BRKSTAT: ok=%lu reject=%lu lastBad=0x%llx\n",
            q.BrkOkCount, q.BrkRejectCount, (unsigned long long)q.BrkLastBad);
     printf("  STUBMAP: found=%lu slotUsed=%lu area=0x%llx\n",
