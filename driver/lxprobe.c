@@ -87,9 +87,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG SymNameByte1;
     ULONG64 SymSymTabVaddr;
     ULONG64 SymStrTabVaddr;
-    ULONG SymNameOffsets[48];
-    ULONG SymRelocOffsets[48];
-    CHAR SymNames[48][48];
+    ULONG SymNameOffsets[64];
+    ULONG SymRelocOffsets[64];
+    CHAR SymNames[64][48];
     ULONG StubCount;
     ULONG StubFound;
     ULONG StubUnknown;
