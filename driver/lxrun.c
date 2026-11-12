@@ -449,6 +449,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 BuiltinLastAddress;
     CHAR BuiltinLastName[48];
     ULONG64 BrkAddress;
+    ULONG BrkOkCount;
+    ULONG BrkRejectCount;
+    ULONG64 BrkLastBad;
     ULONG BrkInitStatus;
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
