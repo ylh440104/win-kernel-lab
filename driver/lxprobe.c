@@ -137,6 +137,13 @@ typedef struct _LX_QUERY_RESULT
     CHAR BuiltinLastName[48];
     ULONG64 BrkAddress;
     ULONG BrkOkCount;
+    ULONG64 BrkDbg0;
+    ULONG64 BrkDbg1;
+    ULONG64 BrkDbg2;
+    ULONG64 BrkDbg3;
+    ULONG64 BrkDbg4;
+    ULONG64 BrkDbg5;
+    ULONG BrkDumpCount;
     ULONG BrkRejectCount;
     ULONG64 BrkLastBad;
     ULONG BrkInitStatus;
@@ -519,6 +526,12 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  BRKDUMP: n=%lu p0=0x%llx p1=0x%llx p2=0x%llx\n",
+           q.BrkDumpCount, (unsigned long long)q.BrkDbg0,
+           (unsigned long long)q.BrkDbg1, (unsigned long long)q.BrkDbg2);
+    printf("  BRKDUMP: p3=0x%llx ctx=0x%llx arg0=0x%llx\n",
+           (unsigned long long)q.BrkDbg3, (unsigned long long)q.BrkDbg4,
+           (unsigned long long)q.BrkDbg5);
     printf("  BRKSTAT: ok=%lu reject=%lu lastBad=0x%llx\n",
            q.BrkOkCount, q.BrkRejectCount, (unsigned long long)q.BrkLastBad);
     printf("  STUBMAP: found=%lu slotUsed=%lu area=0x%llx\n",
