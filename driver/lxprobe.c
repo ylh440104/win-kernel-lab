@@ -134,6 +134,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 BuiltinAreaBase;
     ULONG64 BuiltinLastAddress;
     CHAR BuiltinLastName[48];
+    ULONG64 BrkAddress;
+    ULONG BrkInitStatus;
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -516,6 +518,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  BUILTIN: written=%lu bytes=%lu fail=%lu registered=%lu status=0x%08lx\n",
            q.BuiltinWritten, q.BuiltinTotalBytes, q.BuiltinFailCount, q.BuiltinRegistered,
            q.BuiltinLastStatus);
+    printf("  BRKVAR: addr=0x%llx initStatus=0x%08lx\n",
+           (unsigned long long)q.BrkAddress, q.BrkInitStatus);
     printf("  BUILTIN: area=0x%llx last=%.48s @0x%llx\n",
            (unsigned long long)q.BuiltinAreaBase, q.BuiltinLastName,
            (unsigned long long)q.BuiltinLastAddress);
