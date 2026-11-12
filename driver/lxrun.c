@@ -4649,80 +4649,58 @@ static ULONG LxBuildMallocCode(ULONG64 BrkAddress, UCHAR *Out, ULONG OutSize)
 {
     ULONG pos = 0;
 
+    UNREFERENCED_PARAMETER(BrkAddress);
+
     if (Out == NULL || OutSize < LX_BUILTIN_MALLOC_MAX)
     {
         return 0;
     }
 
     Out[pos++] = 0x49;
-    Out[pos++] = 0xBA;
-    Out[pos++] = (UCHAR)((BrkAddress >> 0) & 0xFF);
-    Out[pos++] = (UCHAR)((BrkAddress >> 8) & 0xFF);
-    Out[pos++] = (UCHAR)((BrkAddress >> 16) & 0xFF);
-    Out[pos++] = (UCHAR)((BrkAddress >> 24) & 0xFF);
-    Out[pos++] = (UCHAR)((BrkAddress >> 32) & 0xFF);
-    Out[pos++] = (UCHAR)((BrkAddress >> 40) & 0xFF);
-    Out[pos++] = (UCHAR)((BrkAddress >> 48) & 0xFF);
-    Out[pos++] = (UCHAR)((BrkAddress >> 56) & 0xFF);
-    Out[pos++] = 0x49;
     Out[pos++] = 0x89;
-    Out[pos++] = 0xF8;
-    Out[pos++] = 0x4D;
-    Out[pos++] = 0x8B;
-    Out[pos++] = 0x0A;
-    Out[pos++] = 0x4D;
-    Out[pos++] = 0x85;
-    Out[pos++] = 0xC9;
-    Out[pos++] = 0x75;
-    Out[pos++] = 18;
+    Out[pos++] = 0xf8;
     Out[pos++] = 0x48;
-    Out[pos++] = 0xC7;
-    Out[pos++] = 0xC0;
-    Out[pos++] = 12;
+    Out[pos++] = 0xc7;
+    Out[pos++] = 0xc0;
+    Out[pos++] = 0x0c;
     Out[pos++] = 0x00;
     Out[pos++] = 0x00;
     Out[pos++] = 0x00;
     Out[pos++] = 0x48;
     Out[pos++] = 0x31;
-    Out[pos++] = 0xFF;
-    Out[pos++] = 0x0F;
+    Out[pos++] = 0xff;
+    Out[pos++] = 0x0f;
     Out[pos++] = 0x05;
     Out[pos++] = 0x49;
     Out[pos++] = 0x89;
-    Out[pos++] = 0xC1;
-    Out[pos++] = 0x4D;
-    Out[pos++] = 0x89;
-    Out[pos++] = 0x0A;
+    Out[pos++] = 0xc1;
     Out[pos++] = 0x49;
     Out[pos++] = 0x83;
-    Out[pos++] = 0xC0;
-    Out[pos++] = 0x0F;
+    Out[pos++] = 0xc0;
+    Out[pos++] = 0x0f;
     Out[pos++] = 0x49;
     Out[pos++] = 0x83;
-    Out[pos++] = 0xE0;
-    Out[pos++] = 0xF0;
-    Out[pos++] = 0x4C;
+    Out[pos++] = 0xe0;
+    Out[pos++] = 0xf0;
+    Out[pos++] = 0x4c;
     Out[pos++] = 0x89;
-    Out[pos++] = 0xCF;
-    Out[pos++] = 0x4C;
+    Out[pos++] = 0xcf;
+    Out[pos++] = 0x4c;
     Out[pos++] = 0x01;
-    Out[pos++] = 0xC7;
+    Out[pos++] = 0xc7;
     Out[pos++] = 0x48;
-    Out[pos++] = 0xC7;
-    Out[pos++] = 0xC0;
-    Out[pos++] = 12;
+    Out[pos++] = 0xc7;
+    Out[pos++] = 0xc0;
+    Out[pos++] = 0x0c;
     Out[pos++] = 0x00;
     Out[pos++] = 0x00;
     Out[pos++] = 0x00;
-    Out[pos++] = 0x0F;
+    Out[pos++] = 0x0f;
     Out[pos++] = 0x05;
-    Out[pos++] = 0x49;
+    Out[pos++] = 0x4c;
     Out[pos++] = 0x89;
-    Out[pos++] = 0x3A;
-    Out[pos++] = 0x4C;
-    Out[pos++] = 0x89;
-    Out[pos++] = 0xC8;
-    Out[pos++] = 0xC3;
+    Out[pos++] = 0xc8;
+    Out[pos++] = 0xc3;
 
     return pos;
 }
