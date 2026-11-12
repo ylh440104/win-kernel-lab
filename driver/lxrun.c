@@ -441,6 +441,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 BuiltinAreaBase;
     ULONG64 BuiltinLastAddress;
     CHAR BuiltinLastName[48];
+    ULONG64 BrkAddress;
+    ULONG BrkInitStatus;
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
@@ -4650,16 +4652,13 @@ static ULONG LxBuildMallocCode(ULONG64 BrkAddress, UCHAR *Out, ULONG OutSize)
         return 0;
     }
 
-    Out[pos++] = 0x53;
-    Out[pos++] = 0x41;
-    Out[pos++] = 0x54;
-    Out[pos++] = 0x48;
+    Out[pos++] = 0x49;
     Out[pos++] = 0x89;
-    Out[pos++] = 0xFB;
+    Out[pos++] = 0xF8;
 
     Out[pos++] = 0x4C;
     Out[pos++] = 0x8B;
-    Out[pos++] = 0x24;
+    Out[pos++] = 0x0C;
     Out[pos++] = 0x25;
     Out[pos++] = (UCHAR)(BrkAddress & 0xFF);
     Out[pos++] = (UCHAR)((BrkAddress >> 8) & 0xFF);
@@ -4668,10 +4667,10 @@ static ULONG LxBuildMallocCode(ULONG64 BrkAddress, UCHAR *Out, ULONG OutSize)
 
     Out[pos++] = 0x4D;
     Out[pos++] = 0x85;
-    Out[pos++] = 0xE4;
+    Out[pos++] = 0xC9;
 
     Out[pos++] = 0x75;
-    Out[pos++] = 23;
+    Out[pos++] = 16;
 
     Out[pos++] = 0x48;
     Out[pos++] = 0xC7;
@@ -4690,34 +4689,34 @@ static ULONG LxBuildMallocCode(ULONG64 BrkAddress, UCHAR *Out, ULONG OutSize)
 
     Out[pos++] = 0x49;
     Out[pos++] = 0x89;
-    Out[pos++] = 0xC4;
+    Out[pos++] = 0xC1;
 
     Out[pos++] = 0x4C;
     Out[pos++] = 0x89;
-    Out[pos++] = 0x24;
+    Out[pos++] = 0x0C;
     Out[pos++] = 0x25;
     Out[pos++] = (UCHAR)(BrkAddress & 0xFF);
     Out[pos++] = (UCHAR)((BrkAddress >> 8) & 0xFF);
     Out[pos++] = (UCHAR)((BrkAddress >> 16) & 0xFF);
     Out[pos++] = (UCHAR)((BrkAddress >> 24) & 0xFF);
 
-    Out[pos++] = 0x48;
+    Out[pos++] = 0x49;
     Out[pos++] = 0x83;
-    Out[pos++] = 0xC3;
+    Out[pos++] = 0xC0;
     Out[pos++] = 0x0F;
 
-    Out[pos++] = 0x48;
+    Out[pos++] = 0x49;
     Out[pos++] = 0x83;
-    Out[pos++] = 0xE3;
+    Out[pos++] = 0xE0;
     Out[pos++] = 0xF0;
 
     Out[pos++] = 0x4C;
     Out[pos++] = 0x89;
-    Out[pos++] = 0xE7;
+    Out[pos++] = 0xCF;
 
-    Out[pos++] = 0x48;
+    Out[pos++] = 0x4C;
     Out[pos++] = 0x01;
-    Out[pos++] = 0xDF;
+    Out[pos++] = 0xC7;
 
     Out[pos++] = 0x48;
     Out[pos++] = 0xC7;
@@ -4741,12 +4740,7 @@ static ULONG LxBuildMallocCode(ULONG64 BrkAddress, UCHAR *Out, ULONG OutSize)
 
     Out[pos++] = 0x4C;
     Out[pos++] = 0x89;
-    Out[pos++] = 0xE0;
-
-    Out[pos++] = 0x41;
-    Out[pos++] = 0x5C;
-
-    Out[pos++] = 0x5B;
+    Out[pos++] = 0xC8;
 
     Out[pos++] = 0xC3;
 
@@ -4819,7 +4813,13 @@ static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOB
         ULONG64 mallocAddress = (cursor + 15ull) & ~15ull;
         NTSTATUS mallocStatus;
 
-        LxWritePicoMemory(TargetProcess, brkAddress, &zeroValue, sizeof(zeroValue));
+        {
+            NTSTATUS initStatus = LxWritePicoMemory(TargetProcess, brkAddress, &zeroValue, sizeof(zeroValue));
+
+            Stats->LastStatus = initStatus;
+            Stats->BrkAddress = brkAddress;
+            Stats->BrkInitStatus = (ULONG)initStatus;
+        }
 
         mallocSize = LxBuildMallocCode(brkAddress, mallocCode, sizeof(mallocCode));
 
@@ -6125,6 +6125,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->BuiltinAreaBase = g_BuiltinStats.AreaBase;
             result->BuiltinLastAddress = g_BuiltinStats.LastAddress;
             RtlCopyMemory(result->BuiltinLastName, g_BuiltinStats.LastName, 48);
+            result->BrkAddress = g_BuiltinStats.BrkAddress;
+            result->BrkInitStatus = g_BuiltinStats.BrkInitStatus;
 
             for (i = 0; i < 16; i++)
             {
