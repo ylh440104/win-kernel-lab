@@ -135,7 +135,7 @@ typedef struct _LX_ELF_SYM
     ULONG64 Size;
 } LX_ELF_SYM;
 
-#define LX_MAX_SYMBOLS 48u
+#define LX_MAX_SYMBOLS 64u
 #define LX_MAX_SYMBOL_NAME 48u
 
 typedef struct _LX_SYMBOL_ENTRY
@@ -407,9 +407,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG SymNameByte1;
     ULONG64 SymSymTabVaddr;
     ULONG64 SymStrTabVaddr;
-    ULONG SymNameOffsets[48];
-    ULONG SymRelocOffsets[48];
-    CHAR SymNames[48][48];
+    ULONG SymNameOffsets[64];
+    ULONG SymRelocOffsets[64];
+    CHAR SymNames[64][48];
     ULONG StubCount;
     ULONG StubFound;
     ULONG StubUnknown;
@@ -4605,7 +4605,7 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
     }
 }
 
-#define LX_BUILTIN_COUNT 42u
+#define LX_BUILTIN_COUNT 48u
 
 typedef struct _LX_BUILTIN_DEF
 {
@@ -5128,6 +5128,42 @@ static const UCHAR g_BuiltinStrpbrk[] = {
     0xF8, 0xC3, 0x31, 0xC0, 0xC3,
 };
 
+static const UCHAR g_BuiltinDiv[] = {
+    0x89, 0xF8, 0x99, 0xF7, 0xFE, 0x48, 0xC1, 0xE2, 0x20, 0x48, 0x09, 0xD0,
+    0xC3,
+};
+
+static const UCHAR g_BuiltinLdiv[] = {
+    0x48, 0x89, 0xF8, 0x48, 0x99, 0x48, 0xF7, 0xFE, 0xC3,
+};
+
+static const UCHAR g_BuiltinStrsep[] = {
+    0x48, 0x8B, 0x07, 0x48, 0x85, 0xC0, 0x74, 0x40, 0x49, 0x89, 0xC0, 0x49,
+    0x89, 0xC1, 0x41, 0x0F, 0xB6, 0x09, 0x84, 0xC9, 0x74, 0x27, 0x49, 0x89,
+    0xF2, 0x41, 0x0F, 0xB6, 0x12, 0x84, 0xD2, 0x74, 0x09, 0x38, 0xD1, 0x74,
+    0x0A, 0x49, 0xFF, 0xC2, 0xEB, 0xEF, 0x49, 0xFF, 0xC1, 0xEB, 0xDF, 0x41,
+    0xC6, 0x01, 0x00, 0x49, 0xFF, 0xC1, 0x4C, 0x89, 0x0F, 0x4C, 0x89, 0xC0,
+    0xC3, 0x48, 0xC7, 0x07, 0x00, 0x00, 0x00, 0x00, 0x4C, 0x89, 0xC0, 0xC3,
+    0x31, 0xC0, 0xC3,
+};
+
+static const UCHAR g_BuiltinMemmem[] = {
+    0x48, 0x85, 0xC9, 0x74, 0x37, 0x48, 0x39, 0xF1, 0x77, 0x36, 0x49, 0x89,
+    0xF0, 0x49, 0x29, 0xC8, 0x49, 0xFF, 0xC0, 0x4D, 0x85, 0xC0, 0x74, 0x28,
+    0x4D, 0x31, 0xC9, 0x49, 0x39, 0xC9, 0x73, 0x18, 0x42, 0x0F, 0xB6, 0x04,
+    0x0F, 0x42, 0x3A, 0x04, 0x0A, 0x75, 0x05, 0x49, 0xFF, 0xC1, 0xEB, 0xEB,
+    0x48, 0xFF, 0xC7, 0x49, 0xFF, 0xC8, 0xEB, 0xDB, 0x48, 0x89, 0xF8, 0xC3,
+    0x48, 0x89, 0xF8, 0xC3, 0x31, 0xC0, 0xC3,
+};
+
+static const UCHAR g_BuiltinBzero[] = {
+    0x48, 0x89, 0xF1, 0x31, 0xC0, 0xF3, 0xAA, 0xC3,
+};
+
+static const UCHAR g_BuiltinBcopy[] = {
+    0x48, 0x89, 0xD1, 0xF3, 0xA4, 0xC3,
+};
+
 static const UCHAR g_BuiltinSscanf[] = {
     0x55, 0x48, 0x89, 0xE5, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41,
     0x57, 0x48, 0x83, 0xEC, 0x38, 0x48, 0x89, 0x55, 0xB8, 0x48, 0x89, 0x4D,
@@ -5292,7 +5328,13 @@ static const LX_BUILTIN_DEF g_Builtins[LX_BUILTIN_COUNT] = {
     { "strspn", g_BuiltinStrspn, sizeof(g_BuiltinStrspn) },
     { "strcspn", g_BuiltinStrcspn, sizeof(g_BuiltinStrcspn) },
     { "strpbrk", g_BuiltinStrpbrk, sizeof(g_BuiltinStrpbrk) },
-    { "sscanf", g_BuiltinSscanf, sizeof(g_BuiltinSscanf) }
+    { "sscanf", g_BuiltinSscanf, sizeof(g_BuiltinSscanf) },
+    { "div", g_BuiltinDiv, sizeof(g_BuiltinDiv) },
+    { "ldiv", g_BuiltinLdiv, sizeof(g_BuiltinLdiv) },
+    { "strsep", g_BuiltinStrsep, sizeof(g_BuiltinStrsep) },
+    { "memmem", g_BuiltinMemmem, sizeof(g_BuiltinMemmem) },
+    { "bzero", g_BuiltinBzero, sizeof(g_BuiltinBzero) },
+    { "bcopy", g_BuiltinBcopy, sizeof(g_BuiltinBcopy) }
 };
 
 static ULONG LxBuildMallocCode(ULONG64 BrkAddress, UCHAR *Out, ULONG OutSize)
@@ -6762,7 +6804,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->BrkLastBad = g_BrkLastBad;
             result->BrkInitStatus = g_BuiltinStats.BrkInitStatus;
 
-            for (i = 0; i < 48; i++)
+            for (i = 0; i < 64; i++)
             {
                 result->SymNameOffsets[i] = g_SymbolInfo.Entries[i].NameOffset;
                 result->SymRelocOffsets[i] = g_SymbolInfo.Entries[i].RelocOffset;
@@ -6813,7 +6855,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             {
                 const UCHAR *createAddr = (const UCHAR *)g_PsRegisterPicoProvider + 0x120;
 
-                for (i = 0; i < 48; i++)
+                for (i = 0; i < 64; i++)
                 {
                     result->CreateBytes[i] = createAddr[i];
                 }
@@ -7044,7 +7086,7 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
                 result->ArgsDump[i] = g_ArgsDump[i];
             }
 
-            for (i = 0; i < 48; i++)
+            for (i = 0; i < 64; i++)
             {
                 result->SyscallHistory[i] = g_SyscallHistory[i];
             }
