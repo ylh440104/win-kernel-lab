@@ -457,6 +457,15 @@ typedef struct _LX_QUERY_RESULT
     CHAR BuiltinLastName[48];
     ULONG64 BrkAddress;
     ULONG BrkOkCount;
+    ULONG64 Ent0No;
+    ULONG64 Ent0P0;
+    ULONG64 Ent0P1;
+    ULONG64 Ent0P2;
+    ULONG64 Ent1No;
+    ULONG64 Ent1P0;
+    ULONG64 Ent1P1;
+    ULONG64 Ent1P2;
+    ULONG EntryCount;
     ULONG64 BrkDbg0;
     ULONG64 BrkDbg1;
     ULONG64 BrkDbg2;
@@ -612,6 +621,8 @@ static ULONG g_BrkReject = 0;
 static ULONG64 g_BrkLastBad = 0;
 static ULONG64 g_BrkDebug[8];
 static ULONG g_BrkDumpCount = 0;
+static ULONG64 g_EntryDump[8][4];
+static ULONG g_EntryCount = 0;
 static ULONG64 g_MmapCurrent = 0;
 static ULONG g_MmapCount = 0;
 static ULONG64 g_LastMmapAddress = 0;
@@ -1892,6 +1903,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     ULONG64 arg0 = Parameters[0];
     ULONG64 arg1 = Parameters[1];
     ULONG64 arg2 = Parameters[2];
+
+    if (g_EntryCount < 8)
+    {
+        g_EntryDump[g_EntryCount][0] = Number;
+        g_EntryDump[g_EntryCount][1] = Parameters[0];
+        g_EntryDump[g_EntryCount][2] = Parameters[1];
+        g_EntryDump[g_EntryCount][3] = Parameters[2];
+        g_EntryCount++;
+    }
 
     switch (Number)
     {
@@ -6127,6 +6147,15 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             RtlCopyMemory(result->BuiltinLastName, g_BuiltinStats.LastName, 48);
             result->BrkAddress = g_BuiltinStats.BrkAddress;
             result->BrkOkCount = g_BrkOk;
+            result->Ent0No = g_EntryDump[0][0];
+            result->Ent0P0 = g_EntryDump[0][1];
+            result->Ent0P1 = g_EntryDump[0][2];
+            result->Ent0P2 = g_EntryDump[0][3];
+            result->Ent1No = g_EntryDump[1][0];
+            result->Ent1P0 = g_EntryDump[1][1];
+            result->Ent1P1 = g_EntryDump[1][2];
+            result->Ent1P2 = g_EntryDump[1][3];
+            result->EntryCount = g_EntryCount;
             result->BrkDbg0 = g_BrkDebug[0];
             result->BrkDbg1 = g_BrkDebug[1];
             result->BrkDbg2 = g_BrkDebug[2];
