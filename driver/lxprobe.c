@@ -137,6 +137,15 @@ typedef struct _LX_QUERY_RESULT
     CHAR BuiltinLastName[48];
     ULONG64 BrkAddress;
     ULONG BrkOkCount;
+    ULONG64 Ent0No;
+    ULONG64 Ent0P0;
+    ULONG64 Ent0P1;
+    ULONG64 Ent0P2;
+    ULONG64 Ent1No;
+    ULONG64 Ent1P0;
+    ULONG64 Ent1P1;
+    ULONG64 Ent1P2;
+    ULONG EntryCount;
     ULONG64 BrkDbg0;
     ULONG64 BrkDbg1;
     ULONG64 BrkDbg2;
@@ -526,6 +535,12 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  ENTRY: n=%lu [0] no=%lu p0=0x%llx p1=0x%llx p2=0x%llx\n",
+           q.EntryCount, q.Ent0No, (unsigned long long)q.Ent0P0,
+           (unsigned long long)q.Ent0P1, (unsigned long long)q.Ent0P2);
+    printf("  ENTRY: [1] no=%lu p0=0x%llx p1=0x%llx p2=0x%llx\n",
+           q.Ent1No, (unsigned long long)q.Ent1P0,
+           (unsigned long long)q.Ent1P1, (unsigned long long)q.Ent1P2);
     printf("  BRKDUMP: n=%lu p0=0x%llx p1=0x%llx p2=0x%llx\n",
            q.BrkDumpCount, (unsigned long long)q.BrkDbg0,
            (unsigned long long)q.BrkDbg1, (unsigned long long)q.BrkDbg2);
