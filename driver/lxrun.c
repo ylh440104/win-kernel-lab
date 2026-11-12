@@ -4671,7 +4671,7 @@ static ULONG LxBuildMallocCode(ULONG64 BrkAddress, UCHAR *Out, ULONG OutSize)
     Out[pos++] = 0xE4;
 
     Out[pos++] = 0x75;
-    Out[pos++] = 24;
+    Out[pos++] = 23;
 
     Out[pos++] = 0x48;
     Out[pos++] = 0xC7;
