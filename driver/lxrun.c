@@ -457,6 +457,13 @@ typedef struct _LX_QUERY_RESULT
     CHAR BuiltinLastName[48];
     ULONG64 BrkAddress;
     ULONG BrkOkCount;
+    ULONG64 BrkDbg0;
+    ULONG64 BrkDbg1;
+    ULONG64 BrkDbg2;
+    ULONG64 BrkDbg3;
+    ULONG64 BrkDbg4;
+    ULONG64 BrkDbg5;
+    ULONG BrkDumpCount;
     ULONG BrkRejectCount;
     ULONG64 BrkLastBad;
     ULONG BrkInitStatus;
