@@ -181,6 +181,8 @@ typedef struct _LX_BUILTIN_STATS
     ULONG Registered;
     CHAR LastName[LX_MAX_SYMBOL_NAME];
     ULONG64 LastAddress;
+    ULONG64 BrkAddress;
+    ULONG BrkInitStatus;
 } LX_BUILTIN_STATS;
 
 typedef struct _LX_SYMBOL_BINDING
@@ -441,8 +443,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 BuiltinAreaBase;
     ULONG64 BuiltinLastAddress;
     CHAR BuiltinLastName[48];
-    ULONG64 BrkAddress;
-    ULONG BrkInitStatus;
     ULONG64 ElfCopied;
     ULONG64 ElfViewSize;
     ULONG ElfSegStatus[LX_ELF_MAX_SEGMENTS];
