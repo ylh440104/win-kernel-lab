@@ -182,6 +182,9 @@ typedef struct _LX_BUILTIN_STATS
     CHAR LastName[LX_MAX_SYMBOL_NAME];
     ULONG64 LastAddress;
     ULONG64 BrkAddress;
+    ULONG BrkOkCount;
+    ULONG BrkRejectCount;
+    ULONG64 BrkLastBad;
     ULONG BrkInitStatus;
 } LX_BUILTIN_STATS;
 
@@ -587,6 +590,9 @@ static ULONG g_SyscallHistoryCount = 0;
 static ULONG g_PoolStatus = 0xFFFFFFFFu;
 static ULONG64 g_PoolBase = 0;
 static ULONG64 g_BrkCurrent = 0;
+static ULONG g_BrkOk = 0;
+static ULONG g_BrkReject = 0;
+static ULONG64 g_BrkLastBad = 0;
 static ULONG64 g_MmapCurrent = 0;
 static ULONG g_MmapCount = 0;
 static ULONG64 g_LastMmapAddress = 0;
@@ -2473,10 +2479,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             return g_BrkCurrent;
         }
-        if (arg0 >= g_PoolBase && arg0 <= g_PoolBase + LX_POOL_SIZE / 2)
+        if (arg0 >= g_PoolBase && arg0 <= g_PoolBase + LX_POOL_SIZE)
         {
             g_BrkCurrent = arg0;
+            g_BrkOk++;
             return arg0;
+        }
+        g_BrkReject++;
+        if (g_BrkLastBad == 0)
+        {
+            g_BrkLastBad = arg0;
         }
         return g_BrkCurrent;
 
@@ -6087,6 +6099,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->BuiltinLastAddress = g_BuiltinStats.LastAddress;
             RtlCopyMemory(result->BuiltinLastName, g_BuiltinStats.LastName, 48);
             result->BrkAddress = g_BuiltinStats.BrkAddress;
+            result->BrkOkCount = g_BrkOk;
+            result->BrkRejectCount = g_BrkReject;
+            result->BrkLastBad = g_BrkLastBad;
             result->BrkInitStatus = g_BuiltinStats.BrkInitStatus;
 
             for (i = 0; i < 16; i++)
