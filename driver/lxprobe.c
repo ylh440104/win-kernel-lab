@@ -99,6 +99,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 StubLastSyscall;
     ULONG StubLastStatus;
     CHAR StubLastName[48];
+    ULONG StubSlotUsed;
     ULONG LibAttempted;
     ULONG LibLoaded;
     ULONG LibFailed;
@@ -515,6 +516,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  STUBMAP: found=%lu slotUsed=%lu area=0x%llx\n",
+           q.StubFound, q.StubSlotUsed, (unsigned long long)q.StubAreaBase);
     printf("  BUILTIN: written=%lu bytes=%lu fail=%lu registered=%lu status=0x%08lx\n",
            q.BuiltinWritten, q.BuiltinTotalBytes, q.BuiltinFailCount, q.BuiltinRegistered,
            q.BuiltinLastStatus);
