@@ -137,6 +137,7 @@ typedef struct _LX_QUERY_RESULT
     CHAR BuiltinLastName[48];
     ULONG64 BrkAddress;
     ULONG BrkOkCount;
+    ULONG DrvStructSize;
     ULONG64 Ent0No;
     ULONG64 Ent0P0;
     ULONG64 Ent0P1;
@@ -535,6 +536,9 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            q.RelocFirstStatus);
     printf("  SYMS: total=%lu dumped=%lu truncated=%lu strtabOk=%lu strtabStatus=0x%08lx\n",
            q.SymTotal, q.SymDumped, q.SymTruncated, q.SymStrTabReadable, q.SymStrTabStatus);
+    printf("  SIZE: probe=%lu drv=%lu %s\n",
+           (unsigned long)sizeof(LX_QUERY_RESULT), (unsigned long)q.DrvStructSize,
+           (sizeof(LX_QUERY_RESULT) == (size_t)q.DrvStructSize) ? "MATCH" : "MISMATCH");
     printf("  ENTRY: n=%lu [0] no=%lu p0=0x%llx p1=0x%llx p2=0x%llx\n",
            q.EntryCount, q.Ent0No, (unsigned long long)q.Ent0P0,
            (unsigned long long)q.Ent0P1, (unsigned long long)q.Ent0P2);
