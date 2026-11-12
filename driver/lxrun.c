@@ -4929,20 +4929,12 @@ static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOB
     {
         UCHAR mallocCode[LX_BUILTIN_MALLOC_MAX];
         ULONG mallocSize;
-        ULONG64 brkAddress = AreaBase + LX_BUILTIN_BRK_OFFSET;
+        ULONG64 brkAddress;
         ULONG64 zeroValue = 0;
         ULONG64 mallocAddress = (cursor + 15ull) & ~15ull;
         NTSTATUS mallocStatus;
 
-        {
-            NTSTATUS initStatus = LxWritePicoMemory(TargetProcess, brkAddress, &zeroValue, sizeof(zeroValue));
-
-            Stats->LastStatus = initStatus;
-            Stats->BrkAddress = brkAddress;
-            Stats->BrkInitStatus = (ULONG)initStatus;
-        }
-
-        mallocSize = LxBuildMallocCode(brkAddress, mallocCode, sizeof(mallocCode));
+        mallocSize = LxBuildMallocCode(0, mallocCode, sizeof(mallocCode));
 
         if (mallocSize > 0 && mallocAddress + mallocSize <= AreaBase + LX_BUILTIN_MAX_SIZE)
         {
@@ -4985,6 +4977,7 @@ static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOB
                 Stats->TotalBytes += sizeof(g_BuiltinFree);
                 LxCopyString(Stats->LastName, "free", LX_MAX_SYMBOL_NAME);
                 Stats->LastAddress = freeAddress;
+                cursor = freeAddress + sizeof(g_BuiltinFree);
 
                 if (Globals != NULL)
                 {
@@ -4998,6 +4991,16 @@ static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOB
             {
                 Stats->FailCount++;
             }
+        }
+
+        brkAddress = (cursor + 15ull) & ~15ull;
+
+        {
+            NTSTATUS initStatus = LxWritePicoMemory(TargetProcess, brkAddress, &zeroValue, sizeof(zeroValue));
+
+            Stats->LastStatus = initStatus;
+            Stats->BrkAddress = brkAddress;
+            Stats->BrkInitStatus = (ULONG)initStatus;
         }
     }
 }
