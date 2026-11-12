@@ -195,6 +195,7 @@ typedef struct _LX_STUB_STATS
 {
     ULONG StubCount;
     ULONG StubFound;
+    ULONG StubSlot;
     ULONG StubUnknown;
     ULONG StubWriteFail;
     ULONG64 StubAreaBase;
@@ -408,6 +409,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 StubLastSyscall;
     ULONG StubLastStatus;
     CHAR StubLastName[48];
+    ULONG StubSlotUsed;
     ULONG LibAttempted;
     ULONG LibLoaded;
     ULONG LibFailed;
@@ -4493,12 +4495,12 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
                 continue;
             }
 
-            Stats->StubFound++;
-
             RtlZeroMemory(stubCode, sizeof(stubCode));
             stubLength = LxBuildStubCode(syscallNumber, stubCode);
 
-            stubAddress = stubAreaBase + (ULONG64)Stats->StubFound * LX_STUB_SIZE;
+            stubAddress = stubAreaBase + (ULONG64)Stats->StubSlot * LX_STUB_SIZE;
+            Stats->StubSlot++;
+            Stats->StubFound++;
 
             writeStatus = LxWritePicoMemory(TargetProcess, stubAddress, stubCode, stubLength);
 
@@ -6031,6 +6033,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
             result->StubCount = g_StubStats.StubCount;
             result->StubFound = g_StubStats.StubFound;
+            result->StubSlotUsed = g_StubStats.StubSlot;
             result->StubUnknown = g_StubStats.StubUnknown;
             result->StubWriteFail = g_StubStats.StubWriteFail;
             result->StubAreaBase = g_StubStats.StubAreaBase;
