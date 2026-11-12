@@ -457,6 +457,7 @@ typedef struct _LX_QUERY_RESULT
     CHAR BuiltinLastName[48];
     ULONG64 BrkAddress;
     ULONG BrkOkCount;
+    ULONG DrvStructSize;
     ULONG64 Ent0No;
     ULONG64 Ent0P0;
     ULONG64 Ent0P1;
@@ -6147,6 +6148,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             RtlCopyMemory(result->BuiltinLastName, g_BuiltinStats.LastName, 48);
             result->BrkAddress = g_BuiltinStats.BrkAddress;
             result->BrkOkCount = g_BrkOk;
+            result->DrvStructSize = (ULONG)sizeof(LX_QUERY_RESULT);
             result->Ent0No = g_EntryDump[0][0];
             result->Ent0P0 = g_EntryDump[0][1];
             result->Ent0P1 = g_EntryDump[0][2];
