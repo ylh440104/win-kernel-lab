@@ -6688,6 +6688,10 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
 
             /* DT_RELR：打包相对重定位（glibc 2.36+，无 RELATIVE 条目） */
             Entry->RelrCount = 0;
+            if (libDynamic.HasDynamic && libDynamic.RelrSize > 0 && libDynamic.RelrVaddr != 0)
+            {
+                Entry->RelrCount = (ULONG)(libDynamic.RelrSize / 8);
+            }
             if (libDynamic.HasDynamic && libDynamic.RelrSize > 0 && libDynamic.RelrVaddr != 0 &&
                 libDynamic.RelrVaddr >= minVaddr)
             {
