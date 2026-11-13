@@ -542,6 +542,12 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            (unsigned long long)q.ElfViewSize);
     printf("  DYNAMIC: hasInterp=%lu interpVaddr=0x%llx\n", q.DynHasInterp,
            (unsigned long long)q.DynInterpVaddr);
+    printf("  LOADTLS: entered=%llu callMark=0x%llx base=0x%llx size=0x%llx done=%llu\n",
+           (unsigned long long)q.TlsEntered,
+           (unsigned long long)q.TlsCallMark,
+           (unsigned long long)q.TlsBlockBase,
+           (unsigned long long)q.TlsBlockSize,
+           q.TlsSetupDone);
     printf("  DYNAMIC: hasDyn=%lu dynVaddr=0x%llx dynSize=0x%llx entries=%lu\n", q.DynHasDynamic,
            (unsigned long long)q.DynDynamicVaddr, (unsigned long long)q.DynDynamicSize,
            q.DynDynamicCount);
