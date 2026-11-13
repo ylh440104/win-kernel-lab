@@ -256,6 +256,11 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsInLibsBase;
     ULONG64 TlsCallMark;
     ULONG64 TlsInTarget;
+    ULONG64 FlagAddrUsed;
+    ULONG64 FlagFromBase;
+    ULONG64 ScanFound;
+    ULONG64 ScanFlagDisp;
+    ULONG64 ScanRoutinesDisp;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -655,6 +660,12 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
                    (unsigned long long)q.TlsInLibsBase);
             printf("  TLS: callMark=0x%llx\n", (unsigned long long)q.TlsCallMark);
             printf("  TLS: inTarget=%llu\n", (unsigned long long)q.TlsInTarget);
+            printf("  SCAN: found=%llu flagDisp=0x%llx routDisp=0x%llx flagAddr=0x%llx fromBase=%llu\n",
+                   (unsigned long long)q.ScanFound,
+                   (unsigned long long)q.ScanFlagDisp,
+                   (unsigned long long)q.ScanRoutinesDisp,
+                   (unsigned long long)q.FlagAddrUsed,
+                   (unsigned long long)q.FlagFromBase);
             printf("  DIAG: globalSinm=0x%llx mainGot1A18=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
         }
     }
