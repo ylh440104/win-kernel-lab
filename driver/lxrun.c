@@ -180,6 +180,9 @@ typedef struct _LX_SYMBOL_INFO
 
 #define LX_STUB_SIZE 16u
 #define LX_STUB_AREA_SIZE 0x10000u
+#define LX_TLS_AREA_OFFSET 0xC000u
+#define LX_TLS_TCB_SIZE 0x700u
+#define LX_TLS_BLOCK_MAX 0x2000u
 #define LX_BUILTIN_AREA_OFFSET 0x8000u
 #define LX_BUILTIN_MAX_SIZE 0x4000u
 #define LX_BUILTIN_BRK_OFFSET 0x0200u
@@ -261,6 +264,12 @@ typedef struct _LX_LIB_ENTRY
     ULONG64 InitArrayVaddr;
     ULONG InitArrayCount;
     ULONG InitArrayCalled;
+    ULONG64 TlsVaddr;
+    ULONG64 TlsFileSize;
+    ULONG64 TlsMemSize;
+    ULONG64 TlsOffset;
+    ULONG64 TlsBlockBase;
+    ULONG TlsAllocated;
     ULONG SymDumped;
     ULONG LoadStatus;
     CHAR Name[LX_MAX_SYMBOL_NAME];
@@ -585,6 +594,12 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
+    ULONG64 TlsBlockBase;
+    ULONG64 TlsBlockSize;
+    ULONG TlsSetupDone;
+    ULONG LibTlsOffset[4];
+    ULONG64 LibTlsMemSize[4];
+    ULONG64 LibTlsAllocated[4];
     ULONG LibRelrCount[4];
     ULONG LibRelrApplied[4];
 } LX_QUERY_RESULT;
@@ -631,6 +646,9 @@ static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
 static ULONG g_GlobalLibIndex = 0;
+static ULONG64 g_TlsBlockBase = 0;
+static ULONG64 g_TlsBlockSize = 0;
+static ULONG g_TlsSetupDone = 0;
 static ULONG64 g_DiagGlobalSinm = 0;
 static ULONG64 g_DiagMainGot = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
@@ -4586,6 +4604,76 @@ static ULONG64 LxGlobalTableLookup(LX_GLOBAL_TABLE *Table, const char *Name, ULO
 
 static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOBAL_TABLE *Globals, LX_BUILTIN_STATS *Stats);
 
+static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Stats)
+{
+    ULONG64 blockBase;
+    ULONG64 tcbSize = LX_TLS_TCB_SIZE;
+    UCHAR tcb[LX_TLS_TCB_SIZE];
+    ULONG index;
+    ULONG allocated = 0;
+    SIZE_T written = 0;
+
+    if (TargetProcess == NULL || StubAreaBase == 0 || Stats == NULL)
+    {
+        return;
+    }
+    blockBase = StubAreaBase + LX_TLS_AREA_OFFSET;
+    RtlZeroMemory(tcb, sizeof(tcb));
+
+    for (index = 0; index < LX_MAX_LIBS; index++)
+    {
+        LX_LIB_ENTRY *entry = &Stats->Libs[index];
+        ULONG64 libTlsOffset;
+        if (entry->Used == 0 || entry->TlsMemSize == 0 || entry->BaseAddress == 0)
+        {
+            continue;
+        }
+        libTlsOffset = (ULONG64)allocated;
+        if (libTlsOffset + entry->TlsMemSize > LX_TLS_BLOCK_MAX)
+        {
+            break;
+        }
+        entry->TlsOffset = libTlsOffset;
+        entry->TlsBlockBase = blockBase;
+        entry->TlsAllocated = 1;
+        if (entry->TlsFileSize > 0 && entry->TlsFileSize <= entry->TlsMemSize)
+        {
+            NTSTATUS copyStatus;
+            copyStatus = MmCopyVirtualMemory(TargetProcess,
+                                             (PVOID)(ULONG_PTR)(entry->BaseAddress + entry->TlsVaddr),
+                                             PsGetCurrentProcess(),
+                                             tcb + tcbSize + libTlsOffset,
+                                             (SIZE_T)entry->TlsFileSize,
+                                             KernelMode, &written);
+            if (!NT_SUCCESS(copyStatus))
+            {
+                entry->TlsAllocated = 0;
+                continue;
+            }
+        }
+        allocated += (ULONG)entry->TlsMemSize;
+        allocated = (allocated + 7) & ~7u;
+    }
+
+    if (allocated == 0)
+    {
+        return;
+    }
+
+    *(ULONG64 *)(tcb + 0x00) = blockBase;
+    *(ULONG64 *)(tcb + 0x10) = blockBase;
+    *(ULONG64 *)(tcb + 0x28) = 0x5A5A0000A5A50000ull;
+
+    if (!NT_SUCCESS(LxWritePicoMemory(TargetProcess, blockBase, tcb, tcbSize + allocated)))
+    {
+        return;
+    }
+
+    g_TlsBlockBase = blockBase;
+    g_TlsBlockSize = tcbSize + allocated;
+    g_TlsSetupDone = 1;
+}
+
 static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
                          const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
                          LX_SYMBOL_INFO *Symbols, LX_STUB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
@@ -6477,6 +6565,9 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
             Entry->DynamicOffset = libDynamic.DynamicOffset;
             Entry->DynamicSize = libDynamic.DynamicSize;
             Entry->StrTabVaddr = libDynamic.StrTabVaddr;
+            Entry->TlsVaddr = libDynamic.TlsVaddr;
+            Entry->TlsFileSize = libDynamic.TlsFileSize;
+            Entry->TlsMemSize = libDynamic.TlsMemSize;
             Entry->InitArrayVaddr = libDynamic.InitArrayVaddr;
             Entry->InitArrayCount = (ULONG)(libDynamic.InitArraySize / 8);
             if (Entry->InitArrayCount > 32)
@@ -7026,6 +7117,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 
     LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats,
                  &g_GlobalSymbols);
+    LxSetupTls(targetProcess, g_StubStats.StubAreaBase, &g_LibStats);
     {
         ULONG64 dgValue = 0;
         SIZE_T dgRead = 0;
@@ -7526,7 +7618,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibRelaCount[i] = g_LibStats.Libs[i].RelaCount;
                 result->LibRelaApplied[i] = g_LibStats.Libs[i].RelaApplied;
                 result->LibNeededCount[i] = g_LibStats.Libs[i].NeededCount;
-                result->LibRelrCount[i] = g_LibStats.Libs[i].RelrCount;
+                result->LibTlsOffset[i] = (ULONG)g_LibStats.Libs[i].TlsOffset;
+            result->LibTlsMemSize[i] = g_LibStats.Libs[i].TlsMemSize;
+            result->LibTlsAllocated[i] = g_LibStats.Libs[i].TlsAllocated;
+            result->LibRelrCount[i] = g_LibStats.Libs[i].RelrCount;
                 result->LibRelrApplied[i] = g_LibStats.Libs[i].RelrApplied;
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
@@ -7874,6 +7969,9 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->WriteLength = g_WriteLength;
             result->WriteCount = g_WriteCount;
             result->ExitCalled = g_ExitCalled;
+            result->TlsBlockBase = g_TlsBlockBase;
+            result->TlsBlockSize = g_TlsBlockSize;
+            result->TlsSetupDone = g_TlsSetupDone;
             result->ExitCode = g_ExitCode;
             result->LastSyscallResult = g_LastSyscallResult;
             result->StackSetupStatus = g_StackSetupStatus;
