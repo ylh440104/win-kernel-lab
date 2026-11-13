@@ -114,6 +114,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LibFirstSymValue[4];
     ULONG64 LibSymTab[4];
     ULONG64 LibGot12C0[4];
+    ULONG64 DiagGlobalSinm;
+    ULONG64 DiagMainGot;
     ULONG LibRelaCount[4];
     ULONG LibRelaApplied[4];
     ULONG LibNeededCount[4];
@@ -600,6 +602,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  LIBS: [%lu] symtab=0x%llx firstSymValue=0x%llx\n", li,
                    (unsigned long long)q.LibSymTab[li], (unsigned long long)q.LibFirstSymValue[li]);
             printf("  LIBS: [%lu] got12C0=0x%llx\n", li, (unsigned long long)q.LibGot12C0[li]);
+            printf("  DIAG: globalSinm=0x%llx mainGot1A18=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
         }
     }
     printf("  STUBS: count=%lu found=%lu unknown=%lu writeFail=%lu area=0x%llx\n",
