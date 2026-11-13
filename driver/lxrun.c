@@ -597,6 +597,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsBlockBase;
     ULONG64 TlsBlockSize;
     ULONG TlsSetupDone;
+    ULONG64 TlsHeadStatus;
+    ULONG64 TlsDataStatus;
+    ULONG64 TlsHeadAddr;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -649,6 +652,9 @@ static ULONG g_GlobalLibIndex = 0;
 static ULONG64 g_TlsBlockBase = 0;
 static ULONG64 g_TlsBlockSize = 0;
 static ULONG g_TlsSetupDone = 0;
+static ULONG64 g_TlsHeadStatus = 0;
+static ULONG64 g_TlsDataStatus = 0;
+static ULONG64 g_TlsHeadAddr = 0;
 static ULONG64 g_DiagGlobalSinm = 0;
 static ULONG64 g_DiagMainGot = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
@@ -4674,6 +4680,8 @@ static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STA
     {
         NTSTATUS headStatus;
         headStatus = LxWritePicoMemory(TargetProcess, blockBase, tcb, 0x40);
+        g_TlsHeadStatus = (ULONG64)headStatus;
+        g_TlsHeadAddr = blockBase;
         if (NT_SUCCESS(headStatus))
         {
             NTSTATUS dataStatus;
@@ -4681,6 +4689,7 @@ static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STA
                                            blockBase + LX_TLS_TCB_SIZE,
                                            tcb + LX_TLS_TCB_SIZE,
                                            allocated);
+            g_TlsDataStatus = (ULONG64)dataStatus;
             if (NT_SUCCESS(dataStatus))
             {
                 g_TlsBlockBase = blockBase;
@@ -7994,6 +8003,9 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->TlsBlockBase = g_TlsBlockBase;
             result->TlsBlockSize = g_TlsBlockSize;
             result->TlsSetupDone = g_TlsSetupDone;
+            result->TlsHeadStatus = g_TlsHeadStatus;
+            result->TlsDataStatus = g_TlsDataStatus;
+            result->TlsHeadAddr = g_TlsHeadAddr;
             result->ExitCode = g_ExitCode;
             result->LastSyscallResult = g_LastSyscallResult;
             result->StackSetupStatus = g_StackSetupStatus;
