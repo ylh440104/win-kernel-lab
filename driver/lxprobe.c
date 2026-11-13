@@ -241,6 +241,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsBlockBase;
     ULONG64 TlsBlockSize;
     ULONG TlsSetupDone;
+    ULONG64 TlsHeadStatus;
+    ULONG64 TlsDataStatus;
+    ULONG64 TlsHeadAddr;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -616,6 +619,10 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
                    (unsigned long long)q.LibTlsAllocated[li]);
             printf("  TLS: base=0x%llx size=0x%llx done=%lu\n",
                    (unsigned long long)q.TlsBlockBase, (unsigned long long)q.TlsBlockSize, q.TlsSetupDone);
+            printf("  TLS: headAddr=0x%llx headSt=0x%llx dataSt=0x%llx\n",
+                   (unsigned long long)q.TlsHeadAddr,
+                   (unsigned long long)q.TlsHeadStatus,
+                   (unsigned long long)q.TlsDataStatus);
             printf("  DIAG: globalSinm=0x%llx mainGot1A18=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
         }
     }
