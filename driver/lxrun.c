@@ -90,6 +90,13 @@ typedef struct _LX_ELF_DYNAMIC_INFO
     ULONG64 SonameOffset;
     ULONG64 HashVaddr;
     ULONG64 GnuHashVaddr;
+    ULONG64 RelrVaddr;
+    ULONG64 RelrSize;
+    ULONG64 RelrCount;
+    ULONG64 TlsVaddr;
+    ULONG64 TlsFileSize;
+    ULONG64 TlsMemSize;
+    ULONG64 TlsAlign;
     ULONG64 InitArrayVaddr;
     ULONG64 InitArraySize;
     ULONG64 FiniArrayVaddr;
@@ -115,7 +122,7 @@ typedef struct _LX_ELF_RELA
 #define LX_R_X86_64_RELATIVE 8u
 #define LX_R_X86_64_DTPMOD64 16u
 #define LX_R_X86_64_IRELATIVE 37u
-#define LX_MAX_RELOCATIONS 256u
+#define LX_MAX_RELOCATIONS 4096u
 
 typedef struct _LX_RELOC_STATS
 {
@@ -142,7 +149,7 @@ typedef struct _LX_ELF_SYM
     ULONG64 Size;
 } LX_ELF_SYM;
 
-#define LX_MAX_SYMBOLS 128u
+#define LX_MAX_SYMBOLS 512u
 #define LX_MAX_SYMBOL_NAME 48u
 
 typedef struct _LX_SYMBOL_ENTRY
@@ -224,8 +231,8 @@ typedef struct _LX_STUB_STATS
 
 #define LX_MAX_LIBS 4u
 #define LX_LIB_BASE_STEP 0x4000000ull
-#define LX_LIB_IMAGE_MAX 0x800000u
-#define LX_MAX_LIB_SYMBOLS 64u
+#define LX_LIB_IMAGE_MAX 0x400000u
+#define LX_MAX_LIB_SYMBOLS 256u
 
 typedef struct _LX_LIB_ENTRY
 {
@@ -300,6 +307,7 @@ typedef struct _LX_GLOBAL_TABLE
 #define LX_PT_LOAD 1u
 #define LX_PT_DYNAMIC 2u
 #define LX_PT_INTERP 3u
+#define LX_PT_TLS 7u
 #define LX_DT_NULL 0u
 #define LX_DT_NEEDED 1u
 #define LX_DT_PLTRELSZ 2u
@@ -321,6 +329,9 @@ typedef struct _LX_GLOBAL_TABLE
 #define LX_DT_FINI_ARRAY 26u
 #define LX_DT_INIT_ARRAYSZ 27u
 #define LX_DT_FINI_ARRAYSZ 28u
+#define LX_DT_RELRSZ 35u
+#define LX_DT_RELR 36u
+#define LX_DT_RELRENT 37u
 #define LX_DT_GNU_HASH 0x6ffffef5u
 #define LX_DT_FLAGS 30u
 #define LX_DT_FLAGS_1 0x6ffffffbu
@@ -423,7 +434,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 SymStrTabVaddr;
     ULONG SymNameOffsets[LX_MAX_SYMBOLS];
     ULONG SymRelocOffsets[LX_MAX_SYMBOLS];
-    CHAR SymNames[LX_MAX_SYMBOLS][48];
+    CHAR SymNames[LX_MAX_SYMBOLS][32];
     ULONG StubCount;
     ULONG StubFound;
     ULONG StubUnknown;
@@ -3756,6 +3767,8 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
         ULONG64 pOffset;
         ULONG64 pVaddr;
         ULONG64 pFilesz;
+        ULONG64 pMemsz;
+        ULONG64 pAlign;
 
         if (Load->PhdrAddress >= Load->MinVaddr)
         {
@@ -3777,6 +3790,8 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
         pVaddr = *(const ULONG64 *)(phdr + 16);
         pOffset = *(const ULONG64 *)(phdr + 8);
         pFilesz = *(const ULONG64 *)(phdr + 32);
+        pMemsz = *(const ULONG64 *)(phdr + 40);
+        pAlign = *(const ULONG64 *)(phdr + 48);
 
         if (pType == LX_PT_INTERP)
         {
@@ -3784,6 +3799,13 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
             Info->InterpVaddr = pVaddr;
             Info->InterpOffset = pOffset;
             Info->InterpSize = (ULONG)pFilesz;
+        }
+        else if (pType == LX_PT_TLS)
+        {
+            Info->TlsVaddr = pVaddr;
+            Info->TlsFileSize = pFilesz;
+            Info->TlsMemSize = pMemsz;
+            Info->TlsAlign = pAlign;
         }
         else if (pType == LX_PT_DYNAMIC)
         {
@@ -3871,6 +3893,14 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
         else if (dTag == LX_DT_HASH)
         {
             Info->HashVaddr = dVal;
+        }
+        else if (dTag == LX_DT_RELR)
+        {
+            Info->RelrVaddr = dVal;
+        }
+        else if (dTag == LX_DT_RELRSZ)
+        {
+            Info->RelrSize = dVal;
         }
         else if (dTag == LX_DT_GNU_HASH)
         {
@@ -6652,6 +6682,70 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                 }
             }
 
+            /* DT_RELR：打包相对重定位（glibc 2.36+，无 RELATIVE 条目） */
+            if (libDynamic.HasDynamic && libDynamic.RelrSize > 0 && libDynamic.RelrVaddr != 0 &&
+                libDynamic.RelrVaddr >= minVaddr)
+            {
+                ULONG64 relrOffset = libDynamic.RelrVaddr - minVaddr;
+                ULONG64 relrCount = libDynamic.RelrSize / 8;
+                ULONG64 relrIndex = 0;
+                ULONG64 where = 0;
+                if (relrCount > 65536)
+                {
+                    relrCount = 65536;
+                }
+                while (relrIndex < relrCount)
+                {
+                    ULONG64 entOff = relrOffset + relrIndex * 8;
+                    ULONG64 entry;
+                    if (entOff + 8 > fileLength)
+                    {
+                        break;
+                    }
+                    RtlCopyMemory(&entry, fileBuffer + entOff, 8);
+                    relrIndex++;
+                    if ((entry & 1) == 0)
+                    {
+                        /* 偶数项：直接是一个地址 */
+                        ULONG64 destAddress = BaseAddress + entry;
+                        ULONG64 newValue = BaseAddress + entry;
+                        SIZE_T written = 0;
+                        if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &newValue, TargetProcess,
+                                                           (PVOID)(ULONG_PTR)destAddress, sizeof(newValue),
+                                                           KernelMode, &written)))
+                        {
+                            Entry->RelaApplied++;
+                            Stats->TotalRelocs++;
+                        }
+                        where = entry + 8;
+                    }
+                    else
+                    {
+                        /* 奇数项：位图，bit i 表示 where + i*8 处需重定位 */
+                        ULONG bit;
+                        ULONG64 bitmap = entry >> 1;
+                        for (bit = 0; bit < 63; bit++)
+                        {
+                            if ((bitmap & (1ull << bit)) != 0)
+                            {
+                                ULONG64 target = where + (ULONG64)bit * 8;
+                                ULONG64 destAddress = BaseAddress + target;
+                                ULONG64 newValue = BaseAddress + target;
+                                SIZE_T written = 0;
+                                if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &newValue, TargetProcess,
+                                                                   (PVOID)(ULONG_PTR)destAddress, sizeof(newValue),
+                                                                   KernelMode, &written)))
+                                {
+                                    Entry->RelaApplied++;
+                                    Stats->TotalRelocs++;
+                                }
+                            }
+                        }
+                        where += 63 * 8;
+                    }
+                }
+            }
+
                     }
     }
 
@@ -7477,7 +7571,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             {
                 result->SymNameOffsets[i] = g_SymbolInfo.Entries[i].NameOffset;
                 result->SymRelocOffsets[i] = g_SymbolInfo.Entries[i].RelocOffset;
-                RtlCopyMemory(result->SymNames[i], g_SymbolInfo.Entries[i].Name, 48);
+                RtlCopyMemory(result->SymNames[i], g_SymbolInfo.Entries[i].Name, 32);
             }
 
             for (i = 0; i < 8; i++)
