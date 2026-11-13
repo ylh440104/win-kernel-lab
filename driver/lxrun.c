@@ -6707,8 +6707,8 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     if ((entry & 1) == 0)
                     {
                         /* 偶数项：直接是一个地址 */
-                        ULONG64 destAddress = BaseAddress + entry;
-                        ULONG64 newValue = BaseAddress + entry;
+                        ULONG64 destAddress = Entry->BaseAddress + entry;
+                        ULONG64 newValue = Entry->BaseAddress + entry;
                         SIZE_T written = 0;
                         if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &newValue, TargetProcess,
                                                            (PVOID)(ULONG_PTR)destAddress, sizeof(newValue),
@@ -6729,8 +6729,8 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                             if ((bitmap & (1ull << bit)) != 0)
                             {
                                 ULONG64 target = where + (ULONG64)bit * 8;
-                                ULONG64 destAddress = BaseAddress + target;
-                                ULONG64 newValue = BaseAddress + target;
+                                ULONG64 destAddress = Entry->BaseAddress + target;
+                                ULONG64 newValue = Entry->BaseAddress + target;
                                 SIZE_T written = 0;
                                 if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &newValue, TargetProcess,
                                                                    (PVOID)(ULONG_PTR)destAddress, sizeof(newValue),
