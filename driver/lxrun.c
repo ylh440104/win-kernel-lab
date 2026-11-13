@@ -5852,7 +5852,6 @@ static const LX_BUILTIN_DEF g_Builtins[LX_BUILTIN_COUNT] = {
     { "qsort", g_BuiltinQsort, sizeof(g_BuiltinQsort) },
     { "bsearch", g_BuiltinBsearch, sizeof(g_BuiltinBsearch) },
     { "rand_r", g_BuiltinRandR, sizeof(g_BuiltinRandR) },
-    { "abs", g_BuiltinAbs, sizeof(g_BuiltinAbs) },
     { "labs", g_BuiltinLabs, sizeof(g_BuiltinLabs) },
     { "isalpha", g_BuiltinIsalpha, sizeof(g_BuiltinIsalpha) },
     { "isdigit", g_BuiltinIsdigit, sizeof(g_BuiltinIsdigit) },
