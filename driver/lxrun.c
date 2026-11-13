@@ -89,6 +89,13 @@ typedef struct _LX_ELF_DYNAMIC_INFO
     ULONG64 FiniVaddr;
     ULONG64 SonameOffset;
     ULONG64 HashVaddr;
+    ULONG64 GnuHashVaddr;
+    ULONG64 InitArrayVaddr;
+    ULONG64 InitArraySize;
+    ULONG64 FiniArrayVaddr;
+    ULONG64 FiniArraySize;
+    ULONG64 Flags;
+    ULONG64 Flags1;
     ULONG64 SymCountFromHash;
     ULONG NeededCount;
     ULONG NeededOffsets[LX_MAX_NEEDED];
@@ -242,6 +249,9 @@ typedef struct _LX_LIB_ENTRY
     ULONG SymCount;
     ULONG64 FirstSymValue;
     ULONG64 GotProbe;
+    ULONG64 InitArrayVaddr;
+    ULONG InitArrayCount;
+    ULONG InitArrayCalled;
     ULONG SymDumped;
     ULONG LoadStatus;
     CHAR Name[LX_MAX_SYMBOL_NAME];
@@ -307,6 +317,13 @@ typedef struct _LX_GLOBAL_TABLE
 #define LX_DT_SONAME 14u
 #define LX_DT_RPATH 15u
 #define LX_DT_SYMBOLIC 16u
+#define LX_DT_INIT_ARRAY 25u
+#define LX_DT_FINI_ARRAY 26u
+#define LX_DT_INIT_ARRAYSZ 27u
+#define LX_DT_FINI_ARRAYSZ 28u
+#define LX_DT_GNU_HASH 0x6ffffef5u
+#define LX_DT_FLAGS 30u
+#define LX_DT_FLAGS_1 0x6ffffffbu
 #define LX_DT_REL 17u
 #define LX_DT_RELSZ 18u
 #define LX_DT_RELENT 19u
@@ -315,12 +332,7 @@ typedef struct _LX_GLOBAL_TABLE
 #define LX_DT_TEXTREL 22u
 #define LX_DT_JMPREL 23u
 #define LX_DT_BIND_NOW 24u
-#define LX_DT_INIT_ARRAY 25u
-#define LX_DT_FINI_ARRAY 26u
-#define LX_DT_INIT_ARRAYSZ 27u
-#define LX_DT_FINI_ARRAYSZ 28u
 #define LX_DT_RUNPATH 29u
-#define LX_DT_FLAGS 30u
 #define LX_DT_MAX_ENTRIES 32u
 
 #define LX_PICO_INFO_SIZE 0x58
@@ -3860,10 +3872,97 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
         {
             Info->HashVaddr = dVal;
         }
+        else if (dTag == LX_DT_GNU_HASH)
+        {
+            Info->GnuHashVaddr = dVal;
+        }
+        else if (dTag == LX_DT_INIT_ARRAY)
+        {
+            Info->InitArrayVaddr = dVal;
+        }
+        else if (dTag == LX_DT_INIT_ARRAYSZ)
+        {
+            Info->InitArraySize = dVal;
+        }
+        else if (dTag == LX_DT_FINI_ARRAY)
+        {
+            Info->FiniArrayVaddr = dVal;
+        }
+        else if (dTag == LX_DT_FINI_ARRAYSZ)
+        {
+            Info->FiniArraySize = dVal;
+        }
+        else if (dTag == LX_DT_FLAGS)
+        {
+            Info->Flags = dVal;
+        }
+        else if (dTag == LX_DT_FLAGS_1)
+        {
+            Info->Flags1 = dVal;
+        }
     }
 
     Info->RelaCount = Info->RelaSize / 24;
     Info->JmpRelCount = Info->JmpRelSize / 24;
+
+    /* DT_GNU_HASH：glibc 真实库只提供它。用 bloom/symoffset 推算符号总数 */
+    if (Info->GnuHashVaddr != 0 && Info->GnuHashVaddr >= Load->MinVaddr && Info->SymCountFromHash == 0)
+    {
+        ULONG64 gnuOffset = Info->GnuHashVaddr - Load->MinVaddr;
+        if (gnuOffset + 16 <= ImageSize)
+        {
+            ULONG nbuckets = *(const ULONG *)(ImageData + gnuOffset);
+            ULONG symoffset = *(const ULONG *)(ImageData + gnuOffset + 4);
+            ULONG bloomSize = *(const ULONG *)(ImageData + gnuOffset + 8);
+            if (nbuckets > 0 && nbuckets < 65536 && bloomSize > 0 && bloomSize < 1024)
+            {
+                ULONG64 bucketsOff = gnuOffset + 16 + (ULONG64)bloomSize * 8;
+                if (bucketsOff + (ULONG64)nbuckets * 4 <= ImageSize)
+                {
+                    ULONG maxBucket = 0;
+                    ULONG bi;
+                    for (bi = 0; bi < nbuckets; bi++)
+                    {
+                        ULONG v = *(const ULONG *)(ImageData + bucketsOff + bi * 4);
+                        if (v > maxBucket)
+                        {
+                            maxBucket = v;
+                        }
+                    }
+                    if (maxBucket == 0)
+                    {
+                        Info->SymCountFromHash = symoffset;
+                    }
+                    else if (maxBucket >= symoffset)
+                    {
+                        /* 沿 chain 走到链尾（低位为 1 即为终止项） */
+                        ULONG64 chainBase = bucketsOff + (ULONG64)nbuckets * 4;
+                        ULONG idx = maxBucket;
+                        ULONG guard = 0;
+                        while (idx >= symoffset && idx < 4096 && guard < 8192)
+                        {
+                            ULONG64 entOff = chainBase + (ULONG64)(idx - symoffset) * 4;
+                            if (entOff + 4 > ImageSize)
+                            {
+                                break;
+                            }
+                            if (*(const ULONG *)(ImageData + entOff) & 1u)
+                            {
+                                idx++;
+                                break;
+                            }
+                            idx++;
+                            guard++;
+                        }
+                        if (idx > 0 && idx < 4096)
+                        {
+                            Info->SymCountFromHash = idx;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if (Info->HashVaddr != 0 && Info->HashVaddr >= Load->MinVaddr)
     {
@@ -6344,6 +6443,12 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
             Entry->DynamicOffset = libDynamic.DynamicOffset;
             Entry->DynamicSize = libDynamic.DynamicSize;
             Entry->StrTabVaddr = libDynamic.StrTabVaddr;
+            Entry->InitArrayVaddr = libDynamic.InitArrayVaddr;
+            Entry->InitArrayCount = (ULONG)(libDynamic.InitArraySize / 8);
+            if (Entry->InitArrayCount > 32)
+            {
+                Entry->InitArrayCount = 32;
+            }
             Entry->SymTabVaddr = libDynamic.SymTabVaddr;
             Entry->NeededCount = libDynamic.NeededCount;
             Entry->RelaCount = libDynamic.RelaCount;
