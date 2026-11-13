@@ -280,7 +280,7 @@ typedef struct _LX_LIB_STATS
     LX_LIB_ENTRY Libs[LX_MAX_LIBS];
 } LX_LIB_STATS;
 
-#define LX_MAX_GLOBAL_SYMBOLS 128u
+#define LX_MAX_GLOBAL_SYMBOLS 768u
 
 typedef struct _LX_GLOBAL_SYMBOL
 {
