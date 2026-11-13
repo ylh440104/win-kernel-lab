@@ -6540,8 +6540,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         if (NT_SUCCESS(MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)(Entry->BaseAddress + 0x12C0),
                                            PsGetCurrentProcess(), &libChk, sizeof(libChk), KernelMode, &libRead)))
         {
-            DbgPrint("LXDBG: libGOT12C0=0x%llx
-", (unsigned long long)libChk);
+            DbgPrint("LXDBG: libGOT12C0=0x%llx\n", (unsigned long long)libChk);
         }
     }
     Stats->LastStatus = 0;
@@ -6761,8 +6760,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A18ull),
                                            PsGetCurrentProcess(), &gotChk, sizeof(gotChk), KernelMode, &gotRead)))
         {
-            DbgPrint("LXDBG: mainGOT1A18=0x%llx
-", (unsigned long long)gotChk);
+            DbgPrint("LXDBG: mainGOT1A18=0x%llx\n", (unsigned long long)gotChk);
         }
     }
 
