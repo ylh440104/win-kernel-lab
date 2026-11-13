@@ -603,6 +603,7 @@ static LX_BUILTIN_STATS g_BuiltinStats;
 static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
+static ULONG g_GlobalLibIndex = 0;
 static ULONG64 g_DiagGlobalSinm = 0;
 static ULONG64 g_DiagMainGot = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
@@ -6101,6 +6102,10 @@ static ULONG64 LxTryLoadLibraryFile(const char *Name, UCHAR **OutBuffer, ULONG *
     return 0;
 }
 
+static void LxLoadNeededLibrariesEx(UCHAR *ImageData, ULONG ImageSize, ULONG64 MinVaddr,
+                                      const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
+                                      LX_LIB_STATS *Stats, LX_GLOBAL_TABLE *Globals);
+
 static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, ULONG LibIndex,
                                    LX_LIB_ENTRY *Entry, LX_LIB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
 {
@@ -6560,77 +6565,120 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
 
     ExFreePool(fileBuffer);
 
+    /* 递归加载本库依赖的库（库依赖库） */
+    if (Entry->NeededCount > 0)
+    {
+        LX_ELF_DYNAMIC_INFO nestedInfo;
+        RtlZeroMemory(&nestedInfo, sizeof(nestedInfo));
+        nestedInfo.HasDynamic = Entry->HasDynamic;
+        nestedInfo.StrTabVaddr = Entry->StrTabVaddr;
+        nestedInfo.NeededCount = Entry->NeededCount;
+        {
+            ULONG ni;
+            for (ni = 0; ni < Entry->NeededCount && ni < LX_MAX_NEEDED; ni++)
+            {
+                nestedInfo.NeededOffsets[ni] = Entry->NeededOffsets[ni];
+            }
+        }
+        LxLoadNeededLibrariesEx(NULL, 0, minVaddr, &nestedInfo, TargetProcess, Stats, Globals);
+    }
+
     return Entry->BaseAddress;
+}
+
+static void LxLoadNeededLibrariesEx(UCHAR *ImageData, ULONG ImageSize, ULONG64 MinVaddr,
+                                      const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
+                                      LX_LIB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
+{
+    ULONG neededIndex;
+    if (Info == NULL || TargetProcess == NULL || Info->NeededCount == 0 || Info->StrTabVaddr == 0)
+    {
+        return;
+    }
+    for (neededIndex = 0; neededIndex < Info->NeededCount && neededIndex < LX_MAX_NEEDED; neededIndex++)
+    {
+        ULONG64 nameOffset = Info->StrTabVaddr + Info->NeededOffsets[neededIndex];
+        ULONG64 strOffset = nameOffset - MinVaddr;
+        CHAR libName[LX_MAX_SYMBOL_NAME];
+        ULONG ci;
+        ULONG slot;
+        BOOLEAN already = FALSE;
+        if (Info->StrTabVaddr < MinVaddr)
+        {
+            continue;
+        }
+        if (ImageSize != 0 && strOffset >= ImageSize)
+        {
+            continue;
+        }
+        /* 读名字：优先从已映射的目标进程内存读取（递归时 ImageData 为 NULL） */
+        RtlZeroMemory(libName, sizeof(libName));
+        {
+            SIZE_T rd = 0;
+            if (!NT_SUCCESS(MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)nameOffset,
+                                                PsGetCurrentProcess(), libName, LX_MAX_SYMBOL_NAME - 1,
+                                                KernelMode, &rd)))
+            {
+                continue;
+            }
+        }
+        libName[LX_MAX_SYMBOL_NAME - 1] = 0;
+        if (libName[0] == 0)
+        {
+            continue;
+        }
+        for (ci = 0; ci + 1 < LX_MAX_SYMBOL_NAME && libName[ci] != 0; ci++)
+        {
+        }
+        libName[ci] = 0;
+        /* 已加载过？ */
+        for (slot = 0; slot < Stats->Loaded && slot < LX_MAX_LIBS; slot++)
+        {
+            const CHAR *a = Stats->Libs[slot].Name;
+            const CHAR *b = libName;
+            BOOLEAN same = TRUE;
+            while (*a != 0 || *b != 0)
+            {
+                if (*a != *b)
+                {
+                    same = FALSE;
+                    break;
+                }
+                a++;
+                b++;
+            }
+            if (same && Stats->Libs[slot].Name[0] != 0)
+            {
+                already = TRUE;
+                break;
+            }
+        }
+        if (already)
+        {
+            continue;
+        }
+        if (g_GlobalLibIndex >= LX_MAX_LIBS)
+        {
+            Stats->Failed++;
+            Stats->LastStatus = 0xC0000023u;
+            break;
+        }
+        LxLoadSharedLibrary(libName, TargetProcess, g_GlobalLibIndex, &Stats->Libs[g_GlobalLibIndex], Stats, Globals);
+        g_GlobalLibIndex++;
+    }
 }
 
 static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
                                   const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
                                   LX_LIB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
 {
-    ULONG neededIndex;
-
     RtlZeroMemory(Stats, sizeof(LX_LIB_STATS));
-
+    g_GlobalLibIndex = 0;
     if (ImageData == NULL || Load == NULL || Info == NULL || TargetProcess == NULL)
     {
         return;
     }
-
-    if (Info->NeededCount == 0 || Info->StrTabVaddr == 0)
-    {
-        return;
-    }
-
-    for (neededIndex = 0; neededIndex < Info->NeededCount && neededIndex < LX_MAX_LIBS; neededIndex++)
-    {
-        ULONG64 nameOffset = Info->StrTabVaddr + Info->NeededOffsets[neededIndex];
-        ULONG64 strTabOffset;
-        CHAR libName[LX_MAX_SYMBOL_NAME];
-        ULONG charIndex;
-
-        RtlZeroMemory(libName, sizeof(libName));
-
-        if (nameOffset < Load->MinVaddr)
-        {
-            Stats->NameResolveFail++;
-            continue;
-        }
-
-        strTabOffset = nameOffset - Load->MinVaddr;
-
-        if (strTabOffset >= ImageSize)
-        {
-            Stats->NameResolveFail++;
-            continue;
-        }
-
-        for (charIndex = 0; charIndex + 1 < LX_MAX_SYMBOL_NAME; charIndex++)
-        {
-            ULONG64 pos = strTabOffset + charIndex;
-
-            if (pos >= ImageSize)
-            {
-                break;
-            }
-
-            libName[charIndex] = (CHAR)ImageData[pos];
-
-            if (libName[charIndex] == 0)
-            {
-                break;
-            }
-        }
-
-        libName[LX_MAX_SYMBOL_NAME - 1] = 0;
-
-        if (libName[0] == 0)
-        {
-            Stats->NameResolveFail++;
-            continue;
-        }
-
-        LxLoadSharedLibrary(libName, TargetProcess, neededIndex, &Stats->Libs[neededIndex], Stats, Globals);
-    }
+    LxLoadNeededLibrariesEx(ImageData, ImageSize, Load->MinVaddr, Info, TargetProcess, Stats, Globals);
 }
 
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
