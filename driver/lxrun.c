@@ -610,6 +610,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsInLibsUsed;
     ULONG64 TlsInLibsMemsz;
     ULONG64 TlsInLibsBase;
+    ULONG64 TlsCallMark;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -670,6 +671,7 @@ static ULONG64 g_TlsCopySrc = 0;
 static ULONG64 g_TlsCopyLen = 0;
 static ULONG64 g_TlsCopyStatus = 0;
 static ULONG64 g_TlsEntered = 0;
+static ULONG64 g_TlsCallMark = 0;
 static ULONG64 g_TlsInStubBase = 0;
 static ULONG64 g_TlsInStats = 0;
 static ULONG64 g_TlsInLibsUsed = 0;
@@ -7185,7 +7187,9 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 
     LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats,
                  &g_GlobalSymbols);
+    g_TlsCallMark = 0xAAAA0001;
     LxSetupTls(targetProcess, g_StubStats.StubAreaBase, &g_LibStats);
+    g_TlsCallMark = 0xAAAA0002;
     {
         ULONG64 dgValue = 0;
         SIZE_T dgRead = 0;
@@ -8053,6 +8057,7 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->TlsInLibsUsed = g_TlsInLibsUsed;
             result->TlsInLibsMemsz = g_TlsInLibsMemsz;
             result->TlsInLibsBase = g_TlsInLibsBase;
+            result->TlsCallMark = g_TlsCallMark;
             result->ExitCode = g_ExitCode;
             result->LastSyscallResult = g_LastSyscallResult;
             result->StackSetupStatus = g_StackSetupStatus;
