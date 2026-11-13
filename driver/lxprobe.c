@@ -238,6 +238,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
+    ULONG LibRelrCount[4];
+    ULONG LibRelrApplied[4];
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -602,6 +604,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  LIBS: [%lu] symtab=0x%llx firstSymValue=0x%llx\n", li,
                    (unsigned long long)q.LibSymTab[li], (unsigned long long)q.LibFirstSymValue[li]);
             printf("  LIBS: [%lu] got12C0=0x%llx\n", li, (unsigned long long)q.LibGot12C0[li]);
+            printf("  LIBS: [%lu] relr=%lu relrApplied=%lu\n", li, q.LibRelrCount[li], q.LibRelrApplied[li]);
             printf("  DIAG: globalSinm=0x%llx mainGot1A18=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
         }
     }
