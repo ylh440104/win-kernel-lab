@@ -232,7 +232,7 @@ typedef struct _LX_STUB_STATS
 #define LX_MAX_LIBS 4u
 #define LX_LIB_BASE_STEP 0x4000000ull
 #define LX_LIB_IMAGE_MAX 0x400000u
-#define LX_MAX_LIB_SYMBOLS 256u
+#define LX_MAX_LIB_SYMBOLS 512u
 
 typedef struct _LX_LIB_ENTRY
 {
@@ -3940,7 +3940,7 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
     Info->JmpRelCount = Info->JmpRelSize / 24;
 
     /* DT_GNU_HASH：glibc 真实库只提供它。用 bloom/symoffset 推算符号总数 */
-    if (Info->GnuHashVaddr != 0 && Info->GnuHashVaddr >= Load->MinVaddr && Info->SymCountFromHash == 0)
+    if (Info->GnuHashVaddr != 0 && Info->GnuHashVaddr >= Load->MinVaddr && Info->SymCountFromHash == 0 && Info->HashVaddr == 0)
     {
         ULONG64 gnuOffset = Info->GnuHashVaddr - Load->MinVaddr;
         if (gnuOffset + 16 <= ImageSize)
