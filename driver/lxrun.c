@@ -660,23 +660,26 @@ static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
 static ULONG g_GlobalLibIndex = 0;
-static ULONG64 g_TlsBlockBase = 0;
-static ULONG64 g_TlsBlockSize = 0;
+volatile ULONG64 g_TlsBlockBase = 0;
+volatile ULONG64 g_TlsBlockSize = 0;
 static ULONG g_TlsSetupDone = 0;
-static ULONG64 g_TlsHeadStatus = 0;
-static ULONG64 g_TlsDataStatus = 0;
-static ULONG64 g_TlsHeadAddr = 0;
-static ULONG64 g_TlsCopyAttempted = 0;
-static ULONG64 g_TlsCopySrc = 0;
-static ULONG64 g_TlsCopyLen = 0;
-static ULONG64 g_TlsCopyStatus = 0;
-static ULONG64 g_TlsEntered = 0;
-static ULONG64 g_TlsCallMark = 0;
-static ULONG64 g_TlsInStubBase = 0;
-static ULONG64 g_TlsInStats = 0;
-static ULONG64 g_TlsInLibsUsed = 0;
-static ULONG64 g_TlsInLibsMemsz = 0;
-static ULONG64 g_TlsInLibsBase = 0;
+volatile ULONG64 g_TlsHeadStatus = 0;
+volatile ULONG64 g_TlsDataStatus = 0;
+volatile ULONG64 g_TlsHeadAddr = 0;
+volatile ULONG64 g_TlsCopyAttempted = 0;
+volatile ULONG64 g_TlsCopySrc = 0;
+volatile ULONG64 g_TlsCopyLen = 0;
+volatile ULONG64 g_TlsCopyStatus = 0;
+volatile ULONG64 g_TlsEntered = 0;
+volatile ULONG64 g_TlsCallMark = 0;
+volatile ULONG64 g_FsSetAttempt = 0;
+volatile ULONG64 g_FsSetAddr = 0;
+volatile ULONG64 g_FsSetCalled = 0;
+volatile ULONG64 g_TlsInStubBase = 0;
+volatile ULONG64 g_TlsInStats = 0;
+volatile ULONG64 g_TlsInLibsUsed = 0;
+volatile ULONG64 g_TlsInLibsMemsz = 0;
+volatile ULONG64 g_TlsInLibsBase = 0;
 static ULONG64 g_DiagGlobalSinm = 0;
 static ULONG64 g_DiagMainGot = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
@@ -2811,9 +2814,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (code == 0x1002)
         {
+            g_FsSetAttempt++;
+            g_FsSetAddr = address;
             if (g_SetDescriptorBaseFn != 0)
             {
                 ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, address);
+                g_FsSetCalled = 1;
             }
 
             g_ArchPrctlCalls++;
@@ -4632,7 +4638,7 @@ static ULONG64 LxGlobalTableLookup(LX_GLOBAL_TABLE *Table, const char *Name, ULO
 
 static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOBAL_TABLE *Globals, LX_BUILTIN_STATS *Stats);
 
-static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Stats)
+void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Stats)
 {
     ULONG64 blockBase;
     UCHAR *tcb;
