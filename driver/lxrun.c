@@ -436,6 +436,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LibFirstSymValue[4];
     ULONG64 LibSymTab[4];
     ULONG64 LibGot12C0[4];
+    ULONG64 DiagGlobalSinm;
+    ULONG64 DiagMainGot;
     ULONG LibRelaCount[4];
     ULONG LibRelaApplied[4];
     ULONG LibNeededCount[4];
@@ -601,6 +603,8 @@ static LX_BUILTIN_STATS g_BuiltinStats;
 static ULONG g_LastRelocKernelStatus = 0;
 static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
+static ULONG64 g_DiagGlobalSinm = 0;
+static ULONG64 g_DiagMainGot = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
 static ULONG g_StackMapStatus = 0xFFFFFFFFu;
 static ULONG64 g_ThreadHandle = 0;
@@ -6763,6 +6767,16 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 
     LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats,
                  &g_GlobalSymbols);
+    {
+        ULONG64 dgValue = 0;
+        SIZE_T dgRead = 0;
+        g_DiagGlobalSinm = LxGlobalTableLookup(&g_GlobalSymbols, "sinm", NULL);
+        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A18ull),
+                                           PsGetCurrentProcess(), &dgValue, sizeof(dgValue), KernelMode, &dgRead)))
+        {
+            g_DiagMainGot = dgValue;
+        }
+    }
 
     ZwClose(sectionHandle);
     ObDereferenceObject(targetProcess);
@@ -7234,6 +7248,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->LibLoaded = g_LibStats.Loaded;
             result->LibFailed = g_LibStats.Failed;
             result->LibLastStatus = g_LibStats.LastStatus;
+            result->DiagGlobalSinm = g_DiagGlobalSinm;
+            result->DiagMainGot = g_DiagMainGot;
             result->LibTotalSymbols = g_LibStats.TotalSymbols;
             result->LibTotalRelocs = g_LibStats.TotalRelocs;
             result->LibNameResolveFail = g_LibStats.NameResolveFail;
