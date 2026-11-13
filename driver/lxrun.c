@@ -256,6 +256,8 @@ typedef struct _LX_LIB_ENTRY
     ULONG SymCount;
     ULONG64 FirstSymValue;
     ULONG64 GotProbe;
+    ULONG RelrCount;
+    ULONG RelrApplied;
     ULONG64 InitArrayVaddr;
     ULONG InitArrayCount;
     ULONG InitArrayCalled;
@@ -583,6 +585,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
+    ULONG LibRelrCount[4];
+    ULONG LibRelrApplied[4];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -6683,6 +6687,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
             }
 
             /* DT_RELR：打包相对重定位（glibc 2.36+，无 RELATIVE 条目） */
+            Entry->RelrCount = 0;
             if (libDynamic.HasDynamic && libDynamic.RelrSize > 0 && libDynamic.RelrVaddr != 0 &&
                 libDynamic.RelrVaddr >= minVaddr)
             {
@@ -7516,6 +7521,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibRelaCount[i] = g_LibStats.Libs[i].RelaCount;
                 result->LibRelaApplied[i] = g_LibStats.Libs[i].RelaApplied;
                 result->LibNeededCount[i] = g_LibStats.Libs[i].NeededCount;
+                result->LibRelrCount[i] = g_LibStats.Libs[i].RelrCount;
+                result->LibRelrApplied[i] = g_LibStats.Libs[i].RelrApplied;
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
                 RtlCopyMemory(result->LibNames[i], g_LibStats.Libs[i].Name, 48);
