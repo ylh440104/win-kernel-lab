@@ -605,7 +605,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
                    (unsigned long long)q.LibSymTab[li], (unsigned long long)q.LibFirstSymValue[li]);
             printf("  LIBS: [%lu] got12C0=0x%llx\n", li, (unsigned long long)q.LibGot12C0[li]);
             printf("  LIBS: [%lu] relr=%lu relrApplied=%lu\n", li, q.LibRelrCount[li], q.LibRelrApplied[li]);
-            printf("  DIAG: globalAbs=0x%llx mainGotAbs=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
+            printf("  DIAG: globalSinm=0x%llx mainGot1A18=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
         }
     }
     printf("  STUBS: count=%lu found=%lu unknown=%lu writeFail=%lu area=0x%llx\n",
