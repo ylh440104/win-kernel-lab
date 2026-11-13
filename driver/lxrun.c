@@ -7029,7 +7029,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         ULONG64 dgValue = 0;
         SIZE_T dgRead = 0;
         g_DiagGlobalSinm = LxGlobalTableLookup(&g_GlobalSymbols, "sinm", NULL);
-        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A18ull),
+        g_DiagMainGot = LxGlobalTableLookup(&g_GlobalSymbols, "abs", NULL);
+        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A20ull),
                                            PsGetCurrentProcess(), &dgValue, sizeof(dgValue), KernelMode, &dgRead)))
         {
             g_DiagMainGot = dgValue;
