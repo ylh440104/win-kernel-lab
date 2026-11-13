@@ -6534,6 +6534,16 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
 
     Entry->LoadStatus = 0;
     Stats->Loaded++;
+    {
+        ULONG64 libChk = 0;
+        SIZE_T libRead = 0;
+        if (NT_SUCCESS(MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)(Entry->BaseAddress + 0x12C0),
+                                           PsGetCurrentProcess(), &libChk, sizeof(libChk), KernelMode, &libRead)))
+        {
+            DbgPrint("LXDBG: libGOT12C0=0x%llx
+", (unsigned long long)libChk);
+        }
+    }
     Stats->LastStatus = 0;
 
     ExFreePool(fileBuffer);
@@ -6745,6 +6755,16 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 
     LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats,
                  &g_GlobalSymbols);
+    {
+        ULONG64 gotChk = 0;
+        SIZE_T gotRead = 0;
+        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A18ull),
+                                           PsGetCurrentProcess(), &gotChk, sizeof(gotChk), KernelMode, &gotRead)))
+        {
+            DbgPrint("LXDBG: mainGOT1A18=0x%llx
+", (unsigned long long)gotChk);
+        }
+    }
 
     ZwClose(sectionHandle);
     ObDereferenceObject(targetProcess);
