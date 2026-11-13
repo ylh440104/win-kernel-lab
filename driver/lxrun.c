@@ -632,7 +632,7 @@ static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
 static ULONG g_GlobalLibIndex = 0;
 static ULONG64 g_DiagGlobalSinm = 0;
-static ULONG64 g_DiagMainGot = 0;
+static ULONG64 g_DiagMainGot = 0x12345;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
 static ULONG g_StackMapStatus = 0xFFFFFFFFu;
 static ULONG64 g_ThreadHandle = 0;
@@ -7031,7 +7031,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         g_DiagGlobalSinm = LxGlobalTableLookup(&g_GlobalSymbols, "sinm", NULL);
         g_DiagMainGot = LxGlobalTableLookup(&g_GlobalSymbols, "abs", NULL);
         g_DiagMainGot = 0;
-        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A40ull),
+        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A20ull),
                                            PsGetCurrentProcess(), &dgValue, sizeof(dgValue), KernelMode, &dgRead)))
         {
             g_DiagMainGot = dgValue;
