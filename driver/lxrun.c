@@ -6663,8 +6663,11 @@ static void LxLoadNeededLibrariesEx(UCHAR *ImageData, ULONG ImageSize, ULONG64 M
             Stats->LastStatus = 0xC0000023u;
             break;
         }
-        LxLoadSharedLibrary(libName, TargetProcess, g_GlobalLibIndex, &Stats->Libs[g_GlobalLibIndex], Stats, Globals);
-        g_GlobalLibIndex++;
+        {
+            ULONG thisIdx = g_GlobalLibIndex;
+            g_GlobalLibIndex++;
+            LxLoadSharedLibrary(libName, TargetProcess, thisIdx, &Stats->Libs[thisIdx], Stats, Globals);
+        }
     }
 }
 
