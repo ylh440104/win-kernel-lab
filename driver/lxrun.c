@@ -4607,18 +4607,24 @@ static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOB
 static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Stats)
 {
     ULONG64 blockBase;
-    ULONG64 tcbSize = LX_TLS_TCB_SIZE;
-    UCHAR tcb[LX_TLS_TCB_SIZE];
+    UCHAR *tcb;
     ULONG index;
     ULONG allocated = 0;
+    ULONG totalSize;
     SIZE_T written = 0;
 
     if (TargetProcess == NULL || StubAreaBase == 0 || Stats == NULL)
     {
         return;
     }
+    totalSize = LX_TLS_TCB_SIZE + LX_TLS_BLOCK_MAX;
+    tcb = (UCHAR *)ExAllocatePoolWithTag(NonPagedPool, totalSize, (ULONG)'slTx');
+    if (tcb == NULL)
+    {
+        return;
+    }
+    RtlZeroMemory(tcb, totalSize);
     blockBase = StubAreaBase + LX_TLS_AREA_OFFSET;
-    RtlZeroMemory(tcb, sizeof(tcb));
 
     for (index = 0; index < LX_MAX_LIBS; index++)
     {
@@ -4633,30 +4639,30 @@ static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STA
         {
             break;
         }
-        entry->TlsOffset = libTlsOffset;
-        entry->TlsBlockBase = blockBase;
-        entry->TlsAllocated = 1;
         if (entry->TlsFileSize > 0 && entry->TlsFileSize <= entry->TlsMemSize)
         {
             NTSTATUS copyStatus;
             copyStatus = MmCopyVirtualMemory(TargetProcess,
                                              (PVOID)(ULONG_PTR)(entry->BaseAddress + entry->TlsVaddr),
                                              PsGetCurrentProcess(),
-                                             tcb + tcbSize + libTlsOffset,
+                                             tcb + LX_TLS_TCB_SIZE + libTlsOffset,
                                              (SIZE_T)entry->TlsFileSize,
                                              KernelMode, &written);
             if (!NT_SUCCESS(copyStatus))
             {
-                entry->TlsAllocated = 0;
                 continue;
             }
         }
+        entry->TlsOffset = libTlsOffset;
+        entry->TlsBlockBase = blockBase;
+        entry->TlsAllocated = 1;
         allocated += (ULONG)entry->TlsMemSize;
         allocated = (allocated + 7) & ~7u;
     }
 
     if (allocated == 0)
     {
+        ExFreePoolWithTag(tcb, (ULONG)'slTx');
         return;
     }
 
@@ -4664,14 +4670,30 @@ static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STA
     *(ULONG64 *)(tcb + 0x10) = blockBase;
     *(ULONG64 *)(tcb + 0x28) = 0x5A5A0000A5A50000ull;
 
-    if (!NT_SUCCESS(LxWritePicoMemory(TargetProcess, blockBase, tcb, tcbSize + allocated)))
+    __try
     {
-        return;
+        NTSTATUS headStatus;
+        headStatus = LxWritePicoMemory(TargetProcess, blockBase, tcb, 0x40);
+        if (NT_SUCCESS(headStatus))
+        {
+            NTSTATUS dataStatus;
+            dataStatus = LxWritePicoMemory(TargetProcess,
+                                           blockBase + LX_TLS_TCB_SIZE,
+                                           tcb + LX_TLS_TCB_SIZE,
+                                           allocated);
+            if (NT_SUCCESS(dataStatus))
+            {
+                g_TlsBlockBase = blockBase;
+                g_TlsBlockSize = LX_TLS_TCB_SIZE + allocated;
+                g_TlsSetupDone = 1;
+            }
+        }
     }
-
-    g_TlsBlockBase = blockBase;
-    g_TlsBlockSize = tcbSize + allocated;
-    g_TlsSetupDone = 1;
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        g_TlsSetupDone = 0;
+    }
+    ExFreePoolWithTag(tcb, (ULONG)'slTx');
 }
 
 static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_LOAD *Load,
