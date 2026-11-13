@@ -248,6 +248,12 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsCopySrc;
     ULONG64 TlsCopyLen;
     ULONG64 TlsCopyStatus;
+    ULONG64 TlsEntered;
+    ULONG64 TlsInStubBase;
+    ULONG64 TlsInStats;
+    ULONG64 TlsInLibsUsed;
+    ULONG64 TlsInLibsMemsz;
+    ULONG64 TlsInLibsBase;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -632,6 +638,13 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
                    (unsigned long long)q.TlsCopySrc,
                    (unsigned long long)q.TlsCopyLen,
                    (unsigned long long)q.TlsCopyStatus);
+            printf("  TLS: entered=%llu stubBase=0x%llx stats=0x%llx used=%llu memsz=%llu libBase=0x%llx\n",
+                   (unsigned long long)q.TlsEntered,
+                   (unsigned long long)q.TlsInStubBase,
+                   (unsigned long long)q.TlsInStats,
+                   (unsigned long long)q.TlsInLibsUsed,
+                   (unsigned long long)q.TlsInLibsMemsz,
+                   (unsigned long long)q.TlsInLibsBase);
             printf("  DIAG: globalSinm=0x%llx mainGot1A18=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
         }
     }
