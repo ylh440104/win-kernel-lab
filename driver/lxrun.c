@@ -600,6 +600,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsHeadStatus;
     ULONG64 TlsDataStatus;
     ULONG64 TlsHeadAddr;
+    ULONG64 TlsCopyAttempted;
+    ULONG64 TlsCopySrc;
+    ULONG64 TlsCopyLen;
+    ULONG64 TlsCopyStatus;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -655,6 +659,10 @@ static ULONG g_TlsSetupDone = 0;
 static ULONG64 g_TlsHeadStatus = 0;
 static ULONG64 g_TlsDataStatus = 0;
 static ULONG64 g_TlsHeadAddr = 0;
+static ULONG64 g_TlsCopyAttempted = 0;
+static ULONG64 g_TlsCopySrc = 0;
+static ULONG64 g_TlsCopyLen = 0;
+static ULONG64 g_TlsCopyStatus = 0;
 static ULONG64 g_DiagGlobalSinm = 0;
 static ULONG64 g_DiagMainGot = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
@@ -4645,15 +4653,26 @@ static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STA
         {
             break;
         }
+        g_TlsCopyAttempted = 1;
+        g_TlsCopySrc = entry->BaseAddress + entry->TlsVaddr;
+        g_TlsCopyLen = entry->TlsFileSize;
         if (entry->TlsFileSize > 0 && entry->TlsFileSize <= entry->TlsMemSize)
         {
             NTSTATUS copyStatus;
-            copyStatus = MmCopyVirtualMemory(TargetProcess,
-                                             (PVOID)(ULONG_PTR)(entry->BaseAddress + entry->TlsVaddr),
-                                             PsGetCurrentProcess(),
-                                             tcb + LX_TLS_TCB_SIZE + libTlsOffset,
-                                             (SIZE_T)entry->TlsFileSize,
-                                             KernelMode, &written);
+            __try
+            {
+                copyStatus = MmCopyVirtualMemory(TargetProcess,
+                                                 (PVOID)(ULONG_PTR)(entry->BaseAddress + entry->TlsVaddr),
+                                                 PsGetCurrentProcess(),
+                                                 tcb + LX_TLS_TCB_SIZE + libTlsOffset,
+                                                 (SIZE_T)entry->TlsFileSize,
+                                                 KernelMode, &written);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                copyStatus = 0xE0000001;
+            }
+            g_TlsCopyStatus = (ULONG64)copyStatus;
             if (!NT_SUCCESS(copyStatus))
             {
                 continue;
@@ -8006,6 +8025,10 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->TlsHeadStatus = g_TlsHeadStatus;
             result->TlsDataStatus = g_TlsDataStatus;
             result->TlsHeadAddr = g_TlsHeadAddr;
+            result->TlsCopyAttempted = g_TlsCopyAttempted;
+            result->TlsCopySrc = g_TlsCopySrc;
+            result->TlsCopyLen = g_TlsCopyLen;
+            result->TlsCopyStatus = g_TlsCopyStatus;
             result->ExitCode = g_ExitCode;
             result->LastSyscallResult = g_LastSyscallResult;
             result->StackSetupStatus = g_StackSetupStatus;
