@@ -6571,7 +6571,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         LX_ELF_DYNAMIC_INFO nestedInfo;
         RtlZeroMemory(&nestedInfo, sizeof(nestedInfo));
         nestedInfo.HasDynamic = Entry->HasDynamic;
-        nestedInfo.StrTabVaddr = Entry->StrTabVaddr;
+        nestedInfo.StrTabVaddr = Entry->BaseAddress + Entry->StrTabVaddr;
         nestedInfo.NeededCount = Entry->NeededCount;
         {
             ULONG ni;
