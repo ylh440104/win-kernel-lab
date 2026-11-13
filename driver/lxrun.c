@@ -240,6 +240,8 @@ typedef struct _LX_LIB_ENTRY
     ULONG RelaCount;
     ULONG RelaApplied;
     ULONG SymCount;
+    ULONG64 FirstSymValue;
+    ULONG64 GotProbe;
     ULONG SymDumped;
     ULONG LoadStatus;
     CHAR Name[LX_MAX_SYMBOL_NAME];
@@ -431,6 +433,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG LibUsed[4];
     ULONG LibStatus[4];
     ULONG LibSymCount[4];
+    ULONG64 LibFirstSymValue[4];
+    ULONG64 LibSymTab[4];
+    ULONG64 LibGot12C0[4];
     ULONG LibRelaCount[4];
     ULONG LibRelaApplied[4];
     ULONG LibNeededCount[4];
@@ -6365,6 +6370,10 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     }
 
                     RtlCopyMemory(&sym, fileBuffer + symEntryOffset, sizeof(LX_ELF_SYM));
+                    if (symWalk == 1)
+                    {
+                        Entry->FirstSymValue = sym.Value;
+                    }
 
                     if (sym.NameOffset == 0)
                     {
@@ -6534,6 +6543,15 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
 
     Entry->LoadStatus = 0;
     Stats->Loaded++;
+    {
+        ULONG64 gotProbe = 0;
+        SIZE_T gotProbeRead = 0;
+        if (NT_SUCCESS(MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)(Entry->BaseAddress + 0x12C0),
+                                           PsGetCurrentProcess(), &gotProbe, sizeof(gotProbe), KernelMode, &gotProbeRead)))
+        {
+            Entry->GotProbe = gotProbe;
+        }
+    }
     Stats->LastStatus = 0;
 
     ExFreePool(fileBuffer);
@@ -7226,6 +7244,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibUsed[i] = g_LibStats.Libs[i].Used;
                 result->LibStatus[i] = g_LibStats.Libs[i].LoadStatus;
                 result->LibSymCount[i] = g_LibStats.Libs[i].SymCount;
+                result->LibFirstSymValue[i] = g_LibStats.Libs[i].FirstSymValue;
+                result->LibSymTab[i] = g_LibStats.Libs[i].SymTabVaddr;
+                result->LibGot12C0[i] = g_LibStats.Libs[i].GotProbe;
                 result->LibRelaCount[i] = g_LibStats.Libs[i].RelaCount;
                 result->LibRelaApplied[i] = g_LibStats.Libs[i].RelaApplied;
                 result->LibNeededCount[i] = g_LibStats.Libs[i].NeededCount;
