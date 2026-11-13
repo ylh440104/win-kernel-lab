@@ -6339,53 +6339,6 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                 Entry->NeededOffsets[phdrIndex] = libDynamic.NeededOffsets[phdrIndex];
             }
 
-            if (libDynamic.HasDynamic && libDynamic.RelaSize > 0 && libDynamic.RelaVaddr != 0)
-            {
-                ULONG64 relaOffset = libDynamic.RelaVaddr - minVaddr;
-                ULONG relaCount = (ULONG)(libDynamic.RelaSize / sizeof(LX_ELF_RELA));
-                ULONG relaIndex;
-
-                if (relaCount > LX_MAX_RELOCATIONS)
-                {
-                    relaCount = LX_MAX_RELOCATIONS;
-                }
-
-                for (relaIndex = 0; relaIndex < relaCount; relaIndex++)
-                {
-                    ULONG64 entryOffset = relaOffset + (ULONG64)relaIndex * sizeof(LX_ELF_RELA);
-                    LX_ELF_RELA rela;
-                    ULONG relocType;
-                    ULONG64 destAddress;
-                    ULONG64 newValue;
-                    SIZE_T written = 0;
-
-                    if (entryOffset + sizeof(LX_ELF_RELA) > fileLength)
-                    {
-                        break;
-                    }
-
-                    RtlCopyMemory(&rela, fileBuffer + entryOffset, sizeof(LX_ELF_RELA));
-
-                    relocType = (ULONG)(rela.Info & 0xFFFFFFFFull);
-
-                    if (relocType != LX_R_X86_64_RELATIVE)
-                    {
-                        continue;
-                    }
-
-                    destAddress = Entry->BaseAddress + rela.Offset;
-                    newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
-
-                    if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &newValue, TargetProcess,
-                                                       (PVOID)(ULONG_PTR)destAddress, sizeof(newValue),
-                                                       KernelMode, &written)))
-                    {
-                        Entry->RelaApplied++;
-                        Stats->TotalRelocs++;
-                    }
-                }
-            }
-
             if (libDynamic.SymTabVaddr != 0 && libDynamic.StrTabVaddr != 0)
             {
                 ULONG64 symTabOffset = libDynamic.SymTabVaddr - minVaddr;
@@ -6474,7 +6427,109 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     Stats->TotalSymbols++;
                 }
             }
-        }
+            if (libDynamic.HasDynamic && libDynamic.RelaSize > 0 && libDynamic.RelaVaddr != 0)
+            {
+                ULONG64 relaOffset = libDynamic.RelaVaddr - minVaddr;
+                ULONG relaCount = (ULONG)(libDynamic.RelaSize / sizeof(LX_ELF_RELA));
+                ULONG relaIndex;
+
+                if (relaCount > LX_MAX_RELOCATIONS)
+                {
+                    relaCount = LX_MAX_RELOCATIONS;
+                }
+
+                for (relaIndex = 0; relaIndex < relaCount; relaIndex++)
+                {
+                    ULONG64 entryOffset = relaOffset + (ULONG64)relaIndex * sizeof(LX_ELF_RELA);
+                    LX_ELF_RELA rela;
+                    ULONG relocType;
+                    ULONG64 destAddress;
+                    ULONG64 newValue;
+                    SIZE_T written = 0;
+
+                    if (entryOffset + sizeof(LX_ELF_RELA) > fileLength)
+                    {
+                        break;
+                    }
+
+                    RtlCopyMemory(&rela, fileBuffer + entryOffset, sizeof(LX_ELF_RELA));
+
+                    relocType = (ULONG)(rela.Info & 0xFFFFFFFFull);
+
+                    if (relocType == LX_R_X86_64_RELATIVE)
+                    {
+                        destAddress = Entry->BaseAddress + rela.Offset;
+                        newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
+                    }
+                    else if (relocType == LX_R_X86_64_JUMP_SLOT || relocType == LX_R_X86_64_GLOB_DAT)
+                    {
+                        ULONG64 symIndex = rela.Info >> 32;
+                        ULONG64 symOffset;
+                        LX_ELF_SYM sym;
+                        CHAR symName[LX_MAX_SYMBOL_NAME];
+                        ULONG ci;
+                        ULONG64 nameOffset;
+                        ULONG64 target = 0;
+                        if (libDynamic.SymTabVaddr == 0 || libDynamic.StrTabVaddr == 0)
+                        {
+                            continue;
+                        }
+                        symOffset = (libDynamic.SymTabVaddr - minVaddr) + symIndex * sizeof(LX_ELF_SYM);
+                        if (symOffset + sizeof(LX_ELF_SYM) > fileLength)
+                        {
+                            continue;
+                        }
+                        RtlCopyMemory(&sym, fileBuffer + symOffset, sizeof(LX_ELF_SYM));
+                        if (sym.NameOffset == 0)
+                        {
+                            continue;
+                        }
+                        nameOffset = (libDynamic.StrTabVaddr - minVaddr) + sym.NameOffset;
+                        if (nameOffset >= fileLength)
+                        {
+                            continue;
+                        }
+                        RtlZeroMemory(symName, sizeof(symName));
+                        for (ci = 0; ci + 1 < LX_MAX_SYMBOL_NAME; ci++)
+                        {
+                            if (nameOffset + ci >= fileLength)
+                            {
+                                break;
+                            }
+                            symName[ci] = (CHAR)fileBuffer[nameOffset + ci];
+                            if (symName[ci] == 0)
+                            {
+                                break;
+                            }
+                        }
+                        if (Globals != NULL && symName[0] != 0)
+                        {
+                            target = LxGlobalTableLookup(Globals, symName, NULL);
+                        }
+                        if (target == 0)
+                        {
+                            Stats->NameResolveFail++;
+                            continue;
+                        }
+                        destAddress = Entry->BaseAddress + rela.Offset;
+                        newValue = target;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+
+                    if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &newValue, TargetProcess,
+                                                       (PVOID)(ULONG_PTR)destAddress, sizeof(newValue),
+                                                       KernelMode, &written)))
+                    {
+                        Entry->RelaApplied++;
+                        Stats->TotalRelocs++;
+                    }
+                }
+            }
+
+                    }
     }
 
     Entry->LoadStatus = 0;
