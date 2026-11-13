@@ -360,8 +360,10 @@ typedef struct _LX_GLOBAL_TABLE
 #define LX_PICO_INFO_SIZE 0x58
 #define LX_PICO_ROUTINES_SIZE 0x60
 
-#define LX_RVA_PSP_PICO_REG_DISABLED 0xC262DBu
+#define LX_RVA_PSP_PICO_REG_DISABLED 0xF05880u
+#define LX_RVA_PSP_PICO_ROUTINES 0xF05820u
 #define LX_FLAG_RIP_DISP 0x29E5C0u
+#define LX_PICO_SCAN_LIMIT 0x340000u
 #define LX_ROUTINES_RIP_DISP 0x29E5D1u
 
 #define LX_LDR_DLL_BASE 0x30
@@ -612,6 +614,11 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsInLibsBase;
     ULONG64 TlsCallMark;
     ULONG64 TlsInTarget;
+    ULONG64 FlagAddrUsed;
+    ULONG64 FlagFromBase;
+    ULONG64 ScanFound;
+    ULONG64 ScanFlagDisp;
+    ULONG64 ScanRoutinesDisp;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -676,6 +683,14 @@ volatile ULONG64 g_TlsCallMark = 0;
 volatile ULONG64 g_FsSetAttempt = 0;
 volatile ULONG64 g_FsSetAddr = 0;
 volatile ULONG64 g_FsSetCalled = 0;
+volatile ULONG64 g_ScanTried = 0;
+volatile ULONG64 g_ScanFound = 0;
+volatile ULONG64 g_ScanFlagDisp = 0;
+volatile ULONG64 g_ScanRoutinesDisp = 0;
+volatile LONG g_FlagRipDisp = 0;
+volatile LONG g_RoutinesRipDisp = 0;
+volatile ULONG64 g_FlagAddrUsed = 0;
+volatile ULONG64 g_FlagFromBase = 0;
 volatile ULONG64 g_TlsInStubBase = 0;
 volatile ULONG64 g_TlsInStats = 0;
 volatile ULONG64 g_TlsInLibsUsed = 0;
@@ -7899,6 +7914,56 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 g_SyscallHandlerAddr = sysDispatchHandler;
             }
 
+            /*
+             * 内核版本无关的 PsRegisterPicoProvider 内部定位：
+             * 扫描函数体，找到两条 RIP 相对位移相同的 cmp/mov 指令，
+             * 它们都指向 PspPicoRegistrationDisabled 与 _PspPicoProviderRoutines。
+             * 旧实现用硬编码偏移 0x29E5C0 / 0x29E5D1，内核版本一变就失效。
+             */
+            if (g_PsRegisterPicoProvider != NULL)
+            {
+                PUCHAR fnBase = (PUCHAR)g_PsRegisterPicoProvider;
+                LONG scan;
+                PUCHAR hitFlag = NULL;
+                PUCHAR hitRoutines = NULL;
+                g_ScanTried = 1;
+                for (scan = 0; scan < LX_PICO_SCAN_LIMIT - 8; scan++)
+                {
+                    PUCHAR p = fnBase + scan;
+                    PUCHAR target;
+                    LONG delta;
+                    if (*p == 0x80 && *(p + 1) == 0x3D)
+                    {
+                        delta = *(LONG *)(p + 2);
+                        target = p + 6 + delta;
+                        if (hitFlag == NULL && target > fnBase)
+                        {
+                            hitFlag = p;
+                            g_ScanFlagDisp = (ULONG64)scan;
+                        }
+                    }
+                    else if (*p == 0x48 && *(p + 1) == 0x89 && *(p + 2) == 0x05)
+                    {
+                        delta = *(LONG *)(p + 3);
+                        target = p + 7 + delta;
+                        if (hitRoutines == NULL && target > fnBase)
+                        {
+                            hitRoutines = p;
+                            g_ScanRoutinesDisp = (ULONG64)scan;
+                        }
+                    }
+                    if (hitFlag != NULL && hitRoutines != NULL)
+                    {
+                        break;
+                    }
+                }
+                if (hitFlag != NULL && hitRoutines != NULL)
+                {
+                    g_ScanFound = 1;
+                    g_FlagRipDisp = (LONG)((PUCHAR)(hitFlag) + 2 - fnBase);
+                    g_RoutinesRipDisp = (LONG)((PUCHAR)(hitRoutines) + 3 - fnBase);
+                }
+            }
             registerProvider = (NTSTATUS (*)(PVOID, PVOID))g_PsRegisterPicoProvider;
 
             result->LockedBytes[6] = routines[0];
@@ -7909,7 +7974,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             ntBase = g_NtosBase;
             if (ntBase != 0)
             {
-flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
+flag = (volatile UCHAR *)((UCHAR *)g_NtosBase + LX_RVA_PSP_PICO_REG_DISABLED);
+                g_FlagAddrUsed = (ULONG64)flag;
+                g_FlagFromBase = 1;
                 result->FlagAddr = (ULONG64)flag;
                 result->NtosBase = ntBase;
                 result->LockFnAddr = 0;
@@ -8070,6 +8137,11 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->TlsInLibsBase = g_TlsInLibsBase;
             result->TlsCallMark = g_TlsCallMark;
             result->TlsInTarget = g_TlsInTarget;
+            result->FlagAddrUsed = g_FlagAddrUsed;
+            result->FlagFromBase = g_FlagFromBase;
+            result->ScanFound = g_ScanFound;
+            result->ScanFlagDisp = g_ScanFlagDisp;
+            result->ScanRoutinesDisp = g_ScanRoutinesDisp;
             result->ExitCode = g_ExitCode;
             result->LastSyscallResult = g_LastSyscallResult;
             result->StackSetupStatus = g_StackSetupStatus;
