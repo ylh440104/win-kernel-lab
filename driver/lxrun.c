@@ -632,7 +632,7 @@ static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
 static ULONG g_GlobalLibIndex = 0;
 static ULONG64 g_DiagGlobalSinm = 0;
-static ULONG64 g_DiagMainGot = 0x12345;
+static ULONG64 g_DiagMainGot = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
 static ULONG g_StackMapStatus = 0xFFFFFFFFu;
 static ULONG64 g_ThreadHandle = 0;
@@ -5852,6 +5852,7 @@ static const LX_BUILTIN_DEF g_Builtins[LX_BUILTIN_COUNT] = {
     { "qsort", g_BuiltinQsort, sizeof(g_BuiltinQsort) },
     { "bsearch", g_BuiltinBsearch, sizeof(g_BuiltinBsearch) },
     { "rand_r", g_BuiltinRandR, sizeof(g_BuiltinRandR) },
+    { "abs", g_BuiltinAbs, sizeof(g_BuiltinAbs) },
     { "labs", g_BuiltinLabs, sizeof(g_BuiltinLabs) },
     { "isalpha", g_BuiltinIsalpha, sizeof(g_BuiltinIsalpha) },
     { "isdigit", g_BuiltinIsdigit, sizeof(g_BuiltinIsdigit) },
@@ -7029,9 +7030,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         ULONG64 dgValue = 0;
         SIZE_T dgRead = 0;
         g_DiagGlobalSinm = LxGlobalTableLookup(&g_GlobalSymbols, "sinm", NULL);
-        g_DiagMainGot = LxGlobalTableLookup(&g_GlobalSymbols, "abs", NULL);
         g_DiagMainGot = 0;
-        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A20ull),
+        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)(0x400000ull + 0x1A18ull),
                                            PsGetCurrentProcess(), &dgValue, sizeof(dgValue), KernelMode, &dgRead)))
         {
             g_DiagMainGot = dgValue;
