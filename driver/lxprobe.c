@@ -111,6 +111,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG LibUsed[4];
     ULONG LibStatus[4];
     ULONG LibSymCount[4];
+    ULONG64 LibFirstSymValue[4];
+    ULONG64 LibSymTab[4];
+    ULONG64 LibGot12C0[4];
     ULONG LibRelaCount[4];
     ULONG LibRelaApplied[4];
     ULONG LibNeededCount[4];
@@ -594,6 +597,9 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
                    (unsigned long long)q.LibImageSize[li]);
             printf("  LIBS: [%lu] syms=%lu rela=%lu applied=%lu needed=%lu\n", li,
                    q.LibSymCount[li], q.LibRelaCount[li], q.LibRelaApplied[li], q.LibNeededCount[li]);
+            printf("  LIBS: [%lu] symtab=0x%llx firstSymValue=0x%llx\n", li,
+                   (unsigned long long)q.LibSymTab[li], (unsigned long long)q.LibFirstSymValue[li]);
+            printf("  LIBS: [%lu] got12C0=0x%llx\n", li, (unsigned long long)q.LibGot12C0[li]);
         }
     }
     printf("  STUBS: count=%lu found=%lu unknown=%lu writeFail=%lu area=0x%llx\n",
