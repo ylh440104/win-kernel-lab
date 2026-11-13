@@ -7190,6 +7190,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     g_TlsCallMark = 0xAAAA0001;
     LxSetupTls(targetProcess, g_StubStats.StubAreaBase, &g_LibStats);
     g_TlsCallMark = 0xAAAA0002;
+    g_TlsEntered = 0xCCCC0002;
+    g_TlsInStubBase = 0xCCCC0003;
     {
         ULONG64 dgValue = 0;
         SIZE_T dgRead = 0;
