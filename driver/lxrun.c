@@ -604,6 +604,12 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsCopySrc;
     ULONG64 TlsCopyLen;
     ULONG64 TlsCopyStatus;
+    ULONG64 TlsEntered;
+    ULONG64 TlsInStubBase;
+    ULONG64 TlsInStats;
+    ULONG64 TlsInLibsUsed;
+    ULONG64 TlsInLibsMemsz;
+    ULONG64 TlsInLibsBase;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -663,6 +669,12 @@ static ULONG64 g_TlsCopyAttempted = 0;
 static ULONG64 g_TlsCopySrc = 0;
 static ULONG64 g_TlsCopyLen = 0;
 static ULONG64 g_TlsCopyStatus = 0;
+static ULONG64 g_TlsEntered = 0;
+static ULONG64 g_TlsInStubBase = 0;
+static ULONG64 g_TlsInStats = 0;
+static ULONG64 g_TlsInLibsUsed = 0;
+static ULONG64 g_TlsInLibsMemsz = 0;
+static ULONG64 g_TlsInLibsBase = 0;
 static ULONG64 g_DiagGlobalSinm = 0;
 static ULONG64 g_DiagMainGot = 0;
 static ULONG g_ThreadStatus = 0xFFFFFFFFu;
@@ -4627,6 +4639,12 @@ static void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STA
     ULONG totalSize;
     SIZE_T written = 0;
 
+    g_TlsEntered = 1;
+    g_TlsInStubBase = StubAreaBase;
+    g_TlsInStats = (ULONG64)(ULONG_PTR)Stats;
+    g_TlsInLibsUsed = (Stats != NULL) ? Stats->Libs[1].Used : 0xDEAD;
+    g_TlsInLibsMemsz = (Stats != NULL) ? Stats->Libs[1].TlsMemSize : 0xDEAD;
+    g_TlsInLibsBase = (Stats != NULL) ? Stats->Libs[1].BaseAddress : 0xDEAD;
     if (TargetProcess == NULL || StubAreaBase == 0 || Stats == NULL)
     {
         return;
@@ -8029,6 +8047,12 @@ flag = (volatile UCHAR *)((UCHAR *)g_PsRegisterPicoProvider + LX_FLAG_RIP_DISP);
             result->TlsCopySrc = g_TlsCopySrc;
             result->TlsCopyLen = g_TlsCopyLen;
             result->TlsCopyStatus = g_TlsCopyStatus;
+            result->TlsEntered = g_TlsEntered;
+            result->TlsInStubBase = g_TlsInStubBase;
+            result->TlsInStats = g_TlsInStats;
+            result->TlsInLibsUsed = g_TlsInLibsUsed;
+            result->TlsInLibsMemsz = g_TlsInLibsMemsz;
+            result->TlsInLibsBase = g_TlsInLibsBase;
             result->ExitCode = g_ExitCode;
             result->LastSyscallResult = g_LastSyscallResult;
             result->StackSetupStatus = g_StackSetupStatus;
