@@ -289,6 +289,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsSetAttempt;
     ULONG64 FsSetAddr;
     ULONG64 FsSetCalled;
+    ULONG64 ArchCurThread;
+    ULONG64 ArchPicoThread;
+    ULONG64 ArchThreadSame;
+    ULONG64 ArchCurProcess;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -900,6 +904,9 @@ int main(void)
                (unsigned long long)q.FsSetAttempt, (unsigned long long)q.FsSetAddr,
                (unsigned long long)q.FsSetCalled, (unsigned long long)q.FsSetOk,
                (unsigned long long)q.FsBaseAfterSet);
+        printf("  THREADID: cur=0x%llx pico=0x%llx same=%llu curProc=0x%llx\n",
+               (unsigned long long)q.ArchCurThread, (unsigned long long)q.ArchPicoThread,
+               (unsigned long long)q.ArchThreadSame, (unsigned long long)q.ArchCurProcess);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
