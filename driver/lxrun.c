@@ -2985,6 +2985,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             {
                 __try
                 {
+                    {
+                        PETHREAD preThread = PsGetCurrentThread();
+                        ULONG64 preValue = 0;
+
+                        RtlCopyMemory(&preValue, (UCHAR *)preThread + 0x678, sizeof(preValue));
+                        g_Kthread678 = preValue;
+                        RtlCopyMemory(&preValue, (UCHAR *)preThread + 0x680, sizeof(preValue));
+                        g_Kthread680 = preValue;
+                    }
                     ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, address);
                     g_FsSetCalled = 1;
                     g_FsBaseAfterSet = __readmsr(0xC0000100);
@@ -2994,19 +3003,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                         ULONG64 kthread678 = 0;
 
                         RtlCopyMemory(&kthread678, (UCHAR *)curThread + 0x678, sizeof(kthread678));
-                        g_Kthread678 = kthread678;
-                        RtlCopyMemory(&kthread678, (UCHAR *)curThread + 0x680, sizeof(kthread678));
-                        g_Kthread680 = kthread678;
-
-                        if (address != 0)
-                        {
-                            ULONG64 newBase = address;
-
-                            RtlCopyMemory((UCHAR *)curThread + 0x678, &newBase, sizeof(newBase));
-                            RtlCopyMemory(&kthread678, (UCHAR *)curThread + 0x678, sizeof(kthread678));
-                            g_Kthread678After = kthread678;
-                            g_FsBaseAfter = __readmsr(0xC0000100);
-                        }
+                        g_Kthread678After = kthread678;
                     }
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
