@@ -4727,7 +4727,7 @@ static ULONG64 LxGlobalTableLookup(LX_GLOBAL_TABLE *Table, const char *Name, ULO
 static ULONG64 LxReadUserU64(PEPROCESS TargetProcess, ULONG64 Address, NTSTATUS *OutStatus)
 {
     ULONG64 value = 0;
-    KAPC_STATE apcState;
+    LX_APC_STATE apcState;
 
     if (OutStatus != NULL)
     {
@@ -4739,7 +4739,7 @@ static ULONG64 LxReadUserU64(PEPROCESS TargetProcess, ULONG64 Address, NTSTATUS 
         return 0;
     }
 
-    KeStackAttachProcess(TargetProcess, &apcState);
+    KeStackAttachProcess(TargetProcess, (PVOID)&apcState);
 
     __try
     {
@@ -4760,7 +4760,7 @@ static ULONG64 LxReadUserU64(PEPROCESS TargetProcess, ULONG64 Address, NTSTATUS 
         }
     }
 
-    KeUnstackDetachProcess(&apcState);
+    KeUnstackDetachProcess((PVOID)&apcState);
 
     return value;
 }
