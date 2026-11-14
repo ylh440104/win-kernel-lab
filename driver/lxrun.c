@@ -666,6 +666,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 Kthread678;
     ULONG64 Kthread680;
     ULONG64 Kthread678After;
+    ULONG64 Kthread678Patched;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -748,6 +749,7 @@ static ULONG g_TlsProbe10St = 0xFFFFFFFFu;
 static ULONG64 g_Kthread678 = 0;
 static ULONG64 g_Kthread680 = 0;
 static ULONG64 g_Kthread678After = 0;
+static ULONG64 g_Kthread678Patched = 0;
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfBase = 0;
@@ -3004,6 +3006,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
                         RtlCopyMemory(&kthread678, (UCHAR *)curThread + 0x678, sizeof(kthread678));
                         g_Kthread678After = kthread678;
+                    }
+                    {
+                        PETHREAD fixThread = PsGetCurrentThread();
+                        ULONG64 fixValue = address;
+
+                        RtlCopyMemory((UCHAR *)fixThread + 0x678, &fixValue, sizeof(fixValue));
+                        fixValue = 0;
+                        RtlCopyMemory(&fixValue, (UCHAR *)fixThread + 0x678, sizeof(fixValue));
+                        g_Kthread678Patched = fixValue;
                     }
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
@@ -8561,6 +8572,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->Kthread678 = g_Kthread678;
             result->Kthread680 = g_Kthread680;
             result->Kthread678After = g_Kthread678After;
+            result->Kthread678Patched = g_Kthread678Patched;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
