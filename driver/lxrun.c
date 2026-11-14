@@ -625,6 +625,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 RegAtExport;
     ULONG64 RegAtNtos;
     ULONG64 RegAtRegisterEntry;
+    UCHAR RegRawBytes[64];
     ULONG64 RegFnAddr;
     ULONG64 RegPtrAddr;
     ULONG64 RegExportAtRegister;
@@ -7998,6 +7999,13 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             }
             g_RegExportAtRegister = (ULONG64)g_PsRegisterPicoProvider;
             g_RegNtosAtRegister = g_NtosBase;
+            {
+                ULONG raw;
+                for (raw = 0; raw < 64; raw++)
+                {
+                    result->RegRawBytes[raw] = *((PUCHAR)g_PsRegisterPicoProvider + raw);
+                }
+            }
             result->ScanTried = g_ScanTried;
             result->ScanReached = g_ScanReached;
             result->ScanFault = g_ScanFault;
