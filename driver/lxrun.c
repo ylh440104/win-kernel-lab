@@ -7914,14 +7914,6 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->RegisterStatus = 0x5E5E5E01u;
             g_RegExportAtRegister = (ULONG64)g_PsRegisterPicoProvider;
             g_RegNtosAtRegister = g_NtosBase;
-            result->ScanTried = g_ScanTried;
-            result->ScanReached = g_ScanReached;
-            result->ScanFault = g_ScanFault;
-            result->ScanFound = g_ScanFound;
-            result->ScanFlagDisp = g_ScanFlagDisp;
-            result->ScanRoutinesDisp = g_ScanRoutinesDisp;
-            result->FlgAddrFromScan = g_FlgAddrFromScan;
-            result->RtnAddrFromScan = g_RtnAddrFromScan;
 
             RtlZeroMemory(info, sizeof(info));
             RtlZeroMemory(routines, sizeof(routines));
@@ -8006,6 +7998,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             }
             g_RegExportAtRegister = (ULONG64)g_PsRegisterPicoProvider;
             g_RegNtosAtRegister = g_NtosBase;
+            result->ScanTried = g_ScanTried;
+            result->ScanReached = g_ScanReached;
+            result->ScanFault = g_ScanFault;
+            result->ScanFound = g_ScanFound;
+            result->ScanFlagDisp = g_ScanFlagDisp;
+            result->ScanRoutinesDisp = g_ScanRoutinesDisp;
+            result->FlgAddrFromScan = g_FlgAddrFromScan;
+            result->RtnAddrFromScan = g_RtnAddrFromScan;
             registerProvider = (NTSTATUS (*)(PVOID, PVOID))g_PsRegisterPicoProvider;
 
             result->LockedBytes[6] = routines[0];
