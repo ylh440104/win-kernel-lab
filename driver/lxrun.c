@@ -7737,6 +7737,21 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->RelocFirstWritten = g_RelocStats.FirstWritten;
             result->RelocFirstReadBack = g_RelocStats.FirstReadBack;
             result->RelocFirstStatus = (ULONG)g_RelocStats.FirstWriteStatus;
+            {
+                ULONG gi;
+                SIZE_T gr = 0;
+                for (gi = 0; gi < 8; gi++)
+                {
+                    ULONG64 gv = 0;
+                    ULONG64 gaddr = 0x401C10ull + (ULONG64)gi * 8ull;
+                    if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)gaddr,
+                                                       PsGetCurrentProcess(), &gv, sizeof(gv), KernelMode, &gr)))
+                    {
+                        result->GotDump[gi] = gv;
+                    }
+                }
+                result->GotArch = result->GotDump[0];
+            }
             result->SymTotal = g_SymbolInfo.TotalSyms;
             result->TlsEntered = g_TlsEntered;
             result->TlsInTarget = g_TlsInTarget;
