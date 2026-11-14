@@ -272,6 +272,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 StubBytes;
     ULONG64 GotArch;
     ULONG64 GotDump[8];
+    ULONG64 GotReadStatus;
+    ULONG64 StubReadStatus;
+    ULONG64 GotReadAfterStatus;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -644,6 +647,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  STUBBYTES: s0=0x%llx s8=0x%llx s10=0x%llx s30=0x%llx\n", (unsigned long long)q.StubBytes, (unsigned long long)q.StubBytes0, (unsigned long long)q.StubBytes1, (unsigned long long)q.StubBytes3);
     printf("  GOTAFTER: 0x%llx\n", (unsigned long long)q.GotArchAfterTls);
     printf("  GOTTLSPATH: enter=0x%llx pre=0x%llx post=0x%llx\n", (unsigned long long)q.GotEnterTls, (unsigned long long)q.GotPreWrite, (unsigned long long)q.GotPostWrite);
+    printf("  READSTATUS: got=0x%x stub=0x%x after=0x%x\n", (unsigned)q.GotReadStatus, (unsigned)q.StubReadStatus, (unsigned)q.GotReadAfterStatus);
     printf("  elfStatus=0x%08lx mapStatus=0x%08lx base=0x%llx copied=%llu viewSize=0x%llx\n", q.ElfStatus,
            q.ElfMapStatus, (unsigned long long)q.ElfBase, (unsigned long long)q.ElfCopied,
            (unsigned long long)q.ElfViewSize);
