@@ -652,6 +652,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsSetAttempt;
     ULONG64 FsSetAddr;
     ULONG64 FsSetCalled;
+    ULONG64 ArchCurThread;
+    ULONG64 ArchPicoThread;
+    ULONG64 ArchThreadSame;
+    ULONG64 ArchCurProcess;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -721,6 +725,11 @@ static ULONG64 g_FlagAddr = 0;
 static ULONG64 g_CreatePicoFn = 0;
 static ULONG64 g_LastPicoHandle = 0;
 static PEPROCESS g_PicoProcessObject = NULL;
+static PETHREAD g_PicoThreadObject = NULL;
+static ULONG64 g_ArchCurThread = 0;
+static ULONG64 g_ArchPicoThread = 0;
+static ULONG64 g_ArchThreadSame = 0;
+static ULONG64 g_ArchCurProcess = 0;
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfBase = 0;
@@ -2945,6 +2954,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             g_FsSetAttempt++;
             g_FsSetAddr = address;
+            {
+                PETHREAD currentThread = PsGetCurrentThread();
+                PETHREAD picoThread = g_PicoThreadObject;
+
+                g_ArchCurThread = (ULONG64)(ULONG_PTR)currentThread;
+                g_ArchPicoThread = (ULONG64)(ULONG_PTR)picoThread;
+                g_ArchThreadSame = (currentThread == picoThread) ? 1 : 0;
+                g_ArchCurProcess = (ULONG64)(ULONG_PTR)IoGetCurrentProcess();
+            }
             if (g_SetDescriptorBaseFn != 0)
             {
                 __try
@@ -7760,6 +7778,7 @@ static void LxCreatePicoThread(void)
 
         if (NT_SUCCESS(resumeStatus))
         {
+            g_PicoThreadObject = (PETHREAD)threadObject;
             g_ResumeStatus = (ULONG)((NTSTATUS (*)(PVOID, PULONG))g_ResumeThreadFn)(threadObject, &previousCount);
             g_PrevSuspendCount = previousCount;
             ObDereferenceObject(threadObject);
@@ -8491,6 +8510,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FsSetAttempt = g_FsSetAttempt;
             result->FsSetAddr = g_FsSetAddr;
             result->FsSetCalled = g_FsSetCalled;
+            result->ArchCurThread = g_ArchCurThread;
+            result->ArchPicoThread = g_ArchPicoThread;
+            result->ArchThreadSame = g_ArchThreadSame;
+            result->ArchCurProcess = g_ArchCurProcess;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
             result->ScanFound = g_ScanFound;
