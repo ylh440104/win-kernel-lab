@@ -352,6 +352,28 @@ static void DumpResult(const char *Label, const LX_QUERY_RESULT *Q, DWORD Ret, D
         printf(" %02x", Q->ThunkBytes[i]);
     }
     printf("\n");
+    printf("  SCAN: found=%llu flagDisp=0x%llx routDisp=0x%llx flagAddr=0x%llx fromBase=%llu",
+           (unsigned long long)Q->ScanFound,
+           (unsigned long long)Q->ScanFlagDisp,
+           (unsigned long long)Q->ScanRoutinesDisp,
+           (unsigned long long)Q->FlagAddrUsed,
+           (unsigned long long)Q->FlagFromBase);
+    printf("%s", "\n");
+    printf("  TLS: entered=%llu inTarget=%llu callMark=0x%llx base=0x%llx size=0x%llx done=%lu",
+           (unsigned long long)Q->TlsEntered,
+           (unsigned long long)Q->TlsInTarget,
+           (unsigned long long)Q->TlsCallMark,
+           (unsigned long long)Q->TlsBlockBase,
+           (unsigned long long)Q->TlsBlockSize,
+           Q->TlsSetupDone);
+    printf("%s", "\n");
+    printf("  TLS: headAddr=0x%llx headSt=0x%llx dataSt=0x%llx copyTried=%llu copySt=0x%llx",
+           (unsigned long long)Q->TlsHeadAddr,
+           (unsigned long long)Q->TlsHeadStatus,
+           (unsigned long long)Q->TlsDataStatus,
+           (unsigned long long)Q->TlsCopyAttempted,
+           (unsigned long long)Q->TlsCopyStatus);
+    printf("%s", "\n");
 }
 
 static int LoadFileToBuffer(const wchar_t *Path, UCHAR **OutData, ULONG *OutSize)
