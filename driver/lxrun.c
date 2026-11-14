@@ -7744,7 +7744,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 {
                     ULONG64 gv = 0;
                     ULONG64 gaddr = 0x401C10ull + (ULONG64)gi * 8ull;
-                    if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)gaddr,
+                    if (NT_SUCCESS(MmCopyVirtualMemory(g_PicoProcessObject, (PVOID)(ULONG_PTR)gaddr,
                                                        PsGetCurrentProcess(), &gv, sizeof(gv), KernelMode, &gr)))
                     {
                         result->GotDump[gi] = gv;
