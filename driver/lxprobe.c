@@ -344,6 +344,8 @@ static void DumpResult(const char *Label, const LX_QUERY_RESULT *Q, DWORD Ret, D
     printf("%s: ret=%lu err=%lu\n", Label, Ret, Err);
     printf("  magic=0x%08lx reg=0x%08lx reg2=0x%08lx old=0x%lx\n", Q->Magic, Q->RegisterStatus,
            Q->RegisterStatus2, Q->OldFlag);
+    printf("  exportAddress=0x%llx hasExport=%lu", (unsigned long long)Q->ExportAddr, Q->HasExport);
+    printf("%s", NLSTR);
     printf("  ntos=0x%llx faddr=0x%llx\n", (unsigned long long)Q->NtosBase,
            (unsigned long long)Q->FlagAddr);
     printf("  routinesAddr=0x%llx createFn=0x%llx\n", (unsigned long long)Q->RoutinesAddr,
