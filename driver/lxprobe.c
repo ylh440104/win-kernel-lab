@@ -275,6 +275,11 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 GotReadStatus;
     ULONG64 StubReadStatus;
     ULONG64 GotReadAfterStatus;
+    ULONG64 ElfExpMagic;
+    ULONG64 ElfBackMagic;
+    ULONG64 ElfBackVaddr;
+    ULONG ElfBackStatus;
+    ULONG ElfBackSize;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -651,6 +656,9 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  GOTAFTER: 0x%llx\n", (unsigned long long)q.GotArchAfterTls);
     printf("  GOTTLSPATH: enter=0x%llx pre=0x%llx post=0x%llx\n", (unsigned long long)q.GotEnterTls, (unsigned long long)q.GotPreWrite, (unsigned long long)q.GotPostWrite);
     printf("  READSTATUS: got=0x%x stub=0x%x after=0x%x\n", (unsigned)q.GotReadStatus, (unsigned)q.StubReadStatus, (unsigned)q.GotReadAfterStatus);
+    printf("  ELFBACK: vaddr=0x%llx exp=0x%llx back=0x%llx st=0x%x size=%lu\n",
+           (unsigned long long)q.ElfBackVaddr, (unsigned long long)q.ElfExpMagic,
+           (unsigned long long)q.ElfBackMagic, (unsigned)q.ElfBackStatus, (unsigned long)q.ElfBackSize);
     printf("  elfStatus=0x%08lx mapStatus=0x%08lx base=0x%llx copied=%llu viewSize=0x%llx\n", q.ElfStatus,
            q.ElfMapStatus, (unsigned long long)q.ElfBase, (unsigned long long)q.ElfCopied,
            (unsigned long long)q.ElfViewSize);
