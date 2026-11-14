@@ -303,6 +303,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 Kthread680;
     ULONG64 Kthread678After;
     ULONG64 Kthread678Patched;
+    ULONG64 ExitMsr;
+    ULONG64 ExitKthread678;
+    ULONG64 ExitKthread74;
+    ULONG64 ExitThreadPtr;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -926,6 +930,9 @@ int main(void)
         printf("  KTHREAD: +678=0x%llx +680=0x%llx afterWrite=0x%llx patched=0x%llx\n",
                (unsigned long long)q.Kthread678, (unsigned long long)q.Kthread680,
                (unsigned long long)q.Kthread678After, (unsigned long long)q.Kthread678Patched);
+        printf("  EXITSTATE: msr=0x%llx k678=0x%llx k74=0x%llx thd=0x%llx\n",
+               (unsigned long long)q.ExitMsr, (unsigned long long)q.ExitKthread678,
+               (unsigned long long)q.ExitKthread74, (unsigned long long)q.ExitThreadPtr);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
