@@ -312,6 +312,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
+    ULONG64 TpoffCount[4];
+    ULONG64 TpoffApplied[4];
     ULONG LibRelrCount[4];
     ULONG LibRelrApplied[4];
 } LX_QUERY_RESULT;
@@ -765,6 +767,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  LIBS: [%lu] tls=off:%lu memsz=%llu alloc=%llu\n", li,
                    q.LibTlsOffset[li], (unsigned long long)q.LibTlsMemSize[li],
                    (unsigned long long)q.LibTlsAllocated[li]);
+            printf("  LIBS: [%lu] tpoff=found:%llu applied:%llu\n", li,
+                   (unsigned long long)q.TpoffCount[li], (unsigned long long)q.TpoffApplied[li]);
             printf("  DIAG: globalSinm=0x%llx mainGot1A18=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
     }
         printf("  TLS: base=0x%llx size=0x%llx done=%lu\n",
