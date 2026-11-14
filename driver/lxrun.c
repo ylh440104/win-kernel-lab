@@ -621,6 +621,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ScanFlagDisp;
     ULONG64 ScanRoutinesDisp;
     ULONG64 ScanReached;
+    ULONG64 ScanTried;
     ULONG64 ScanFault;
     ULONG64 FlgAddrFromScan;
     ULONG64 RtnAddrFromScan;
@@ -8159,6 +8160,7 @@ flag = (volatile UCHAR *)((UCHAR *)g_NtosBase + LX_RVA_PSP_PICO_REG_DISABLED);
             result->ScanFlagDisp = g_ScanFlagDisp;
             result->ScanRoutinesDisp = g_ScanRoutinesDisp;
             result->ScanReached = g_ScanReached;
+            result->ScanTried = g_ScanTried;
             result->ScanFault = g_ScanFault;
             result->FlgAddrFromScan = g_FlgAddrFromScan;
             result->RtnAddrFromScan = g_RtnAddrFromScan;
