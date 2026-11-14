@@ -7999,8 +7999,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
             result->LockedBytes[6] = routines[0];
             result->OldFlag = 0xBB;
-            g_RegFnAddr = (ULONG64)registerProvider;
-            g_RegPtrAddr = (ULONG64)(ULONG_PTR)&g_PsRegisterPicoProvider;
+            result->RegFnAddr = (ULONG64)registerProvider;
+            result->RegPtrAddr = (ULONG64)(ULONG_PTR)&g_PsRegisterPicoProvider;
+            result->RegAtExport = (ULONG64)g_PsRegisterPicoProvider;
+            result->RegAtNtos = g_NtosBase;
+            result->RegAtRegisterEntry = 0x7E7E7E7Eull;
             result->RegisterStatus = (ULONG)registerProvider(info, routines);
             result->LockedBytes[7] = routines[0];
 
