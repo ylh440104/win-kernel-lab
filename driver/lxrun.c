@@ -640,6 +640,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG ElfBackSize;
     ULONG64 ArchArg0;
     ULONG64 ArchArg1;
+    ULONG64 ArchArg2;
+    ULONG64 ArchArg3;
+    ULONG64 ArchArg4;
+    ULONG64 ArchArg5;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -691,6 +695,10 @@ static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
 static ULONG64 g_ArchArg0 = 0;
 static ULONG64 g_ArchArg1 = 0;
+static ULONG64 g_ArchArg2 = 0;
+static ULONG64 g_ArchArg3 = 0;
+static ULONG64 g_ArchArg4 = 0;
+static ULONG64 g_ArchArg5 = 0;
 static ULONG g_ElfBackStatus = 0xFFFFFFFFu;
 static ULONG g_ElfBackSize = 0;
 static ULONG g_NtosFoundNameLen = 0;
@@ -2901,6 +2909,10 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         g_ArchArg0 = arg0;
         g_ArchArg1 = arg1;
+        g_ArchArg2 = arg2;
+        g_ArchArg3 = Parameters[3];
+        g_ArchArg4 = Parameters[4];
+        g_ArchArg5 = Parameters[5];
 
         if (code != 0x1001 && code != 0x1002 && code != 0x1003)
         {
@@ -8410,6 +8422,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ElfBackSize = g_ElfBackSize;
             result->ArchArg0 = g_ArchArg0;
             result->ArchArg1 = g_ArchArg1;
+            result->ArchArg2 = g_ArchArg2;
+            result->ArchArg3 = g_ArchArg3;
+            result->ArchArg4 = g_ArchArg4;
+            result->ArchArg5 = g_ArchArg5;
             result->FsSetOk = g_FsSetOk;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
