@@ -667,6 +667,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 Kthread680;
     ULONG64 Kthread678After;
     ULONG64 Kthread678Patched;
+    ULONG64 ExitMsr;
+    ULONG64 ExitKthread678;
+    ULONG64 ExitKthread74;
+    ULONG64 ExitThreadPtr;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -750,6 +754,10 @@ static ULONG64 g_Kthread678 = 0;
 static ULONG64 g_Kthread680 = 0;
 static ULONG64 g_Kthread678After = 0;
 static ULONG64 g_Kthread678Patched = 0;
+static ULONG64 g_ExitMsr = 0;
+static ULONG64 g_ExitKthread678 = 0;
+static ULONG64 g_ExitKthread74 = 0;
+static ULONG64 g_ExitThreadPtr = 0;
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfBase = 0;
@@ -3058,6 +3066,24 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_EXIT_GROUP:
         g_ExitCode = arg0;
         g_ExitCalled = 1;
+        {
+            PETHREAD exitThread = PsGetCurrentThread();
+            ULONG64 exitValue = 0;
+
+            __try
+            {
+                g_ExitMsr = __readmsr(0xC0000100);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_ExitMsr = 0xDEAD0003ull;
+            }
+            RtlCopyMemory(&exitValue, (UCHAR *)exitThread + 0x678, sizeof(exitValue));
+            g_ExitKthread678 = exitValue;
+            RtlCopyMemory(&exitValue, (UCHAR *)exitThread + 0x74, sizeof(exitValue));
+            g_ExitKthread74 = exitValue;
+            g_ExitThreadPtr = (ULONG64)(ULONG_PTR)exitThread;
+        }
         return 0;
 
     case LX_SYS_UNAME:
@@ -8573,6 +8599,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->Kthread680 = g_Kthread680;
             result->Kthread678After = g_Kthread678After;
             result->Kthread678Patched = g_Kthread678Patched;
+            result->ExitMsr = g_ExitMsr;
+            result->ExitKthread678 = g_ExitKthread678;
+            result->ExitKthread74 = g_ExitKthread74;
+            result->ExitThreadPtr = g_ExitThreadPtr;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
