@@ -282,6 +282,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG ElfBackSize;
     ULONG64 ArchArg0;
     ULONG64 ArchArg1;
+    ULONG64 ArchArg2;
+    ULONG64 ArchArg3;
+    ULONG64 ArchArg4;
+    ULONG64 ArchArg5;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -882,6 +886,9 @@ int main(void)
         printf("  ARCHARG: p0=0x%llx p1=0x%llx archCalls=%llu\n",
                (unsigned long long)q.ArchArg0, (unsigned long long)q.ArchArg1,
                (unsigned long long)q.ArchPrctlCalls);
+        printf("  ARCHARG2: p2=0x%llx p3=0x%llx p4=0x%llx p5=0x%llx\n",
+               (unsigned long long)q.ArchArg2, (unsigned long long)q.ArchArg3,
+               (unsigned long long)q.ArchArg4, (unsigned long long)q.ArchArg5);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
