@@ -640,34 +640,34 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  LIBS: [%lu] tls=off:%lu memsz=%llu alloc=%llu\n", li,
                    q.LibTlsOffset[li], (unsigned long long)q.LibTlsMemSize[li],
                    (unsigned long long)q.LibTlsAllocated[li]);
-            printf("  TLS: base=0x%llx size=0x%llx done=%lu\n",
-                   (unsigned long long)q.TlsBlockBase, (unsigned long long)q.TlsBlockSize, q.TlsSetupDone);
-            printf("  TLS: headAddr=0x%llx headSt=0x%llx dataSt=0x%llx\n",
-                   (unsigned long long)q.TlsHeadAddr,
-                   (unsigned long long)q.TlsHeadStatus,
-                   (unsigned long long)q.TlsDataStatus);
-            printf("  TLS: copyTried=%llu src=0x%llx len=%llu st=0x%llx\n",
-                   (unsigned long long)q.TlsCopyAttempted,
-                   (unsigned long long)q.TlsCopySrc,
-                   (unsigned long long)q.TlsCopyLen,
-                   (unsigned long long)q.TlsCopyStatus);
-            printf("  TLS: entered=%llu stubBase=0x%llx stats=0x%llx used=%llu memsz=%llu libBase=0x%llx\n",
-                   (unsigned long long)q.TlsEntered,
-                   (unsigned long long)q.TlsInStubBase,
-                   (unsigned long long)q.TlsInStats,
-                   (unsigned long long)q.TlsInLibsUsed,
-                   (unsigned long long)q.TlsInLibsMemsz,
-                   (unsigned long long)q.TlsInLibsBase);
-            printf("  TLS: callMark=0x%llx\n", (unsigned long long)q.TlsCallMark);
-            printf("  TLS: inTarget=%llu\n", (unsigned long long)q.TlsInTarget);
-            printf("  SCAN: found=%llu flagDisp=0x%llx routDisp=0x%llx flagAddr=0x%llx fromBase=%llu\n",
-                   (unsigned long long)q.ScanFound,
-                   (unsigned long long)q.ScanFlagDisp,
-                   (unsigned long long)q.ScanRoutinesDisp,
-                   (unsigned long long)q.FlagAddrUsed,
-                   (unsigned long long)q.FlagFromBase);
             printf("  DIAG: globalSinm=0x%llx mainGot1A18=0x%llx\n", (unsigned long long)q.DiagGlobalSinm, (unsigned long long)q.DiagMainGot);
-        }
+    }
+        printf("  TLS: base=0x%llx size=0x%llx done=%lu\n",
+               (unsigned long long)q.TlsBlockBase, (unsigned long long)q.TlsBlockSize, q.TlsSetupDone);
+        printf("  TLS: headAddr=0x%llx headSt=0x%llx dataSt=0x%llx\n",
+               (unsigned long long)q.TlsHeadAddr,
+               (unsigned long long)q.TlsHeadStatus,
+               (unsigned long long)q.TlsDataStatus);
+        printf("  TLS: copyTried=%llu src=0x%llx len=%llu st=0x%llx\n",
+               (unsigned long long)q.TlsCopyAttempted,
+               (unsigned long long)q.TlsCopySrc,
+               (unsigned long long)q.TlsCopyLen,
+               (unsigned long long)q.TlsCopyStatus);
+        printf("  TLS: entered=%llu stubBase=0x%llx stats=0x%llx used=%llu memsz=%llu libBase=0x%llx\n",
+               (unsigned long long)q.TlsEntered,
+               (unsigned long long)q.TlsInStubBase,
+               (unsigned long long)q.TlsInStats,
+               (unsigned long long)q.TlsInLibsUsed,
+               (unsigned long long)q.TlsInLibsMemsz,
+               (unsigned long long)q.TlsInLibsBase);
+        printf("  TLS: callMark=0x%llx\n", (unsigned long long)q.TlsCallMark);
+        printf("  TLS: inTarget=%llu\n", (unsigned long long)q.TlsInTarget);
+        printf("  SCAN: found=%llu flagDisp=0x%llx routDisp=0x%llx flagAddr=0x%llx fromBase=%llu\n",
+               (unsigned long long)q.ScanFound,
+               (unsigned long long)q.ScanFlagDisp,
+               (unsigned long long)q.ScanRoutinesDisp,
+               (unsigned long long)q.FlagAddrUsed,
+               (unsigned long long)q.FlagFromBase);
     }
     printf("  STUBS: count=%lu found=%lu unknown=%lu writeFail=%lu area=0x%llx\n",
            q.StubCount, q.StubFound, q.StubUnknown, q.StubWriteFail,
