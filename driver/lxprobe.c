@@ -267,6 +267,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 RegAtExport;
     ULONG64 RegAtNtos;
     ULONG64 RegAtRegisterEntry;
+    UCHAR RegRawBytes[64];
     ULONG64 RegFnAddr;
     ULONG64 RegPtrAddr;
     ULONG64 RegExportAtRegister;
@@ -383,6 +384,12 @@ static void DumpResult(const char *Label, const LX_QUERY_RESULT *Q, DWORD Ret, D
            (unsigned long long)Q->RegAtExport,
            (unsigned long long)Q->RegAtNtos,
            (unsigned long long)Q->RegAtRegisterEntry);
+    printf("%s", NLSTR);
+    printf("  REGR:");
+    for (i = 0; i < 64; i++)
+    {
+        printf("%02x", Q->RegRawBytes[i]);
+    }
     printf("%s", NLSTR);
     printf("  REGFN: fn=0x%llx ptr=0x%llx", (unsigned long long)Q->RegFnAddr, (unsigned long long)Q->RegPtrAddr);
     printf("%s", NLSTR);
