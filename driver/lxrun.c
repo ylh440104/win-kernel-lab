@@ -633,6 +633,11 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 GotReadStatus;
     ULONG64 StubReadStatus;
     ULONG64 GotReadAfterStatus;
+    ULONG64 ElfExpMagic;
+    ULONG64 ElfBackMagic;
+    ULONG64 ElfBackVaddr;
+    ULONG ElfBackStatus;
+    ULONG ElfBackSize;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -679,6 +684,11 @@ static ULONG64 g_StubBytes1 = 0;
 static ULONG g_GotReadStatus = 0xFFFFFFFFu;
 static ULONG g_StubReadStatus = 0xFFFFFFFFu;
 static ULONG g_GotReadAfterStatus = 0xFFFFFFFFu;
+static ULONG64 g_ElfExpMagic = 0;
+static ULONG64 g_ElfBackMagic = 0;
+static ULONG64 g_ElfBackVaddr = 0;
+static ULONG g_ElfBackStatus = 0xFFFFFFFFu;
+static ULONG g_ElfBackSize = 0;
 static ULONG g_NtosFoundNameLen = 0;
 static UCHAR g_NtosFoundName[16];
 static ULONG64 g_NtosEntryRaw[12];
@@ -7308,10 +7318,26 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     g_ElfEntry = load->EntryPoint;
     RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
 
+    {
+        UCHAR expected[8];
+        ULONG64 readBack = 0;
+        SIZE_T backSize = 0;
+        NTSTATUS backStatus;
+
+        RtlCopyMemory(expected, imageData + segs[0].FileOffset, sizeof(expected));
+        g_ElfExpMagic = 0;
+        RtlCopyMemory(&g_ElfExpMagic, expected, sizeof(expected));
+
+        backStatus = MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)segs[0].Vaddr,
+                                         PsGetCurrentProcess(), &readBack, sizeof(readBack), KernelMode, &backSize);
+        g_ElfBackStatus = (ULONG)backStatus;
+        g_ElfBackSize = (ULONG)backSize;
+        g_ElfBackMagic = readBack;
+        g_ElfBackVaddr = segs[0].Vaddr;
+    }
+
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
-
     LxApplyRelocations(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_RelocStats);
-
     LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
 
     LxGlobalTableReset(&g_GlobalSymbols);
@@ -8354,6 +8380,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->GotReadStatus = (ULONG64)g_GotReadStatus;
             result->StubReadStatus = (ULONG64)g_StubReadStatus;
             result->GotReadAfterStatus = (ULONG64)g_GotReadAfterStatus;
+            result->ElfExpMagic = g_ElfExpMagic;
+            result->ElfBackMagic = g_ElfBackMagic;
+            result->ElfBackVaddr = g_ElfBackVaddr;
+            result->ElfBackStatus = g_ElfBackStatus;
+            result->ElfBackSize = g_ElfBackSize;
             result->FsSetOk = g_FsSetOk;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
