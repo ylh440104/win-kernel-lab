@@ -299,6 +299,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsProbe28;
     ULONG64 TlsProbe0St;
     ULONG64 TlsProbe10St;
+    ULONG64 Kthread678;
+    ULONG64 Kthread680;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -919,6 +921,8 @@ int main(void)
                (unsigned long long)q.TlsProbe0, (unsigned)q.TlsProbe0St,
                (unsigned long long)q.TlsProbe10, (unsigned)q.TlsProbe10St,
                (unsigned long long)q.TlsProbe28);
+        printf("  KTHREAD: +678=0x%llx +680=0x%llx\n",
+               (unsigned long long)q.Kthread678, (unsigned long long)q.Kthread680);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
