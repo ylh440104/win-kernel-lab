@@ -645,6 +645,9 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("LOAD_ELF: ok=%d ret=%lu\n", ok ? 1 : 0, ret);
     printf("  GOTDUMP: arch=0x%llx g0=0x%llx g1=0x%llx g2=0x%llx g7=0x%llx\n", (unsigned long long)q.GotArch, (unsigned long long)q.GotDump[0], (unsigned long long)q.GotDump[1], (unsigned long long)q.GotDump[2], (unsigned long long)q.GotDump[7]);
     printf("  STUBBYTES: s0=0x%llx s8=0x%llx s10=0x%llx s30=0x%llx\n", (unsigned long long)q.StubBytes, (unsigned long long)q.StubBytes0, (unsigned long long)q.StubBytes1, (unsigned long long)q.StubBytes3);
+    printf("  SELFTEST: elfmagic=0x%llx entry=0x%llx got=0x%llx stub=0x%llx\n",
+           (unsigned long long)q.StubBytes0, (unsigned long long)q.StubBytes1,
+           (unsigned long long)q.StubBytes3, (unsigned long long)q.StubBytes);
     printf("  GOTAFTER: 0x%llx\n", (unsigned long long)q.GotArchAfterTls);
     printf("  GOTTLSPATH: enter=0x%llx pre=0x%llx post=0x%llx\n", (unsigned long long)q.GotEnterTls, (unsigned long long)q.GotPreWrite, (unsigned long long)q.GotPostWrite);
     printf("  READSTATUS: got=0x%x stub=0x%x after=0x%x\n", (unsigned)q.GotReadStatus, (unsigned)q.StubReadStatus, (unsigned)q.GotReadAfterStatus);
