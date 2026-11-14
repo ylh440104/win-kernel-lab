@@ -892,6 +892,10 @@ int main(void)
         printf("  ARCHARG2: p2=0x%llx p3=0x%llx p4=0x%llx p5=0x%llx\n",
                (unsigned long long)q.ArchArg2, (unsigned long long)q.ArchArg3,
                (unsigned long long)q.ArchArg4, (unsigned long long)q.ArchArg5);
+        printf("  FSSETREAL: tried=%llu addr=0x%llx called=%llu ok=%llu after=0x%llx\n",
+               (unsigned long long)q.FsSetAttempt, (unsigned long long)q.FsSetAddr,
+               (unsigned long long)q.FsSetCalled, (unsigned long long)q.FsSetOk,
+               (unsigned long long)q.FsBaseAfterSet);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
