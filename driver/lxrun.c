@@ -644,6 +644,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ArchArg3;
     ULONG64 ArchArg4;
     ULONG64 ArchArg5;
+    ULONG64 FsSetAttempt;
+    ULONG64 FsSetAddr;
+    ULONG64 FsSetCalled;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -8438,6 +8441,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ArchArg4 = g_ArchArg4;
             result->ArchArg5 = g_ArchArg5;
             result->FsSetOk = g_FsSetOk;
+            result->FsSetAttempt = g_FsSetAttempt;
+            result->FsSetAddr = g_FsSetAddr;
+            result->FsSetCalled = g_FsSetCalled;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
             result->ScanFound = g_ScanFound;
