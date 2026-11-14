@@ -258,6 +258,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsCallMark;
     ULONG64 TlsInTarget;
     ULONG64 FlagAddrUsed;
+    ULONG64 FlagFromScanUsed;
     ULONG64 FlagFromBase;
     ULONG64 ScanFound;
     ULONG64 ScanFlagDisp;
@@ -374,6 +375,8 @@ static void DumpResult(const char *Label, const LX_QUERY_RESULT *Q, DWORD Ret, D
            (unsigned long long)Q->ScanRoutinesDisp,
            (unsigned long long)Q->FlagAddrUsed,
            (unsigned long long)Q->FlagFromBase);
+    printf("  FLAGSRC: fromScan=%llu", (unsigned long long)Q->FlagFromScanUsed);
+    printf("%s", NLSTR);
     printf("  SCAN2: reached=%llu fault=%llu flagAddr2=0x%llx rtnAddr2=0x%llx",
            (unsigned long long)Q->ScanReached,
            (unsigned long long)Q->ScanFault,
