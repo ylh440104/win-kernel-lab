@@ -632,6 +632,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     ok = DeviceIoControl(device, LX_IOCTL_LOAD_ELF, buffer, bufferSize, &q, sizeof(q), &ret, NULL);
 
     printf("LOAD_ELF: ok=%d ret=%lu\n", ok ? 1 : 0, ret);
+    printf("  GOTDUMP: arch=0x%llx g0=0x%llx g1=0x%llx g2=0x%llx g7=0x%llx\n", (unsigned long long)q.GotArch, (unsigned long long)q.GotDump[0], (unsigned long long)q.GotDump[1], (unsigned long long)q.GotDump[2], (unsigned long long)q.GotDump[7]);
     printf("  elfStatus=0x%08lx mapStatus=0x%08lx base=0x%llx copied=%llu viewSize=0x%llx\n", q.ElfStatus,
            q.ElfMapStatus, (unsigned long long)q.ElfBase, (unsigned long long)q.ElfCopied,
            (unsigned long long)q.ElfViewSize);
