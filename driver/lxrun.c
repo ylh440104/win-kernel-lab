@@ -4727,7 +4727,8 @@ static ULONG64 LxGlobalTableLookup(LX_GLOBAL_TABLE *Table, const char *Name, ULO
 static ULONG64 LxReadUserU64(PEPROCESS TargetProcess, ULONG64 Address, NTSTATUS *OutStatus)
 {
     ULONG64 value = 0;
-    LX_APC_STATE apcState;
+    SIZE_T copied = 0;
+    NTSTATUS status;
 
     if (OutStatus != NULL)
     {
@@ -4739,28 +4740,22 @@ static ULONG64 LxReadUserU64(PEPROCESS TargetProcess, ULONG64 Address, NTSTATUS 
         return 0;
     }
 
-    KeStackAttachProcess(TargetProcess, (PVOID)&apcState);
-
-    __try
+    status = MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)Address,
+                                 PsGetCurrentProcess(), &value, sizeof(value), KernelMode, &copied);
+    if (!NT_SUCCESS(status) || copied != sizeof(value))
     {
-        value = *(volatile ULONG64 *)(ULONG_PTR)Address;
-
         if (OutStatus != NULL)
         {
-            *OutStatus = STATUS_SUCCESS;
+            *OutStatus = NT_SUCCESS(status) ? 0xC0000001u : status;
         }
+
+        return 0;
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+
+    if (OutStatus != NULL)
     {
-        value = 0;
-
-        if (OutStatus != NULL)
-        {
-            *OutStatus = 0xC0000005;
-        }
+        *OutStatus = STATUS_SUCCESS;
     }
-
-    KeUnstackDetachProcess((PVOID)&apcState);
 
     return value;
 }
@@ -7330,7 +7325,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     g_GotArch = LxReadUserU64(targetProcess, 0x401C10ull, &g_GotReadStatus);
     g_StubBytes = LxReadUserU64(targetProcess, 0x500000ull, &g_StubReadStatus);
     g_StubBytes0 = LxReadUserU64(targetProcess, 0x400000ull, NULL);
-    g_StubBytes1 = LxReadUserU64(targetProcess, 0x400140ull, NULL);
+    g_StubBytes1 = LxReadUserU64(targetProcess, 0x401C08ull, NULL);
     g_StubBytes3 = LxReadUserU64(targetProcess, 0x401C10ull, NULL);
     g_GotDump[1] = g_GotArch;
     g_GotDump[2] = g_StubBytes;
