@@ -8292,6 +8292,9 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
 
     RtlInitUnicodeString(&deviceName, LX_DEVICE_NAME);
 
+    g_NtosBase = LxFindNtoskrnlBase(DriverObject);
+    g_PsRegisterPicoProvider = LxFindKernelExport(L"PsRegisterPicoProvider");
+
     status = IoCreateDevice(DriverObject, 0, &deviceName, FILE_DEVICE_UNKNOWN,
                             FILE_DEVICE_SECURE_OPEN, FALSE, &deviceObject);
     if (!NT_SUCCESS(status))
@@ -8315,8 +8318,6 @@ NTSTATUS DriverEntry(PDRIVER_OBJECT DriverObject, PUNICODE_STRING RegistryPath)
     DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = LxrunDeviceControl;
     DriverObject->DriverUnload = LxrunUnload;
 
-    g_PsRegisterPicoProvider = LxFindKernelExport(L"PsRegisterPicoProvider");
-    g_NtosBase = LxFindNtoskrnlBase(DriverObject);
 
     LxSelfTestFileAccess();
 
