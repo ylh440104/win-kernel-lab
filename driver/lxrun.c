@@ -622,6 +622,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ScanRoutinesDisp;
     ULONG64 ScanReached;
     ULONG64 ScanTried;
+    ULONG64 RegAtExport;
+    ULONG64 RegAtNtos;
+    ULONG64 RegAtRegisterEntry;
     ULONG64 RegFnAddr;
     ULONG64 RegPtrAddr;
     ULONG64 RegExportAtRegister;
