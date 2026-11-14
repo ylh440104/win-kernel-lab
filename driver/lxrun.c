@@ -620,6 +620,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsPatchedThread;
     ULONG64 FsPatchedValue;
     ULONG64 FsPatchFault;
+    ULONG64 StubBytes1;
+    ULONG64 StubBytes3;
+    ULONG64 StubBytes0;
     ULONG64 StubBytes;
     ULONG64 GotArch;
     ULONG64 GotDump[8];
@@ -659,6 +662,9 @@ static ULONG64 g_NtosBase = 0;
 static ULONG64 g_GotDump[8];
 static ULONG64 g_GotArch = 0;
 static ULONG64 g_StubBytes = 0;
+static ULONG64 g_StubBytes0 = 0;
+static ULONG64 g_StubBytes3 = 0;
+static ULONG64 g_StubBytes1 = 0;
 static ULONG g_NtosFoundNameLen = 0;
 static UCHAR g_NtosFoundName[16];
 static ULONG64 g_NtosEntryRaw[12];
@@ -7280,10 +7286,26 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         {
             ULONG64 sv = 0;
             SIZE_T sr = 0;
-            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500030ull,
+            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500000ull,
                                                PsGetCurrentProcess(), &sv, sizeof(sv), KernelMode, &sr)))
             {
                 g_StubBytes = sv;
+            }
+            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500010ull,
+                                               PsGetCurrentProcess(), &g_StubBytes1, sizeof(sv), KernelMode, &sr)))
+            {
+            }
+            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500030ull,
+                                               PsGetCurrentProcess(), &g_StubBytes3, sizeof(sv), KernelMode, &sr)))
+            {
+            }
+            {
+                ULONG64 vg = 0;
+                if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500008ull,
+                                                   PsGetCurrentProcess(), &vg, sizeof(vg), KernelMode, &sr)))
+                {
+                    g_StubBytes0 = vg;
+                }
             }
         }
     }
@@ -8294,6 +8316,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FsPatchedThread = g_FsPatchedThread;
             result->FsPatchedValue = g_FsPatchedValue;
             result->FsPatchFault = g_FsPatchFault;
+            result->StubBytes0 = g_StubBytes0;
+            result->StubBytes1 = g_StubBytes1;
+            result->StubBytes3 = g_StubBytes3;
             result->StubBytes = g_StubBytes;
             result->GotArch = g_GotArch;
             result->GotDump[0] = g_GotDump[0];
