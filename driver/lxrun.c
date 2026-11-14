@@ -620,6 +620,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsPatchedThread;
     ULONG64 FsPatchedValue;
     ULONG64 FsPatchFault;
+    ULONG64 StubBytes;
     ULONG64 GotArch;
     ULONG64 GotDump[8];
     ULONG64 FsSetOk;
@@ -657,6 +658,7 @@ static PVOID g_PsRegisterPicoProvider = NULL;
 static ULONG64 g_NtosBase = 0;
 static ULONG64 g_GotDump[8];
 static ULONG64 g_GotArch = 0;
+static ULONG64 g_StubBytes = 0;
 static ULONG g_NtosFoundNameLen = 0;
 static UCHAR g_NtosFoundName[16];
 static ULONG64 g_NtosEntryRaw[12];
@@ -7275,6 +7277,15 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
             }
         }
         g_GotArch = g_GotDump[0];
+        {
+            ULONG64 sv = 0;
+            SIZE_T sr = 0;
+            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500030ull,
+                                               PsGetCurrentProcess(), &sv, sizeof(sv), KernelMode, &sr)))
+            {
+                g_StubBytes = sv;
+            }
+        }
     }
     LxSetupTls(targetProcess, g_StubStats.StubAreaBase, &g_LibStats);
     g_TlsCallMark = 0xAAAA0002;
@@ -8283,6 +8294,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FsPatchedThread = g_FsPatchedThread;
             result->FsPatchedValue = g_FsPatchedValue;
             result->FsPatchFault = g_FsPatchFault;
+            result->StubBytes = g_StubBytes;
             result->GotArch = g_GotArch;
             result->GotDump[0] = g_GotDump[0];
             result->GotDump[1] = g_GotDump[1];
