@@ -1,5 +1,6 @@
 #include <windows.h>
 #include <stdio.h>
+#define NLSTR "\n"
 #include <stdlib.h>
 #include <string.h>
 
@@ -261,6 +262,14 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ScanFound;
     ULONG64 ScanFlagDisp;
     ULONG64 ScanRoutinesDisp;
+    ULONG64 ScanReached;
+    ULONG64 ScanFault;
+    ULONG64 FlgAddrFromScan;
+    ULONG64 RtnAddrFromScan;
+    ULONG64 ScanReached;
+    ULONG64 ScanFault;
+    ULONG64 FlgAddrFromScan;
+    ULONG64 RtnAddrFromScan;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
@@ -358,6 +367,18 @@ static void DumpResult(const char *Label, const LX_QUERY_RESULT *Q, DWORD Ret, D
            (unsigned long long)Q->ScanRoutinesDisp,
            (unsigned long long)Q->FlagAddrUsed,
            (unsigned long long)Q->FlagFromBase);
+    printf("  SCAN2: reached=%llu fault=%llu flagAddr2=0x%llx rtnAddr2=0x%llx",
+           (unsigned long long)Q->ScanReached,
+           (unsigned long long)Q->ScanFault,
+           (unsigned long long)Q->FlgAddrFromScan,
+           (unsigned long long)Q->RtnAddrFromScan);
+    printf("%s", NLSTR);
+    printf("  SCAN2: reached=%llu fault=%llu flagAddr2=0x%llx rtnAddr2=0x%llx",
+           (unsigned long long)Q->ScanReached,
+           (unsigned long long)Q->ScanFault,
+           (unsigned long long)Q->FlgAddrFromScan,
+           (unsigned long long)Q->RtnAddrFromScan);
+    printf("%s", "\n");
     printf("%s", "\n");
     printf("  TLS: entered=%llu inTarget=%llu callMark=0x%llx base=0x%llx size=0x%llx done=%lu",
            (unsigned long long)Q->TlsEntered,
