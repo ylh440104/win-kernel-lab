@@ -280,6 +280,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ElfBackVaddr;
     ULONG ElfBackStatus;
     ULONG ElfBackSize;
+    ULONG64 ArchArg0;
+    ULONG64 ArchArg1;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -877,6 +879,9 @@ int main(void)
         ok = DeviceIoControl(device, LX_IOCTL_QUERY, NULL, 0, &q, sizeof(q), &ret, NULL);
         printf("AFTER 3s: syscallCount=%llu lastSyscall=%llu\n",
                (unsigned long long)q.SyscallCount, (unsigned long long)q.LastSyscallNo);
+        printf("  ARCHARG: p0=0x%llx p1=0x%llx archCalls=%llu\n",
+               (unsigned long long)q.ArchArg0, (unsigned long long)q.ArchArg1,
+               (unsigned long long)q.ArchPrctlCalls);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
