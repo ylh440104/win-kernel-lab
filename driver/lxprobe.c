@@ -286,6 +286,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ArchArg3;
     ULONG64 ArchArg4;
     ULONG64 ArchArg5;
+    ULONG64 FsSetAttempt;
+    ULONG64 FsSetAddr;
+    ULONG64 FsSetCalled;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -413,8 +416,8 @@ static void DumpResult(const char *Label, const LX_QUERY_RESULT *Q, DWORD Ret, D
            (unsigned long long)Q->FsSetOk,
            (unsigned long long)Q->FsBaseAfterSet,
            (unsigned long long)Q->FsSetFault,
-           (unsigned long long)0,
-           (unsigned long long)0);
+           (unsigned long long)Q->FsSetAttempt,
+           (unsigned long long)Q->FsSetAddr);
     printf("%s", NLSTR);
     printf("  FLAGSRC: fromScan=%llu", (unsigned long long)Q->FlagFromScanUsed);
     printf("%s", NLSTR);
