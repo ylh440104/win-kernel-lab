@@ -228,6 +228,7 @@ typedef struct _LX_STUB_STATS
     ULONG StubUnknown;
     ULONG StubWriteFail;
     ULONG64 StubAreaBase;
+    ULONG64 StubViewSize;
     ULONG64 LastStubAddress;
     ULONG64 LastStubSyscall;
     NTSTATUS LastStubStatus;
@@ -656,6 +657,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ArchPicoThread;
     ULONG64 ArchThreadSame;
     ULONG64 ArchCurProcess;
+    ULONG64 StubViewSize;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -5018,6 +5020,7 @@ static void LxBuildStubs(const UCHAR *ImageData, ULONG ImageSize, const LX_ELF_L
 
     Stats->LastStubStatus = stubMapStatus;
     Stats->StubAreaBase = (ULONG64)(ULONG_PTR)stubViewBase;
+    Stats->StubViewSize = (ULONG64)stubViewSize;
 
     if (!NT_SUCCESS(stubMapStatus))
     {
@@ -8514,6 +8517,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ArchPicoThread = g_ArchPicoThread;
             result->ArchThreadSame = g_ArchThreadSame;
             result->ArchCurProcess = g_ArchCurProcess;
+            result->StubViewSize = g_StubStats.StubViewSize;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
             result->ScanFound = g_ScanFound;
