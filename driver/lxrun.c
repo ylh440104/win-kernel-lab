@@ -7587,19 +7587,6 @@ static void LxCreatePicoThread(void)
 
         if (NT_SUCCESS(resumeStatus))
         {
-            if (g_TlsSetupDone && g_TlsBlockBase != 0)
-            {
-                __try
-                {
-                    *(ULONG64 *)((UCHAR *)threadObject + 0x678) = g_TlsBlockBase;
-                    g_FsPatchedThread = 1;
-                    g_FsPatchedValue = g_TlsBlockBase;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_FsPatchFault = 1;
-                }
-            }
             g_ResumeStatus = (ULONG)((NTSTATUS (*)(PVOID, PULONG))g_ResumeThreadFn)(threadObject, &previousCount);
             g_PrevSuspendCount = previousCount;
             ObDereferenceObject(threadObject);
