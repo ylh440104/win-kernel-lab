@@ -799,7 +799,7 @@ static ULONG64 g_SyscallHistory[32];
 static ULONG g_SyscallHistoryCount = 0;
 
 #define LX_POOL_SIZE 0x01000000ull
-#define LX_PARAM_BASE 0x140
+#define LX_PARAM_BASE 0x148
 
 static ULONG g_PoolStatus = 0xFFFFFFFFu;
 static ULONG64 g_PoolBase = 0;
