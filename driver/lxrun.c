@@ -799,7 +799,7 @@ static ULONG64 g_SyscallHistory[32];
 static ULONG g_SyscallHistoryCount = 0;
 
 #define LX_POOL_SIZE 0x01000000ull
-#define LX_PARAM_BASE 0x148
+#define LX_PARAM_BASE 0x140
 
 static ULONG g_PoolStatus = 0xFFFFFFFFu;
 static ULONG64 g_PoolBase = 0;
@@ -2918,6 +2918,17 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             code = arg1;
             address = arg0;
+        }
+
+        if (code != 0x1001 && code != 0x1002 && code != 0x1003)
+        {
+            ULONG64 *shifted = Parameters + 1;
+
+            if (shifted[0] == 0x1001 || shifted[0] == 0x1002 || shifted[0] == 0x1003)
+            {
+                code = shifted[0];
+                address = shifted[1];
+            }
         }
 
         if (code == 0x1002)
