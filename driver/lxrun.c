@@ -630,6 +630,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 StubBytes;
     ULONG64 GotArch;
     ULONG64 GotDump[8];
+    ULONG64 GotReadStatus;
+    ULONG64 StubReadStatus;
+    ULONG64 GotReadAfterStatus;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -673,6 +676,9 @@ static ULONG64 g_GotEnterTls = 0;
 static ULONG64 g_StubBytes0 = 0;
 static ULONG64 g_StubBytes3 = 0;
 static ULONG64 g_StubBytes1 = 0;
+static ULONG g_GotReadStatus = 0xFFFFFFFFu;
+static ULONG g_StubReadStatus = 0xFFFFFFFFu;
+static ULONG g_GotReadAfterStatus = 0xFFFFFFFFu;
 static ULONG g_NtosFoundNameLen = 0;
 static UCHAR g_NtosFoundName[16];
 static ULONG64 g_NtosEntryRaw[12];
@@ -4718,6 +4724,47 @@ static ULONG64 LxGlobalTableLookup(LX_GLOBAL_TABLE *Table, const char *Name, ULO
     return 0;
 }
 
+static ULONG64 LxReadUserU64(PEPROCESS TargetProcess, ULONG64 Address, NTSTATUS *OutStatus)
+{
+    ULONG64 value = 0;
+    KAPC_STATE apcState;
+
+    if (OutStatus != NULL)
+    {
+        *OutStatus = STATUS_INVALID_PARAMETER;
+    }
+
+    if (TargetProcess == NULL || Address == 0)
+    {
+        return 0;
+    }
+
+    KeStackAttachProcess(TargetProcess, &apcState);
+
+    __try
+    {
+        value = *(volatile ULONG64 *)(ULONG_PTR)Address;
+
+        if (OutStatus != NULL)
+        {
+            *OutStatus = STATUS_SUCCESS;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        value = 0;
+
+        if (OutStatus != NULL)
+        {
+            *OutStatus = 0xC0000005;
+        }
+    }
+
+    KeUnstackDetachProcess(&apcState);
+
+    return value;
+}
+
 static void LxInstallBuiltins(PEPROCESS TargetProcess, ULONG64 AreaBase, LX_GLOBAL_TABLE *Globals, LX_BUILTIN_STATS *Stats);
 
 void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Stats)
@@ -4729,15 +4776,7 @@ void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Sta
     ULONG totalSize;
     SIZE_T written = 0;
 
-    {
-        ULONG64 dv = 0;
-        SIZE_T dr = 0;
-        if (NT_SUCCESS(MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)0x401C10ull,
-                                           PsGetCurrentProcess(), &dv, sizeof(dv), KernelMode, &dr)))
-        {
-            g_GotEnterTls = dv;
-        }
-    }
+    g_GotEnterTls = LxReadUserU64(TargetProcess, 0x401C10ull, NULL);
     g_TlsEntered = 1;
     g_TlsInStubBase = StubAreaBase;
     g_TlsInTarget = (TargetProcess != NULL) ? 1 : 0;
@@ -4816,18 +4855,11 @@ void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Sta
     __try
     {
         NTSTATUS headStatus;
-        {
-            ULONG64 dv = 0;
-            SIZE_T dr = 0;
-            if (NT_SUCCESS(MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)0x401C10ull,
-                                               PsGetCurrentProcess(), &dv, sizeof(dv), KernelMode, &dr)))
-            {
-                g_GotPreWrite = dv;
-            }
-        }
+        g_GotPreWrite = LxReadUserU64(TargetProcess, 0x401C10ull, NULL);
         headStatus = LxWritePicoMemory(TargetProcess, blockBase, tcb, 0x40);
         g_TlsHeadStatus = (ULONG64)headStatus;
         g_TlsHeadAddr = blockBase;
+        g_GotPostWrite = LxReadUserU64(TargetProcess, 0x401C10ull, NULL);
         if (NT_SUCCESS(headStatus))
         {
             NTSTATUS dataStatus;
@@ -4847,15 +4879,6 @@ void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Sta
     __except (EXCEPTION_EXECUTE_HANDLER)
     {
         g_TlsSetupDone = 0;
-    }
-    {
-        ULONG64 dv = 0;
-        SIZE_T dr = 0;
-        if (NT_SUCCESS(MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)0x401C10ull,
-                                           PsGetCurrentProcess(), &dv, sizeof(dv), KernelMode, &dr)))
-        {
-            g_GotPostWrite = dv;
-        }
     }
     ExFreePoolWithTag(tcb, (ULONG)'slTx');
 }
@@ -7304,60 +7327,16 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats,
                  &g_GlobalSymbols);
     g_TlsCallMark = 0xAAAA0001;
-    {
-        ULONG gi;
-        SIZE_T gr = 0;
-        for (gi = 0; gi < 8; gi++)
-        {
-            ULONG64 gv = 0;
-            ULONG64 gaddr = 0x401C10ull + (ULONG64)gi * 8ull;
-            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)gaddr,
-                                               PsGetCurrentProcess(), &gv, sizeof(gv), KernelMode, &gr)))
-            {
-                g_GotDump[gi] = gv;
-            }
-        }
-        g_GotArch = g_GotDump[0];
-        {
-            ULONG64 sv = 0;
-            SIZE_T sr = 0;
-            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500000ull,
-                                               PsGetCurrentProcess(), &sv, sizeof(sv), KernelMode, &sr)))
-            {
-                g_StubBytes = sv;
-            }
-            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500010ull,
-                                               PsGetCurrentProcess(), &g_StubBytes1, sizeof(sv), KernelMode, &sr)))
-            {
-            }
-            if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500030ull,
-                                               PsGetCurrentProcess(), &g_StubBytes3, sizeof(sv), KernelMode, &sr)))
-            {
-            }
-            {
-                ULONG64 vg = 0;
-                if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x500008ull,
-                                                   PsGetCurrentProcess(), &vg, sizeof(vg), KernelMode, &sr)))
-                {
-                    g_StubBytes0 = vg;
-                }
-            }
-        }
-    }
+    g_GotArch = LxReadUserU64(targetProcess, 0x401C10ull, &g_GotReadStatus);
+    g_StubBytes = LxReadUserU64(targetProcess, 0x500000ull, &g_StubReadStatus);
+    g_StubBytes0 = LxReadUserU64(targetProcess, 0x500008ull, NULL);
+    g_StubBytes1 = LxReadUserU64(targetProcess, 0x500010ull, NULL);
+    g_StubBytes3 = LxReadUserU64(targetProcess, 0x500030ull, NULL);
+    g_GotDump[1] = LxReadUserU64(targetProcess, 0x401C18ull, NULL);
+    g_GotDump[2] = LxReadUserU64(targetProcess, 0x401C20ull, NULL);
+    g_GotDump[7] = LxReadUserU64(targetProcess, 0x401C28ull, NULL);
     LxSetupTls(targetProcess, g_StubStats.StubAreaBase, &g_LibStats);
-    {
-        ULONG64 pg = 0;
-        SIZE_T pr = 0;
-        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x401C10ull,
-                                           PsGetCurrentProcess(), &pg, sizeof(pg), KernelMode, &pr)))
-        {
-            g_GotArchAfterTls = pg;
-        }
-        else
-        {
-            g_GotArchAfterTls = 0xDEAD0001ull;
-        }
-    }
+    g_GotArchAfterTls = LxReadUserU64(targetProcess, 0x401C10ull, &g_GotReadAfterStatus);
     g_TlsCallMark = 0xAAAA0002;
     g_TlsEntered = 0xCCCC0002;
     g_TlsInStubBase = 0xCCCC0003;
@@ -8377,6 +8356,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->GotDump[1] = g_GotDump[1];
             result->GotDump[2] = g_GotDump[2];
             result->GotDump[7] = g_GotDump[7];
+            result->GotReadStatus = (ULONG64)g_GotReadStatus;
+            result->StubReadStatus = (ULONG64)g_StubReadStatus;
+            result->GotReadAfterStatus = (ULONG64)g_GotReadAfterStatus;
             result->FsSetOk = g_FsSetOk;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
