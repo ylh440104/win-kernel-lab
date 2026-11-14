@@ -616,6 +616,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsCallMark;
     ULONG64 TlsInTarget;
     ULONG64 FlagAddrUsed;
+    ULONG64 FsBaseAfterSet;
+    ULONG64 FsSetOk;
+    ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
     ULONG64 FlagFromBase;
     ULONG64 ScanFound;
@@ -698,6 +701,9 @@ volatile ULONG64 g_TlsCallMark = 0;
 volatile ULONG64 g_FsSetAttempt = 0;
 volatile ULONG64 g_FsSetAddr = 0;
 volatile ULONG64 g_FsSetCalled = 0;
+volatile ULONG64 g_FsSetFault = 0;
+volatile ULONG64 g_FsSetOk = 0;
+volatile ULONG64 g_FsBaseAfterSet = 0;
 volatile ULONG64 g_ScanTried = 0;
 volatile ULONG64 g_RegFnAddr = 0;
 volatile ULONG64 g_RegPtrAddr = 0;
@@ -2859,8 +2865,17 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_FsSetAddr = address;
             if (g_SetDescriptorBaseFn != 0)
             {
-                ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, address);
-                g_FsSetCalled = 1;
+                __try
+                {
+                    ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, address);
+                    g_FsSetCalled = 1;
+                    g_FsBaseAfterSet = __readmsr(0xC0000100);
+                    g_FsSetOk = (g_FsBaseAfterSet == address) ? 1 : 0;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    g_FsSetFault = 1;
+                }
             }
 
             g_ArchPrctlCalls++;
@@ -8224,6 +8239,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->TlsInTarget = g_TlsInTarget;
             result->FlagAddrUsed = g_FlagAddrUsed;
             result->FlagFromBase = g_FlagFromBase;
+            result->FsBaseAfterSet = g_FsBaseAfterSet;
+            result->FsSetOk = g_FsSetOk;
+            result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
             result->ScanFound = g_ScanFound;
             result->ScanFlagDisp = g_ScanFlagDisp;
