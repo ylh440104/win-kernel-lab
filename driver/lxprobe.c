@@ -266,10 +266,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ScanFault;
     ULONG64 FlgAddrFromScan;
     ULONG64 RtnAddrFromScan;
-    ULONG64 ScanReached;
-    ULONG64 ScanFault;
-    ULONG64 FlgAddrFromScan;
-    ULONG64 RtnAddrFromScan;
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
