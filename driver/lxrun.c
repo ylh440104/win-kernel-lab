@@ -2920,7 +2920,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         if (code != 0x1001 && code != 0x1002 && code != 0x1003)
         {
             code = arg1;
-            address = arg0;
+            address = arg2;
         }
 
         if (code != 0x1001 && code != 0x1002 && code != 0x1003)
@@ -2930,7 +2930,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             if (shifted[0] == 0x1001 || shifted[0] == 0x1002 || shifted[0] == 0x1003)
             {
                 code = shifted[0];
-                address = shifted[1];
+                address = shifted[2];
             }
         }
 
