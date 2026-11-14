@@ -262,6 +262,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsPatchedThread;
     ULONG64 FsPatchedValue;
     ULONG64 FsPatchFault;
+    ULONG64 GotArch;
+    ULONG64 GotDump[8];
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -381,6 +383,8 @@ static void DumpResult(const char *Label, const LX_QUERY_RESULT *Q, DWORD Ret, D
            (unsigned long long)Q->ScanRoutinesDisp,
            (unsigned long long)Q->FlagAddrUsed,
            (unsigned long long)Q->FlagFromBase);
+    printf("  GOTDUMP: arch=0x%llx g0=0x%llx g1=0x%llx g2=0x%llx g7=0x%llx", (unsigned long long)Q->GotArch, (unsigned long long)Q->GotDump[0], (unsigned long long)Q->GotDump[1], (unsigned long long)Q->GotDump[2], (unsigned long long)Q->GotDump[7]);
+    printf("%s", NLSTR);
     printf("  FSPATCH: patched=%llu value=0x%llx fault=%llu", (unsigned long long)Q->FsPatchedThread, (unsigned long long)Q->FsPatchedValue, (unsigned long long)Q->FsPatchFault);
     printf("%s", NLSTR);
     printf("  FSSET: ok=%llu after=0x%llx fault=%llu tried=%llu addr=0x%llx",
