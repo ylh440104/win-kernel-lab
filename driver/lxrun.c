@@ -617,6 +617,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsInTarget;
     ULONG64 FlagAddrUsed;
     ULONG64 FsBaseAfterSet;
+    ULONG64 FsPatchedThread;
+    ULONG64 FsPatchedValue;
+    ULONG64 FsPatchFault;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -702,6 +705,9 @@ volatile ULONG64 g_FsSetAttempt = 0;
 volatile ULONG64 g_FsSetAddr = 0;
 volatile ULONG64 g_FsSetCalled = 0;
 volatile ULONG64 g_FsSetFault = 0;
+volatile ULONG64 g_FsPatchFault = 0;
+volatile ULONG64 g_FsPatchedValue = 0;
+volatile ULONG64 g_FsPatchedThread = 0;
 volatile ULONG64 g_FsSetOk = 0;
 volatile ULONG64 g_FsBaseAfterSet = 0;
 volatile ULONG64 g_ScanTried = 0;
@@ -7581,6 +7587,19 @@ static void LxCreatePicoThread(void)
 
         if (NT_SUCCESS(resumeStatus))
         {
+            if (g_TlsSetupDone && g_TlsBlockBase != 0)
+            {
+                __try
+                {
+                    *(ULONG64 *)((UCHAR *)threadObject + 0x678) = g_TlsBlockBase;
+                    g_FsPatchedThread = 1;
+                    g_FsPatchedValue = g_TlsBlockBase;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    g_FsPatchFault = 1;
+                }
+            }
             g_ResumeStatus = (ULONG)((NTSTATUS (*)(PVOID, PULONG))g_ResumeThreadFn)(threadObject, &previousCount);
             g_PrevSuspendCount = previousCount;
             ObDereferenceObject(threadObject);
@@ -8240,6 +8259,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FlagAddrUsed = g_FlagAddrUsed;
             result->FlagFromBase = g_FlagFromBase;
             result->FsBaseAfterSet = g_FsBaseAfterSet;
+            result->FsPatchedThread = g_FsPatchedThread;
+            result->FsPatchedValue = g_FsPatchedValue;
+            result->FsPatchFault = g_FsPatchFault;
             result->FsSetOk = g_FsSetOk;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
