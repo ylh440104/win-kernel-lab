@@ -363,6 +363,7 @@ typedef struct _LX_GLOBAL_TABLE
 #define LX_RVA_PSP_PICO_REG_DISABLED 0xF05880u
 #define LX_RVA_PSP_PICO_ROUTINES 0xF05820u
 #define LX_FLAG_RIP_DISP 0x29E5C0u
+#define PICO_SCAN_BYTES 0x2000u
 #define LX_PICO_SCAN_LIMIT 0x2000u
 #define LX_ROUTINES_RIP_DISP 0x29E5D1u
 
@@ -7931,53 +7932,48 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             if (g_PsRegisterPicoProvider != NULL)
             {
                 PUCHAR fnBase = (PUCHAR)g_PsRegisterPicoProvider;
-                LONG scan;
-                LONG posFlag = -1;
-                LONG posRoutines = -1;
+                ULONG scan;
+                LONG posFlag;
+                LONG posRoutines;
+
                 g_ScanTried = 1;
-                __try
+                posFlag = -1;
+                posRoutines = -1;
+                for (scan = 0; scan < (ULONG)(PICO_SCAN_BYTES - 8); scan++)
                 {
-                    for (scan = 0; scan < LX_PICO_SCAN_LIMIT - 8; scan++)
+                    PUCHAR p = fnBase + scan;
+                    if (*(p) == 0x80 && *(p + 1) == 0x3D)
                     {
-                        PUCHAR p = fnBase + scan;
-                        if (*p == 0x80 && *(p + 1) == 0x3D)
+                        if (posFlag < 0)
                         {
-                            LONG delta = *(LONG *)(p + 2);
-                            PUCHAR target = p + 6 + delta;
-                            if (posFlag < 0 && target > fnBase)
-                            {
-                                posFlag = scan;
-                                g_ScanFlagDisp = (ULONG64)scan;
-                            }
-                        }
-                        else if (*p == 0x48 && *(p + 1) == 0x89 && *(p + 2) == 0x05)
-                        {
-                            LONG delta = *(LONG *)(p + 3);
-                            PUCHAR target = p + 7 + delta;
-                            if (posRoutines < 0 && target > fnBase)
-                            {
-                                posRoutines = scan;
-                                g_ScanRoutinesDisp = (ULONG64)scan;
-                            }
-                        }
-                        if (posFlag >= 0 && posRoutines >= 0)
-                        {
-                            break;
+                            posFlag = (LONG)scan;
                         }
                     }
-                    g_ScanReached = 1;
+                    else if (*(p) == 0x48 && *(p + 1) == 0x89 && *(p + 2) == 0x05)
+                    {
+                        if (posRoutines < 0)
+                        {
+                            posRoutines = (LONG)scan;
+                        }
+                    }
+                    if (posFlag >= 0 && posRoutines >= 0)
+                    {
+                        break;
+                    }
                 }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_ScanFault = 1;
-                }
+                g_ScanReached = 1;
+                g_ScanFlagDisp = (posFlag >= 0) ? (ULONG64)posFlag : 0;
+                g_ScanRoutinesDisp = (posRoutines >= 0) ? (ULONG64)posRoutines : 0;
+
                 if (posFlag >= 0)
                 {
-                    g_FlgAddrFromScan = (ULONG64)(fnBase + posFlag + 6 + *(LONG *)(fnBase + posFlag + 2));
+                    LONG delta = *(LONG *)(fnBase + posFlag + 2);
+                    g_FlgAddrFromScan = (ULONG64)(fnBase + posFlag + 6 + delta);
                 }
                 if (posRoutines >= 0)
                 {
-                    g_RtnAddrFromScan = (ULONG64)(fnBase + posRoutines + 7 + *(LONG *)(fnBase + posRoutines + 3));
+                    LONG delta = *(LONG *)(fnBase + posRoutines + 3);
+                    g_RtnAddrFromScan = (ULONG64)(fnBase + posRoutines + 7 + delta);
                 }
                 if (posFlag >= 0 || posRoutines >= 0)
                 {
