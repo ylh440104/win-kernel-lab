@@ -638,6 +638,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ElfBackVaddr;
     ULONG ElfBackStatus;
     ULONG ElfBackSize;
+    ULONG64 ArchArg0;
+    ULONG64 ArchArg1;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -687,6 +689,8 @@ static ULONG g_GotReadAfterStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfExpMagic = 0;
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
+static ULONG64 g_ArchArg0 = 0;
+static ULONG64 g_ArchArg1 = 0;
 static ULONG g_ElfBackStatus = 0xFFFFFFFFu;
 static ULONG g_ElfBackSize = 0;
 static ULONG g_NtosFoundNameLen = 0;
@@ -2894,6 +2898,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     {
         ULONG64 code = arg0;
         ULONG64 address = arg1;
+
+        g_ArchArg0 = arg0;
+        g_ArchArg1 = arg1;
 
         if (code != 0x1001 && code != 0x1002 && code != 0x1003)
         {
@@ -8401,6 +8408,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ElfBackVaddr = g_ElfBackVaddr;
             result->ElfBackStatus = g_ElfBackStatus;
             result->ElfBackSize = g_ElfBackSize;
+            result->ArchArg0 = g_ArchArg0;
+            result->ArchArg1 = g_ArchArg1;
             result->FsSetOk = g_FsSetOk;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
