@@ -7788,6 +7788,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ElfStatus = g_ElfStatus;
             result->ElfMapStatus = g_ElfMapStatus;
             result->ElfBase = g_ElfBase;
+            result->ElfExpMagic = g_ElfExpMagic;
+            result->ElfBackMagic = g_ElfBackMagic;
+            result->ElfBackVaddr = g_ElfBackVaddr;
+            result->ElfBackStatus = g_ElfBackStatus;
+            result->ElfBackSize = g_ElfBackSize;
             result->DynInterpVaddr = g_ElfDynamic.InterpVaddr;
             result->DynHasInterp = g_ElfDynamic.HasInterp;
             result->DynHasDynamic = g_ElfDynamic.HasDynamic;
@@ -7834,6 +7839,17 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->GotArch = result->GotDump[0];
             }
             result->SymTotal = g_SymbolInfo.TotalSyms;
+            result->GotArchAfterTls = g_GotArchAfterTls;
+            result->GotEnterTls = g_GotEnterTls;
+            result->GotPreWrite = g_GotPreWrite;
+            result->GotPostWrite = g_GotPostWrite;
+            result->StubBytes = g_StubBytes;
+            result->StubBytes0 = g_StubBytes0;
+            result->StubBytes1 = g_StubBytes1;
+            result->StubBytes3 = g_StubBytes3;
+            result->GotReadStatus = (ULONG64)g_GotReadStatus;
+            result->StubReadStatus = (ULONG64)g_StubReadStatus;
+            result->GotReadAfterStatus = (ULONG64)g_GotReadAfterStatus;
             result->TlsEntered = g_TlsEntered;
             result->TlsInTarget = g_TlsInTarget;
             result->TlsInStubBase = g_TlsInStubBase;
