@@ -121,6 +121,8 @@ typedef struct _LX_ELF_RELA
 #define LX_R_X86_64_JUMP_SLOT 7u
 #define LX_R_X86_64_RELATIVE 8u
 #define LX_R_X86_64_DTPMOD64 16u
+#define LX_R_X86_64_DTPOFF64 17u
+#define LX_R_X86_64_TPOFF64 18u
 #define LX_R_X86_64_IRELATIVE 37u
 #define LX_MAX_RELOCATIONS 4096u
 
@@ -270,6 +272,9 @@ typedef struct _LX_LIB_ENTRY
     ULONG64 TlsOffset;
     ULONG64 TlsBlockBase;
     ULONG TlsAllocated;
+    ULONG TpoffCount;
+    ULONG64 TpoffOffsets[64];
+    ULONG TpoffApplied;
     ULONG SymDumped;
     ULONG LoadStatus;
     CHAR Name[LX_MAX_SYMBOL_NAME];
@@ -670,6 +675,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG LibTlsOffset[4];
     ULONG64 LibTlsMemSize[4];
     ULONG64 LibTlsAllocated[4];
+    ULONG64 TpoffCount[4];
+    ULONG64 TpoffApplied[4];
     ULONG LibRelrCount[4];
     ULONG LibRelrApplied[4];
 } LX_QUERY_RESULT;
@@ -4908,9 +4915,34 @@ void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Sta
             g_TlsDataStatus = (ULONG64)dataStatus;
             if (NT_SUCCESS(dataStatus))
             {
+                ULONG libIndex2;
+
                 g_TlsBlockBase = blockBase;
                 g_TlsBlockSize = LX_TLS_TCB_SIZE + allocated;
                 g_TlsSetupDone = 1;
+
+                for (libIndex2 = 0; libIndex2 < LX_MAX_LIBS; libIndex2++)
+                {
+                    LX_LIB_ENTRY *tlsEntry = &Stats->Libs[libIndex2];
+                    ULONG tpoffIndex;
+
+                    if (tlsEntry->Used == 0 || tlsEntry->TlsAllocated == 0 || tlsEntry->TpoffCount == 0)
+                    {
+                        continue;
+                    }
+
+                    for (tpoffIndex = 0; tpoffIndex < tlsEntry->TpoffCount; tpoffIndex++)
+                    {
+                        ULONG64 slotAddress = tlsEntry->BaseAddress + tlsEntry->TpoffOffsets[tpoffIndex];
+                        ULONG64 slotValue = LxReadUserU64(TargetProcess, slotAddress, NULL);
+                        ULONG64 newValue = slotValue + (ULONG64)tlsEntry->TlsOffset;
+
+                        if (NT_SUCCESS(LxWritePicoMemory(TargetProcess, slotAddress, &newValue, sizeof(newValue))))
+                        {
+                            tlsEntry->TpoffApplied++;
+                        }
+                    }
+                }
             }
         }
     }
@@ -6950,7 +6982,15 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     RtlCopyMemory(&rela, fileBuffer + entryOffset, sizeof(LX_ELF_RELA));
 
                     relocType = (ULONG)(rela.Info & 0xFFFFFFFFull);
-
+                    if (relocType == LX_R_X86_64_TPOFF64)
+                    {
+                        if (Entry->TpoffCount < 64)
+                        {
+                            Entry->TpoffOffsets[Entry->TpoffCount] = rela.Offset;
+                            Entry->TpoffCount++;
+                        }
+                        continue;
+                    }
                     if (relocType == LX_R_X86_64_RELATIVE)
                     {
                         destAddress = Entry->BaseAddress + rela.Offset;
@@ -7913,7 +7953,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->LibTlsAllocated[1] = g_LibStats.Libs[1].TlsAllocated;
             result->LibTlsAllocated[2] = g_LibStats.Libs[2].TlsAllocated;
             result->LibTlsAllocated[3] = g_LibStats.Libs[3].TlsAllocated;
-
+            result->TpoffCount[0] = g_LibStats.Libs[0].TpoffCount;
+            result->TpoffCount[1] = g_LibStats.Libs[1].TpoffCount;
+            result->TpoffCount[2] = g_LibStats.Libs[2].TpoffCount;
+            result->TpoffCount[3] = g_LibStats.Libs[3].TpoffCount;
+            result->TpoffApplied[0] = g_LibStats.Libs[0].TpoffApplied;
+            result->TpoffApplied[1] = g_LibStats.Libs[1].TpoffApplied;
+            result->TpoffApplied[2] = g_LibStats.Libs[2].TpoffApplied;
+            result->TpoffApplied[3] = g_LibStats.Libs[3].TpoffApplied;
             result->SymDumped = g_SymbolInfo.DumpedCount;
             result->SymTruncated = g_SymbolInfo.Truncated;
             result->SymStrTabReadable = g_SymbolInfo.StrTabReadable;
