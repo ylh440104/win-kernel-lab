@@ -7329,12 +7329,12 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     g_TlsCallMark = 0xAAAA0001;
     g_GotArch = LxReadUserU64(targetProcess, 0x401C10ull, &g_GotReadStatus);
     g_StubBytes = LxReadUserU64(targetProcess, 0x500000ull, &g_StubReadStatus);
-    g_StubBytes0 = LxReadUserU64(targetProcess, 0x500008ull, NULL);
-    g_StubBytes1 = LxReadUserU64(targetProcess, 0x500010ull, NULL);
-    g_StubBytes3 = LxReadUserU64(targetProcess, 0x500030ull, NULL);
-    g_GotDump[1] = LxReadUserU64(targetProcess, 0x401C18ull, NULL);
-    g_GotDump[2] = LxReadUserU64(targetProcess, 0x401C20ull, NULL);
-    g_GotDump[7] = LxReadUserU64(targetProcess, 0x401C28ull, NULL);
+    g_StubBytes0 = LxReadUserU64(targetProcess, 0x400000ull, NULL);
+    g_StubBytes1 = LxReadUserU64(targetProcess, 0x400140ull, NULL);
+    g_StubBytes3 = LxReadUserU64(targetProcess, 0x401C10ull, NULL);
+    g_GotDump[1] = g_GotArch;
+    g_GotDump[2] = g_StubBytes;
+    g_GotDump[7] = g_StubBytes3;
     LxSetupTls(targetProcess, g_StubStats.StubAreaBase, &g_LibStats);
     g_GotArchAfterTls = LxReadUserU64(targetProcess, 0x401C10ull, &g_GotReadAfterStatus);
     g_TlsCallMark = 0xAAAA0002;
