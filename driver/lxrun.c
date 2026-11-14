@@ -7898,14 +7898,15 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
         if (code == LX_IOCTL_REGISTER)
         {
-            result->RegisterStatus = 0x5E5E5E01u;
-            g_RegExportAtRegister = (ULONG64)g_PsRegisterPicoProvider;
-            g_RegNtosAtRegister = g_NtosBase;
             UCHAR info[LX_PICO_INFO_SIZE];
             UCHAR routines[LX_PICO_ROUTINES_SIZE];
             NTSTATUS (*registerProvider)(PVOID, PVOID);
             ULONG64 ntBase;
             volatile UCHAR *flag;
+
+            result->RegisterStatus = 0x5E5E5E01u;
+            g_RegExportAtRegister = (ULONG64)g_PsRegisterPicoProvider;
+            g_RegNtosAtRegister = g_NtosBase;
 
             RtlZeroMemory(info, sizeof(info));
             RtlZeroMemory(routines, sizeof(routines));
