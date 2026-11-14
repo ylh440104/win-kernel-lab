@@ -616,6 +616,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsCallMark;
     ULONG64 TlsInTarget;
     ULONG64 FlagAddrUsed;
+    ULONG64 FlagFromScanUsed;
     ULONG64 FlagFromBase;
     ULONG64 ScanFound;
     ULONG64 ScanFlagDisp;
@@ -708,6 +709,7 @@ volatile ULONG64 g_ScanRoutinesDisp = 0;
 volatile LONG g_FlagRipDisp = 0;
 volatile LONG g_RoutinesRipDisp = 0;
 volatile ULONG64 g_FlagAddrUsed = 0;
+volatile ULONG64 g_FlagFromScanUsed = 0;
 volatile ULONG64 g_FlagFromBase = 0;
 volatile ULONG64 g_ScanReached = 0;
 volatile ULONG64 g_ScanFault = 0;
@@ -7959,21 +7961,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 for (scan = 0; scan < (ULONG)(PICO_SCAN_BYTES - 8); scan++)
                 {
                     PUCHAR p = fnBase + scan;
-                    if (*(p) == 0x80 && *(p + 1) == 0x3D)
+                    if (*(p) == 0x38 && *(p + 1) == 0x05)
                     {
                         if (posFlag < 0)
                         {
                             posFlag = (LONG)scan;
                         }
                     }
-                    else if (*(p) == 0x48 && *(p + 1) == 0x89 && *(p + 2) == 0x05)
-                    {
-                        if (posRoutines < 0)
-                        {
-                            posRoutines = (LONG)scan;
-                        }
-                    }
-                    if (posFlag >= 0 && posRoutines >= 0)
+                    if (posFlag >= 0)
                     {
                         break;
                     }
@@ -7986,6 +7981,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 {
                     LONG delta = *(LONG *)(fnBase + posFlag + 2);
                     g_FlgAddrFromScan = (ULONG64)(fnBase + posFlag + 6 + delta);
+                    g_FlagRipDisp = delta;
                 }
                 if (posRoutines >= 0)
                 {
@@ -8029,7 +8025,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             ntBase = g_NtosBase;
             if (ntBase != 0)
             {
-flag = (volatile UCHAR *)((UCHAR *)g_NtosBase + LX_RVA_PSP_PICO_REG_DISABLED);
+ flag = (volatile UCHAR *)(ULONG_PTR)((g_FlgAddrFromScan != 0)
+                     ? g_FlgAddrFromScan
+                     : (g_NtosBase + LX_RVA_PSP_PICO_REG_DISABLED));
+                g_FlagFromScanUsed = (g_FlgAddrFromScan != 0) ? 1 : 0;
                 g_FlagAddrUsed = (ULONG64)flag;
                 g_FlagFromBase = 1;
                 result->FlagAddr = (ULONG64)flag;
@@ -8194,6 +8193,7 @@ flag = (volatile UCHAR *)((UCHAR *)g_NtosBase + LX_RVA_PSP_PICO_REG_DISABLED);
             result->TlsInTarget = g_TlsInTarget;
             result->FlagAddrUsed = g_FlagAddrUsed;
             result->FlagFromBase = g_FlagFromBase;
+            result->FlagFromScanUsed = g_FlagFromScanUsed;
             result->ScanFound = g_ScanFound;
             result->ScanFlagDisp = g_ScanFlagDisp;
             result->ScanRoutinesDisp = g_ScanRoutinesDisp;
