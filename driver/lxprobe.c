@@ -263,6 +263,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ScanFlagDisp;
     ULONG64 ScanRoutinesDisp;
     ULONG64 ScanTried;
+    ULONG64 RegExportAtRegister;
+    ULONG64 RegNtosAtRegister;
     ULONG64 ScanReached;
     ULONG64 ScanFault;
     ULONG64 FlgAddrFromScan;
@@ -372,6 +374,9 @@ static void DumpResult(const char *Label, const LX_QUERY_RESULT *Q, DWORD Ret, D
            (unsigned long long)Q->FlgAddrFromScan,
            (unsigned long long)Q->RtnAddrFromScan);
     printf("  SCAN2: tried=%llu", (unsigned long long)Q->ScanTried);
+    printf("  ATREG: export=0x%llx ntos=0x%llx",
+           (unsigned long long)Q->RegExportAtRegister,
+           (unsigned long long)Q->RegNtosAtRegister);
     printf("%s", NLSTR);
     printf("  SCAN2: reached=%llu fault=%llu flagAddr2=0x%llx rtnAddr2=0x%llx",
            (unsigned long long)Q->ScanReached,
