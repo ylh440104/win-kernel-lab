@@ -294,6 +294,11 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ArchThreadSame;
     ULONG64 ArchCurProcess;
     ULONG64 StubViewSize;
+    ULONG64 TlsProbe0;
+    ULONG64 TlsProbe10;
+    ULONG64 TlsProbe28;
+    ULONG64 TlsProbe0St;
+    ULONG64 TlsProbe10St;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -910,6 +915,10 @@ int main(void)
                (unsigned long long)q.ArchThreadSame, (unsigned long long)q.ArchCurProcess);
         printf("  STUBVIEW: size=0x%llx base=0x%llx\n",
                (unsigned long long)q.StubViewSize, (unsigned long long)q.StubAreaBase);
+        printf("  TLSPROBE: p0=0x%llx(st=0x%x) p10=0x%llx(st=0x%x) p28=0x%llx\n",
+               (unsigned long long)q.TlsProbe0, (unsigned)q.TlsProbe0St,
+               (unsigned long long)q.TlsProbe10, (unsigned)q.TlsProbe10St,
+               (unsigned long long)q.TlsProbe28);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
