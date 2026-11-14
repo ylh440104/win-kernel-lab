@@ -622,6 +622,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ScanRoutinesDisp;
     ULONG64 ScanReached;
     ULONG64 ScanTried;
+    ULONG64 RegFnAddr;
+    ULONG64 RegPtrAddr;
     ULONG64 RegExportAtRegister;
     ULONG64 RegNtosAtRegister;
     ULONG64 ScanFault;
@@ -692,6 +694,8 @@ volatile ULONG64 g_FsSetAttempt = 0;
 volatile ULONG64 g_FsSetAddr = 0;
 volatile ULONG64 g_FsSetCalled = 0;
 volatile ULONG64 g_ScanTried = 0;
+volatile ULONG64 g_RegFnAddr = 0;
+volatile ULONG64 g_RegPtrAddr = 0;
 volatile ULONG64 g_RegExportAtRegister = 0;
 volatile ULONG64 g_RegNtosAtRegister = 0;
 volatile ULONG64 g_ScanFound = 0;
@@ -7995,6 +7999,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
             result->LockedBytes[6] = routines[0];
             result->OldFlag = 0xBB;
+            g_RegFnAddr = (ULONG64)registerProvider;
+            g_RegPtrAddr = (ULONG64)(ULONG_PTR)&g_PsRegisterPicoProvider;
             result->RegisterStatus = (ULONG)registerProvider(info, routines);
             result->LockedBytes[7] = routines[0];
 
@@ -8171,6 +8177,8 @@ flag = (volatile UCHAR *)((UCHAR *)g_NtosBase + LX_RVA_PSP_PICO_REG_DISABLED);
             result->ScanRoutinesDisp = g_ScanRoutinesDisp;
             result->ScanReached = g_ScanReached;
             result->ScanTried = g_ScanTried;
+            result->RegFnAddr = g_RegFnAddr;
+            result->RegPtrAddr = g_RegPtrAddr;
             result->RegExportAtRegister = g_RegExportAtRegister;
             result->RegNtosAtRegister = g_RegNtosAtRegister;
             result->ScanFault = g_ScanFault;
