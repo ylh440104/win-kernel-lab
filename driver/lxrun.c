@@ -623,6 +623,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 StubBytes1;
     ULONG64 StubBytes3;
     ULONG64 StubBytes0;
+    ULONG64 GotArchAfterTls;
     ULONG64 StubBytes;
     ULONG64 GotArch;
     ULONG64 GotDump[8];
@@ -662,6 +663,7 @@ static ULONG64 g_NtosBase = 0;
 static ULONG64 g_GotDump[8];
 static ULONG64 g_GotArch = 0;
 static ULONG64 g_StubBytes = 0;
+static ULONG64 g_GotArchAfterTls = 0;
 static ULONG64 g_StubBytes0 = 0;
 static ULONG64 g_StubBytes3 = 0;
 static ULONG64 g_StubBytes1 = 0;
@@ -7310,6 +7312,19 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         }
     }
     LxSetupTls(targetProcess, g_StubStats.StubAreaBase, &g_LibStats);
+    {
+        ULONG64 pg = 0;
+        SIZE_T pr = 0;
+        if (NT_SUCCESS(MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x401C10ull,
+                                           PsGetCurrentProcess(), &pg, sizeof(pg), KernelMode, &pr)))
+        {
+            g_GotArchAfterTls = pg;
+        }
+        else
+        {
+            g_GotArchAfterTls = 0xDEAD0001ull;
+        }
+    }
     g_TlsCallMark = 0xAAAA0002;
     g_TlsEntered = 0xCCCC0002;
     g_TlsInStubBase = 0xCCCC0003;
@@ -8319,6 +8334,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StubBytes0 = g_StubBytes0;
             result->StubBytes1 = g_StubBytes1;
             result->StubBytes3 = g_StubBytes3;
+            result->GotArchAfterTls = g_GotArchAfterTls;
             result->StubBytes = g_StubBytes;
             result->GotArch = g_GotArch;
             result->GotDump[0] = g_GotDump[0];
