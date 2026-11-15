@@ -7873,22 +7873,6 @@ static void LxCreatePicoThread(void)
         if (NT_SUCCESS(resumeStatus))
         {
             g_PicoThreadObject = (PETHREAD)threadObject;
-            if (g_TlsBlockBase != 0)
-            {
-                ULONG64 fsBaseValue = g_TlsBlockBase;
-
-                __try
-                {
-                    RtlCopyMemory((UCHAR *)threadObject + 0x678, &fsBaseValue, sizeof(fsBaseValue));
-                    fsBaseValue = 0;
-                    RtlCopyMemory(&fsBaseValue, (UCHAR *)threadObject + 0x678, sizeof(fsBaseValue));
-                    g_PreResumeFs = fsBaseValue;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_PreResumeFs = 0xDEAD0005ull;
-                }
-            }
             g_ResumeStatus = (ULONG)((NTSTATUS (*)(PVOID, PULONG))g_ResumeThreadFn)(threadObject, &previousCount);
             g_PrevSuspendCount = previousCount;
             ObDereferenceObject(threadObject);
