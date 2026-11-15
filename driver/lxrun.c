@@ -694,6 +694,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsSetTlsLive;
     ULONG64 UserFsBefore;
     ULONG64 UserFsAfter;
+    ULONG64 ExcFrameWords[10];
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -4021,6 +4022,7 @@ static ULONG64 g_ExcCtxRsp = 0;
 static ULONG64 g_ExcCtxRax = 0;
 static ULONG64 g_ExcCtxRdi = 0;
 static ULONG64 g_ExcTrapFrame = 0;
+static ULONG64 g_ExcFrameWords[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
 
@@ -4079,6 +4081,7 @@ static NTSTATUS LxDispatchException(PVOID Args)
                     RtlCopyMemory(&g_ExcCtxRsp, (UCHAR *)(ULONG_PTR)trapFrame + 0x180, sizeof(g_ExcCtxRsp));
                     RtlCopyMemory(&g_ExcCtxRax, (UCHAR *)(ULONG_PTR)trapFrame + 0x38, sizeof(g_ExcCtxRax));
                     RtlCopyMemory(&g_ExcCtxRdi, (UCHAR *)(ULONG_PTR)trapFrame + 0x70, sizeof(g_ExcCtxRdi));
+                    RtlCopyMemory(&g_ExcFrameWords[0], (UCHAR *)(ULONG_PTR)trapFrame + 0x150, sizeof(g_ExcFrameWords));
                 }
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
@@ -8797,6 +8800,16 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FsSetTlsLive = g_FsSetTlsLive;
             result->UserFsBefore = g_UserFsBefore;
             result->UserFsAfter = g_UserFsAfter;
+            result->ExcFrameWords[0] = g_ExcFrameWords[0];
+            result->ExcFrameWords[1] = g_ExcFrameWords[1];
+            result->ExcFrameWords[2] = g_ExcFrameWords[2];
+            result->ExcFrameWords[3] = g_ExcFrameWords[3];
+            result->ExcFrameWords[4] = g_ExcFrameWords[4];
+            result->ExcFrameWords[5] = g_ExcFrameWords[5];
+            result->ExcFrameWords[6] = g_ExcFrameWords[6];
+            result->ExcFrameWords[7] = g_ExcFrameWords[7];
+            result->ExcFrameWords[8] = g_ExcFrameWords[8];
+            result->ExcFrameWords[9] = g_ExcFrameWords[9];
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
