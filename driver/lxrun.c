@@ -684,6 +684,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcAddrSeq[4];
     ULONG64 ExitTermStatus;
     ULONG64 FsUserValue;
+    ULONG64 FsUserMarker;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -775,6 +776,7 @@ static ULONG64 g_ExitTlsLive = 0;
 static ULONG64 g_PreResumeFs = 0;
 static ULONG g_ExitTermStatus = 0xFFFFFFFFu;
 static ULONG64 g_FsUserValue = 0;
+static ULONG64 g_FsUserMarker = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -2725,8 +2727,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                                     if (g_WriteCount == 2 && length >= 8)
                                     {
                                         ULONG64 fsVal = 0;
+                                        ULONG64 marker = 0;
 
-                                        RtlCopyMemory(&fsVal, staging, sizeof(fsVal));
+                                        RtlCopyMemory(&marker, staging, sizeof(marker));
+                                        RtlCopyMemory(&fsVal, staging + 8, sizeof(fsVal));
+                                        g_FsUserMarker = marker;
                                         g_FsUserValue = fsVal;
                                     }
                                     break;
@@ -8702,6 +8707,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExcAddrSeq[3] = g_ExcAddrSeq[3];
             result->ExitTermStatus = (ULONG64)g_ExitTermStatus;
             result->FsUserValue = g_FsUserValue;
+            result->FsUserMarker = g_FsUserMarker;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
