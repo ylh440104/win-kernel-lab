@@ -692,6 +692,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcCtxRdi;
     ULONG64 ExcTrapFrame;
     ULONG64 FsSetTlsLive;
+    ULONG64 UserFsBefore;
+    ULONG64 UserFsAfter;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -785,6 +787,8 @@ static ULONG g_ExitTermStatus = 0xFFFFFFFFu;
 static ULONG64 g_FsUserValue = 0;
 static ULONG64 g_FsUserMarker = 0;
 static ULONG64 g_FsSetTlsLive = 0;
+static ULONG64 g_UserFsBefore = 0;
+static ULONG64 g_UserFsAfter = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -3064,6 +3068,17 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                         }
                         KeUnstackDetachProcess((PVOID)&fsApc);
                         g_FsSetTlsLive = tlsLive;
+                    }
+                    {
+                        PETHREAD userThread = PsGetCurrentThread();
+                        ULONG64 userFsBase = 0;
+                        ULONG64 newFsBase = address;
+
+                        RtlCopyMemory(&userFsBase, (UCHAR *)userThread + 0xF0, sizeof(userFsBase));
+                        g_UserFsBefore = userFsBase;
+                        RtlCopyMemory((UCHAR *)userThread + 0xF0, &newFsBase, sizeof(newFsBase));
+                        RtlCopyMemory(&userFsBase, (UCHAR *)userThread + 0xF0, sizeof(userFsBase));
+                        g_UserFsAfter = userFsBase;
                     }
                     {
                         PETHREAD curThread = PsGetCurrentThread();
@@ -8780,6 +8795,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExcCtxRdi = g_ExcCtxRdi;
             result->ExcTrapFrame = g_ExcTrapFrame;
             result->FsSetTlsLive = g_FsSetTlsLive;
+            result->UserFsBefore = g_UserFsBefore;
+            result->UserFsAfter = g_UserFsAfter;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
