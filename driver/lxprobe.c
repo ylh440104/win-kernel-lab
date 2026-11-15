@@ -318,6 +318,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcArg1;
     ULONG64 ExcArg2;
     ULONG64 ExcAddrSeq[4];
+    ULONG64 ExitTermStatus;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -957,6 +958,7 @@ int main(void)
         printf("  EXCSEQ: [0]=0x%llx [1]=0x%llx [2]=0x%llx [3]=0x%llx\n",
                (unsigned long long)q.ExcAddrSeq[0], (unsigned long long)q.ExcAddrSeq[1],
                (unsigned long long)q.ExcAddrSeq[2], (unsigned long long)q.ExcAddrSeq[3]);
+        printf("  EXITTERM: status=0x%08lx\n", (unsigned long)q.ExitTermStatus);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
