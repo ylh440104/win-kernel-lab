@@ -330,6 +330,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsSetTlsLive;
     ULONG64 UserFsBefore;
     ULONG64 UserFsAfter;
+    ULONG64 ExcFrameWords[10];
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -981,6 +982,14 @@ int main(void)
         printf("  FSSETTLS: live=0x%llx\n", (unsigned long long)q.FsSetTlsLive);
         printf("  USERFS: before=0x%llx after=0x%llx\n",
                (unsigned long long)q.UserFsBefore, (unsigned long long)q.UserFsAfter);
+        printf("  FRAME: w0=0x%llx w1=0x%llx w2=0x%llx w3=0x%llx w4=0x%llx\n",
+               (unsigned long long)q.ExcFrameWords[0], (unsigned long long)q.ExcFrameWords[1],
+               (unsigned long long)q.ExcFrameWords[2], (unsigned long long)q.ExcFrameWords[3],
+               (unsigned long long)q.ExcFrameWords[4]);
+        printf("  FRAME2: w5=0x%llx w6=0x%llx w7=0x%llx w8=0x%llx w9=0x%llx\n",
+               (unsigned long long)q.ExcFrameWords[5], (unsigned long long)q.ExcFrameWords[6],
+               (unsigned long long)q.ExcFrameWords[7], (unsigned long long)q.ExcFrameWords[8],
+               (unsigned long long)q.ExcFrameWords[9]);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
