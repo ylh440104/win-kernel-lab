@@ -3912,21 +3912,6 @@ static NTSTATUS LxSysDispatch(PVOID Args)
             fields[0x30 / 8] = result;
             g_LastSyscallResult = result;
         }
-        if (g_TlsBlockBase != 0)
-        {
-            __try
-            {
-                ULONG64 msrValue = g_TlsBlockBase;
-                ULONG msrIndex = 0xC0000100;
-
-                __writemsr(msrIndex, msrValue);
-                g_FsRestoreCount++;
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                g_FsRestoreFault++;
-            }
-        }
     }
     return 0;
 }
