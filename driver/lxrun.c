@@ -690,6 +690,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcCtxRsp;
     ULONG64 ExcCtxRax;
     ULONG64 ExcCtxRdi;
+    ULONG64 ExcTrapFrame;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -3972,6 +3973,7 @@ static ULONG64 g_ExcCtxRip = 0;
 static ULONG64 g_ExcCtxRsp = 0;
 static ULONG64 g_ExcCtxRax = 0;
 static ULONG64 g_ExcCtxRdi = 0;
+static ULONG64 g_ExcTrapFrame = 0;
 static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
 
@@ -4016,21 +4018,25 @@ static NTSTATUS LxDispatchException(PVOID Args)
         g_ExcArg0 = argument[0];
         g_ExcArg1 = argument[1];
         g_ExcArg2 = argument[2];
-        if (g_GetContextFn != 0)
         {
-            UCHAR contextBuffer[0x300];
-            NTSTATUS contextStatus;
+            UCHAR *kthread = (UCHAR *)PsGetCurrentThread();
+            ULONG64 trapFrame = 0;
 
-            RtlZeroMemory(contextBuffer, sizeof(contextBuffer));
-            contextStatus = ((NTSTATUS (*)(PVOID, PVOID, ULONG))g_GetContextFn)(
-                KeGetCurrentThread(), contextBuffer, 0x10000Bu);
-            g_ExcContextStatus = (ULONG)contextStatus;
-            if (NT_SUCCESS(contextStatus))
+            __try
             {
-                g_ExcCtxRip = *(ULONG64 *)(contextBuffer + 0xF8);
-                g_ExcCtxRsp = *(ULONG64 *)(contextBuffer + 0x98);
-                g_ExcCtxRax = *(ULONG64 *)(contextBuffer + 0x78);
-                g_ExcCtxRdi = *(ULONG64 *)(contextBuffer + 0x68);
+                RtlCopyMemory(&trapFrame, kthread + 0x90, sizeof(trapFrame));
+                g_ExcTrapFrame = trapFrame;
+                if (trapFrame != 0)
+                {
+                    RtlCopyMemory(&g_ExcCtxRip, (UCHAR *)(ULONG_PTR)trapFrame + 0x168, sizeof(g_ExcCtxRip));
+                    RtlCopyMemory(&g_ExcCtxRsp, (UCHAR *)(ULONG_PTR)trapFrame + 0x180, sizeof(g_ExcCtxRsp));
+                    RtlCopyMemory(&g_ExcCtxRax, (UCHAR *)(ULONG_PTR)trapFrame + 0x38, sizeof(g_ExcCtxRax));
+                    RtlCopyMemory(&g_ExcCtxRdi, (UCHAR *)(ULONG_PTR)trapFrame + 0x70, sizeof(g_ExcCtxRdi));
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_ExcCtxRip = 0xDEAD0008ull;
             }
         }
     }
@@ -8740,6 +8746,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExcCtxRsp = g_ExcCtxRsp;
             result->ExcCtxRax = g_ExcCtxRax;
             result->ExcCtxRdi = g_ExcCtxRdi;
+            result->ExcTrapFrame = g_ExcTrapFrame;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
