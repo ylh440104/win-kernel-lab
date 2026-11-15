@@ -695,6 +695,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 UserFsBefore;
     ULONG64 UserFsAfter;
     ULONG64 ExcFrameWords[10];
+    ULONG64 ExcTailWords[8];
     ULONG64 FsAddrRedirected;
     ULONG64 TlsPoolBase;
     ULONG64 TlsSectionStatus;
@@ -4041,6 +4042,7 @@ static ULONG64 g_ExcCtxRax = 0;
 static ULONG64 g_ExcCtxRdi = 0;
 static ULONG64 g_ExcTrapFrame = 0;
 static ULONG64 g_ExcFrameWords[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static ULONG64 g_ExcTailWords[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
 
@@ -4100,6 +4102,7 @@ static NTSTATUS LxDispatchException(PVOID Args)
                     RtlCopyMemory(&g_ExcCtxRax, (UCHAR *)(ULONG_PTR)trapFrame + 0x38, sizeof(g_ExcCtxRax));
                     RtlCopyMemory(&g_ExcCtxRdi, (UCHAR *)(ULONG_PTR)trapFrame + 0xA0, sizeof(g_ExcCtxRdi));
                     RtlCopyMemory(&g_ExcFrameWords[0], (UCHAR *)(ULONG_PTR)trapFrame + 0x150, sizeof(g_ExcFrameWords));
+                    RtlCopyMemory(&g_ExcTailWords[0], (UCHAR *)(ULONG_PTR)trapFrame + 0x1A0, sizeof(g_ExcTailWords));
                 }
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
@@ -8848,6 +8851,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->TlsPoolBase = g_TlsPoolBase;
             result->TlsSectionStatus = (ULONG64)g_TlsSectionStatus;
             result->TlsViewStatus = (ULONG64)g_TlsViewStatus;
+            result->ExcTailWords[0] = g_ExcTailWords[0];
+            result->ExcTailWords[1] = g_ExcTailWords[1];
+            result->ExcTailWords[2] = g_ExcTailWords[2];
+            result->ExcTailWords[3] = g_ExcTailWords[3];
+            result->ExcTailWords[4] = g_ExcTailWords[4];
+            result->ExcTailWords[5] = g_ExcTailWords[5];
+            result->ExcTailWords[6] = g_ExcTailWords[6];
+            result->ExcTailWords[7] = g_ExcTailWords[7];
             result->ExcFrameWords[0] = g_ExcFrameWords[0];
             result->ExcFrameWords[1] = g_ExcFrameWords[1];
             result->ExcFrameWords[2] = g_ExcFrameWords[2];
