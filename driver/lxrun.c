@@ -682,6 +682,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcArg1;
     ULONG64 ExcArg2;
     ULONG64 ExcAddrSeq[4];
+    ULONG64 ExitTermStatus;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -3113,6 +3114,19 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     g_ExitTlsLive = 0xDEAD0004ull;
                 }
             }
+            {
+                NTSTATUS termStatus;
+
+                __try
+                {
+                    termStatus = PsTerminateSystemThread(STATUS_SUCCESS);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    termStatus = 0xE0000002;
+                }
+                g_ExitTermStatus = (ULONG)termStatus;
+            }
         }
         return 0;
 
@@ -3944,8 +3958,9 @@ static ULONG64 g_ExcMsr = 0;
 static ULONG64 g_ExcArg0 = 0;
 static ULONG64 g_ExcArg1 = 0;
 static ULONG64 g_ExcArg2 = 0;
-static volatile ULONG g_ExcReturnValue = 1;
+static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
+static ULONG g_ExitTermStatus = 0xFFFFFFFFu;
 
 static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
 {
@@ -8687,6 +8702,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExcAddrSeq[1] = g_ExcAddrSeq[1];
             result->ExcAddrSeq[2] = g_ExcAddrSeq[2];
             result->ExcAddrSeq[3] = g_ExcAddrSeq[3];
+            result->ExitTermStatus = (ULONG64)g_ExitTermStatus;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
