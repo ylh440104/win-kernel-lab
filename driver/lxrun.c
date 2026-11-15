@@ -3176,6 +3176,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 {
                     ProbeForRead((PVOID)(ULONG_PTR)0x50B000ull, sizeof(liveValue), 1);
                     RtlCopyMemory(&g_FsUserValue, (PVOID)(ULONG_PTR)0x50B000ull, sizeof(g_FsUserValue));
+                    ProbeForRead((PVOID)(ULONG_PTR)0x50B008ull, sizeof(liveValue), 1);
+                    RtlCopyMemory(&g_FsUserMarker, (PVOID)(ULONG_PTR)0x50B008ull, sizeof(g_FsUserMarker));
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
                 {
