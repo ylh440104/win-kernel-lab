@@ -3050,18 +3050,20 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     g_FsSetOk = (g_FsBaseAfterSet == address) ? 1 : 0;
                     {
                         ULONG64 tlsLive = 0;
-                        SIZE_T tlsLiveSize = 0;
+                        LX_APC_STATE fsApc;
 
-                        if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentThread(), (PVOID)(ULONG_PTR)(address + 0x10),
-                                                           PsGetCurrentProcess(), &tlsLive, sizeof(tlsLive),
-                                                           KernelMode, &tlsLiveSize)))
+                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&fsApc);
+                        __try
                         {
-                            g_FsSetTlsLive = tlsLive;
+                            ProbeForRead((PVOID)(ULONG_PTR)(address + 0x10), sizeof(tlsLive), 1);
+                            RtlCopyMemory(&tlsLive, (PVOID)(ULONG_PTR)(address + 0x10), sizeof(tlsLive));
                         }
-                        else
+                        __except (EXCEPTION_EXECUTE_HANDLER)
                         {
-                            g_FsSetTlsLive = 0xDEAD0005ull;
+                            tlsLive = 0xDEAD0006ull;
                         }
+                        KeUnstackDetachProcess((PVOID)&fsApc);
+                        g_FsSetTlsLive = tlsLive;
                     }
                     {
                         PETHREAD curThread = PsGetCurrentThread();
@@ -3140,18 +3142,31 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_ExitThreadPtr = (ULONG64)(ULONG_PTR)exitThread;
             {
                 ULONG64 liveValue = 0;
-                SIZE_T liveSize = 0;
+                LX_APC_STATE exitApc;
+                BOOLEAN exitPulled = FALSE;
 
-                if (NT_SUCCESS(MmCopyVirtualMemory(exitThread, (PVOID)(ULONG_PTR)0x50C010ull,
-                                                   PsGetCurrentProcess(), &liveValue, sizeof(liveValue),
-                                                   KernelMode, &liveSize)))
+                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&exitApc);
+                __try
                 {
-                    g_ExitTlsLive = liveValue;
+                    ProbeForRead((PVOID)(ULONG_PTR)0x50C010ull, sizeof(liveValue), 1);
+                    RtlCopyMemory(&liveValue, (PVOID)(ULONG_PTR)0x50C010ull, sizeof(liveValue));
+                    exitPulled = TRUE;
                 }
-                else
+                __except (EXCEPTION_EXECUTE_HANDLER)
                 {
-                    g_ExitTlsLive = 0xDEAD0004ull;
+                    exitPulled = FALSE;
                 }
+                __try
+                {
+                    ProbeForRead((PVOID)(ULONG_PTR)0x50B000ull, sizeof(liveValue), 1);
+                    RtlCopyMemory(&g_FsUserValue, (PVOID)(ULONG_PTR)0x50B000ull, sizeof(g_FsUserValue));
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    g_FsUserValue = 0xDEAD0007ull;
+                }
+                KeUnstackDetachProcess((PVOID)&exitApc);
+                g_ExitTlsLive = exitPulled ? liveValue : 0xDEAD0004ull;
             }
             g_ExitTermStatus = 0;
         }
