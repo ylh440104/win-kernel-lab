@@ -3116,17 +3116,24 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 }
             }
             {
-                NTSTATUS termStatus;
+                NTSTATUS termStatus = 0;
+                HANDLE selfHandle = NULL;
 
                 __try
                 {
-                    termStatus = STATUS_SUCCESS;
-                    g_ExitTermStatus = (ULONG)termStatus;
+                    termStatus = ObOpenObjectByPointer(PsGetCurrentThread(), OBJ_KERNEL_HANDLE, NULL,
+                                                       THREAD_ALL_ACCESS, *PsThreadType, KernelMode, &selfHandle);
+                    if (NT_SUCCESS(termStatus) && selfHandle != NULL)
+                    {
+                        termStatus = ZwTerminateThread(selfHandle, STATUS_SUCCESS);
+                        ZwClose(selfHandle);
+                    }
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
                 {
-                    g_ExitTermStatus = 0xE0000002;
+                    termStatus = 0xE0000003;
                 }
+                g_ExitTermStatus = (ULONG)termStatus;
             }
         }
         return 0;
