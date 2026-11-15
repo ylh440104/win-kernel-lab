@@ -5126,7 +5126,7 @@ void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Sta
         HANDLE tlsSection = NULL;
         OBJECT_ATTRIBUTES tlsAttr;
         LARGE_INTEGER tlsSize;
-        PVOID tlsView = (PVOID)(ULONG_PTR)(StubAreaBase + 0x200000ull);
+        PVOID tlsView = (PVOID)(ULONG_PTR)0x700000ull;
         SIZE_T tlsViewSize = 0;
         NTSTATUS tlsStatus;
 
