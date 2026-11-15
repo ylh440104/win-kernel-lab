@@ -309,6 +309,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExitThreadPtr;
     ULONG64 ExitTlsLive;
     ULONG64 PreResumeFs;
+    ULONG64 FsRestoreCount;
+    ULONG64 FsRestoreFault;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -937,6 +939,8 @@ int main(void)
                (unsigned long long)q.ExitKthread74, (unsigned long long)q.ExitThreadPtr);
         printf("  TLSLIVE: p10=0x%llx\n", (unsigned long long)q.ExitTlsLive);
         printf("  PRERESUME: fs=0x%llx\n", (unsigned long long)q.PreResumeFs);
+        printf("  FSRESTORE: count=%llu fault=%llu\n",
+               (unsigned long long)q.FsRestoreCount, (unsigned long long)q.FsRestoreFault);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
