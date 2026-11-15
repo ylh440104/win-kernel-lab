@@ -3120,13 +3120,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
                 __try
                 {
-                    termStatus = PsTerminateSystemThread(STATUS_SUCCESS);
+                    termStatus = STATUS_SUCCESS;
+                    g_ExitTermStatus = (ULONG)termStatus;
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
                 {
-                    termStatus = 0xE0000002;
+                    g_ExitTermStatus = 0xE0000002;
                 }
-                g_ExitTermStatus = (ULONG)termStatus;
             }
         }
         return 0;
