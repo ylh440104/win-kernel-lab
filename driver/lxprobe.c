@@ -321,6 +321,11 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExitTermStatus;
     ULONG64 FsUserValue;
     ULONG64 FsUserMarker;
+    ULONG64 ExcContextStatus;
+    ULONG64 ExcCtxRip;
+    ULONG64 ExcCtxRsp;
+    ULONG64 ExcCtxRax;
+    ULONG64 ExcCtxRdi;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -964,6 +969,10 @@ int main(void)
         printf("  FSUSER: write2fs=0x%llx marker=0x%llx writeCount=%llu\n",
                (unsigned long long)q.FsUserValue, (unsigned long long)q.FsUserMarker,
                (unsigned long long)q.WriteCount);
+        printf("  EXCCTX: st=0x%08llx rip=0x%llx rsp=0x%llx rax=0x%llx rdi=0x%llx\n",
+               (unsigned long long)q.ExcContextStatus, (unsigned long long)q.ExcCtxRip,
+               (unsigned long long)q.ExcCtxRsp, (unsigned long long)q.ExcCtxRax,
+               (unsigned long long)q.ExcCtxRdi);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
