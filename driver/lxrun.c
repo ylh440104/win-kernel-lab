@@ -672,6 +672,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExitKthread74;
     ULONG64 ExitThreadPtr;
     ULONG64 ExitTlsLive;
+    ULONG64 PreResumeFs;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -760,6 +761,7 @@ static ULONG64 g_ExitKthread678 = 0;
 static ULONG64 g_ExitKthread74 = 0;
 static ULONG64 g_ExitThreadPtr = 0;
 static ULONG64 g_ExitTlsLive = 0;
+static ULONG64 g_PreResumeFs = 0;
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfBase = 0;
@@ -7871,6 +7873,22 @@ static void LxCreatePicoThread(void)
         if (NT_SUCCESS(resumeStatus))
         {
             g_PicoThreadObject = (PETHREAD)threadObject;
+            if (g_TlsBlockBase != 0)
+            {
+                ULONG64 fsBaseValue = g_TlsBlockBase;
+
+                __try
+                {
+                    RtlCopyMemory((UCHAR *)threadObject + 0x678, &fsBaseValue, sizeof(fsBaseValue));
+                    fsBaseValue = 0;
+                    RtlCopyMemory(&fsBaseValue, (UCHAR *)threadObject + 0x678, sizeof(fsBaseValue));
+                    g_PreResumeFs = fsBaseValue;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    g_PreResumeFs = 0xDEAD0005ull;
+                }
+            }
             g_ResumeStatus = (ULONG)((NTSTATUS (*)(PVOID, PULONG))g_ResumeThreadFn)(threadObject, &previousCount);
             g_PrevSuspendCount = previousCount;
             ObDereferenceObject(threadObject);
@@ -8621,6 +8639,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExitKthread74 = g_ExitKthread74;
             result->ExitThreadPtr = g_ExitThreadPtr;
             result->ExitTlsLive = g_ExitTlsLive;
+            result->PreResumeFs = g_PreResumeFs;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
