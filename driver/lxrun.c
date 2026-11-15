@@ -772,6 +772,7 @@ static ULONG64 g_ExitKthread74 = 0;
 static ULONG64 g_ExitThreadPtr = 0;
 static ULONG64 g_ExitTlsLive = 0;
 static ULONG64 g_PreResumeFs = 0;
+static ULONG g_ExitTermStatus = 0xFFFFFFFFu;
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfBase = 0;
@@ -3960,7 +3961,6 @@ static ULONG64 g_ExcArg1 = 0;
 static ULONG64 g_ExcArg2 = 0;
 static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
-static ULONG g_ExitTermStatus = 0xFFFFFFFFu;
 
 static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
 {
