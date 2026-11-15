@@ -673,6 +673,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExitThreadPtr;
     ULONG64 ExitTlsLive;
     ULONG64 PreResumeFs;
+    ULONG64 FsRestoreCount;
+    ULONG64 FsRestoreFault;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -789,6 +791,8 @@ static ULONG64 g_CreatePicoThreadFn = 0;
 static ULONG64 g_StackBase = 0;
 static ULONG g_GlobalLibIndex = 0;
 volatile ULONG64 g_TlsBlockBase = 0;
+static volatile ULONG64 g_FsRestoreCount = 0;
+static volatile ULONG64 g_FsRestoreFault = 0;
 volatile ULONG64 g_TlsBlockSize = 0;
 static ULONG g_TlsSetupDone = 0;
 volatile ULONG64 g_TlsHeadStatus = 0;
@@ -3903,15 +3907,24 @@ static NTSTATUS LxSysDispatch(PVOID Args)
 
         g_LastSyscallNo = syscallNumber;
         fields[0x30 / 8] = 0;
-
         {
             ULONG64 result = LxHandleSyscall(syscallNumber, &fields[LX_PARAM_BASE / 8], context);
-
             fields[0x30 / 8] = result;
             g_LastSyscallResult = result;
         }
+        if (g_TlsBlockBase != 0)
+        {
+            __try
+            {
+                wrmsr(0xC0000100, g_TlsBlockBase);
+                g_FsRestoreCount++;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_FsRestoreFault++;
+            }
+        }
     }
-
     return 0;
 }
 
@@ -8624,6 +8637,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExitThreadPtr = g_ExitThreadPtr;
             result->ExitTlsLive = g_ExitTlsLive;
             result->PreResumeFs = g_PreResumeFs;
+            result->FsRestoreCount = g_FsRestoreCount;
+            result->FsRestoreFault = g_FsRestoreFault;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
