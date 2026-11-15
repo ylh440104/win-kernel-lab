@@ -314,6 +314,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcCode;
     ULONG64 ExcAddress;
     ULONG64 ExcMsr;
+    ULONG64 ExcArg0;
+    ULONG64 ExcArg1;
+    ULONG64 ExcArg2;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -947,6 +950,9 @@ int main(void)
         printf("  EXCINFO: code=0x%llx addr=0x%llx msr=0x%llx\n",
                (unsigned long long)q.ExcCode, (unsigned long long)q.ExcAddress,
                (unsigned long long)q.ExcMsr);
+        printf("  EXCARGS: a0=0x%llx a1=0x%llx a2=0x%llx\n",
+               (unsigned long long)q.ExcArg0, (unsigned long long)q.ExcArg1,
+               (unsigned long long)q.ExcArg2);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
