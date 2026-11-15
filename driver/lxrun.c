@@ -695,6 +695,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 UserFsBefore;
     ULONG64 UserFsAfter;
     ULONG64 ExcFrameWords[10];
+    ULONG64 FsAddrRedirected;
+    ULONG64 TlsPoolBase;
+    ULONG64 TlsSectionStatus;
+    ULONG64 TlsViewStatus;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -792,6 +796,8 @@ static ULONG64 g_UserFsBefore = 0;
 static ULONG64 g_UserFsAfter = 0;
 static ULONG g_FsAddrRedirected = 0;
 static ULONG64 g_TlsPoolBase = 0;
+static ULONG g_TlsSectionStatus = 0xFFFFFFFFu;
+static ULONG g_TlsViewStatus = 0xFFFFFFFFu;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -5112,17 +5118,32 @@ void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Sta
         return;
     }
     RtlZeroMemory(tcb, totalSize);
-    if (g_PoolBase != 0)
+    blockBase = StubAreaBase + LX_TLS_AREA_OFFSET;
     {
-        blockBase = (g_MmapCurrent + 0xFFFFull) & ~0xFFFFull;
-        if (blockBase + totalSize > g_PoolBase + LX_POOL_SIZE)
+        HANDLE tlsSection = NULL;
+        OBJECT_ATTRIBUTES tlsAttr;
+        LARGE_INTEGER tlsSize;
+        PVOID tlsView = (PVOID)(ULONG_PTR)(StubAreaBase + 0x200000ull);
+        SIZE_T tlsViewSize = 0;
+        NTSTATUS tlsStatus;
+
+        tlsSize.QuadPart = 0x10000;
+        InitializeObjectAttributes(&tlsAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+        tlsStatus = ZwCreateSection(&tlsSection, SECTION_ALL_ACCESS, &tlsAttr, &tlsSize,
+                                    PAGE_READWRITE, SEC_COMMIT, NULL);
+        g_TlsSectionStatus = (ULONG)tlsStatus;
+        if (NT_SUCCESS(tlsStatus))
         {
-            blockBase = g_PoolBase + 0x100000ull;
+            tlsStatus = ZwMapViewOfSection(tlsSection, (HANDLE)g_LastPicoHandle, &tlsView, 0, 0,
+                                           NULL, &tlsViewSize, ViewUnmap, 0, PAGE_READWRITE);
+            ZwClose(tlsSection);
+            g_TlsViewStatus = (ULONG)tlsStatus;
+            if (NT_SUCCESS(tlsStatus))
+            {
+                blockBase = (ULONG64)(ULONG_PTR)tlsView;
+                g_TlsPoolBase = blockBase;
+            }
         }
-    }
-    else
-    {
-        blockBase = StubAreaBase + LX_TLS_AREA_OFFSET;
     }
 
     for (index = 0; index < LX_MAX_LIBS; index++)
@@ -8823,6 +8844,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FsSetTlsLive = g_FsSetTlsLive;
             result->UserFsBefore = g_UserFsBefore;
             result->UserFsAfter = g_UserFsAfter;
+            result->FsAddrRedirected = (ULONG64)g_FsAddrRedirected;
+            result->TlsPoolBase = g_TlsPoolBase;
+            result->TlsSectionStatus = (ULONG64)g_TlsSectionStatus;
+            result->TlsViewStatus = (ULONG64)g_TlsViewStatus;
             result->ExcFrameWords[0] = g_ExcFrameWords[0];
             result->ExcFrameWords[1] = g_ExcFrameWords[1];
             result->ExcFrameWords[2] = g_ExcFrameWords[2];
