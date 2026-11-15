@@ -773,6 +773,7 @@ static ULONG64 g_ExitThreadPtr = 0;
 static ULONG64 g_ExitTlsLive = 0;
 static ULONG64 g_PreResumeFs = 0;
 static ULONG g_ExitTermStatus = 0xFFFFFFFFu;
+static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfBase = 0;
@@ -3125,7 +3126,23 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                                                        THREAD_ALL_ACCESS, *PsThreadType, KernelMode, &selfHandle);
                     if (NT_SUCCESS(termStatus) && selfHandle != NULL)
                     {
-                        termStatus = ZwTerminateThread(selfHandle, STATUS_SUCCESS);
+                        typedef NTSTATUS (*LX_TERM_THREAD)(HANDLE, NTSTATUS);
+                        LX_TERM_THREAD termFn = (LX_TERM_THREAD)LxFindKernelExport(L"ZwTerminateThread");
+
+                        if (termFn == NULL)
+                        {
+                            termFn = (LX_TERM_THREAD)LxFindKernelExport(L"NtTerminateThread");
+                        }
+
+                        if (termFn != NULL)
+                        {
+                            termStatus = termFn(selfHandle, STATUS_SUCCESS);
+                        }
+                        else
+                        {
+                            termStatus = 0xE0000004;
+                        }
+
                         ZwClose(selfHandle);
                     }
                 }
