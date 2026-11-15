@@ -331,6 +331,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 UserFsBefore;
     ULONG64 UserFsAfter;
     ULONG64 ExcFrameWords[10];
+    ULONG64 FsAddrRedirected;
+    ULONG64 TlsPoolBase;
+    ULONG64 TlsSectionStatus;
+    ULONG64 TlsViewStatus;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -982,6 +986,9 @@ int main(void)
         printf("  FSSETTLS: live=0x%llx\n", (unsigned long long)q.FsSetTlsLive);
         printf("  USERFS: before=0x%llx after=0x%llx\n",
                (unsigned long long)q.UserFsBefore, (unsigned long long)q.UserFsAfter);
+        printf("  TLSPOOL: base=0x%llx sect=0x%08llx view=0x%08llx redirected=%llu\n",
+               (unsigned long long)q.TlsPoolBase, (unsigned long long)q.TlsSectionStatus,
+               (unsigned long long)q.TlsViewStatus, (unsigned long long)q.FsAddrRedirected);
         printf("  FRAME: w0=0x%llx w1=0x%llx w2=0x%llx w3=0x%llx w4=0x%llx\n",
                (unsigned long long)q.ExcFrameWords[0], (unsigned long long)q.ExcFrameWords[1],
                (unsigned long long)q.ExcFrameWords[2], (unsigned long long)q.ExcFrameWords[3],
