@@ -8049,11 +8049,12 @@ static void LxCreatePicoThread(void)
     }
 
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
-
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
     threadArgs[2] = g_ElfEntry;
     threadArgs[0x17] = g_PicoContext;
+    threadArgs[7] = 0x0053002bull;
+    threadArgs[6] = 0x0053000000000000ull;
 
     status = ((NTSTATUS (*)(PVOID, PVOID, PVOID))g_CreatePicoThreadFn)(threadArgs, NULL, &threadHandle);
 
