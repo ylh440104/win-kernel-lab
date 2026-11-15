@@ -691,6 +691,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcCtxRax;
     ULONG64 ExcCtxRdi;
     ULONG64 ExcTrapFrame;
+    ULONG64 FsSetTlsLive;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -783,6 +784,7 @@ static ULONG64 g_PreResumeFs = 0;
 static ULONG g_ExitTermStatus = 0xFFFFFFFFu;
 static ULONG64 g_FsUserValue = 0;
 static ULONG64 g_FsUserMarker = 0;
+static ULONG64 g_FsSetTlsLive = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -3046,6 +3048,21 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     g_FsSetCalled = 1;
                     g_FsBaseAfterSet = __readmsr(0xC0000100);
                     g_FsSetOk = (g_FsBaseAfterSet == address) ? 1 : 0;
+                    {
+                        ULONG64 tlsLive = 0;
+                        SIZE_T tlsLiveSize = 0;
+
+                        if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentThread(), (PVOID)(ULONG_PTR)(address + 0x10),
+                                                           PsGetCurrentProcess(), &tlsLive, sizeof(tlsLive),
+                                                           KernelMode, &tlsLiveSize)))
+                        {
+                            g_FsSetTlsLive = tlsLive;
+                        }
+                        else
+                        {
+                            g_FsSetTlsLive = 0xDEAD0005ull;
+                        }
+                    }
                     {
                         PETHREAD curThread = PsGetCurrentThread();
                         ULONG64 kthread678 = 0;
@@ -8747,6 +8764,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExcCtxRax = g_ExcCtxRax;
             result->ExcCtxRdi = g_ExcCtxRdi;
             result->ExcTrapFrame = g_ExcTrapFrame;
+            result->FsSetTlsLive = g_FsSetTlsLive;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
