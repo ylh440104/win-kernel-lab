@@ -790,6 +790,8 @@ static ULONG64 g_FsUserMarker = 0;
 static ULONG64 g_FsSetTlsLive = 0;
 static ULONG64 g_UserFsBefore = 0;
 static ULONG64 g_UserFsAfter = 0;
+static ULONG g_FsAddrRedirected = 0;
+static ULONG64 g_TlsPoolBase = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -3025,6 +3027,14 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (code == 0x1002)
         {
+            if (g_TlsSetupDone != 0 && g_TlsBlockBase != 0)
+            {
+                address = g_TlsBlockBase;
+                g_FsAddrRedirected = 1;
+            }
+        }
+        if (code == 0x1002)
+        {
             g_FsSetAttempt++;
             g_FsSetAddr = address;
             {
@@ -4082,7 +4092,7 @@ static NTSTATUS LxDispatchException(PVOID Args)
                     RtlCopyMemory(&g_ExcCtxRip, (UCHAR *)(ULONG_PTR)trapFrame + 0x168, sizeof(g_ExcCtxRip));
                     RtlCopyMemory(&g_ExcCtxRsp, (UCHAR *)(ULONG_PTR)trapFrame + 0x180, sizeof(g_ExcCtxRsp));
                     RtlCopyMemory(&g_ExcCtxRax, (UCHAR *)(ULONG_PTR)trapFrame + 0x38, sizeof(g_ExcCtxRax));
-                    RtlCopyMemory(&g_ExcCtxRdi, (UCHAR *)(ULONG_PTR)trapFrame + 0x70, sizeof(g_ExcCtxRdi));
+                    RtlCopyMemory(&g_ExcCtxRdi, (UCHAR *)(ULONG_PTR)trapFrame + 0xA0, sizeof(g_ExcCtxRdi));
                     RtlCopyMemory(&g_ExcFrameWords[0], (UCHAR *)(ULONG_PTR)trapFrame + 0x150, sizeof(g_ExcFrameWords));
                 }
             }
@@ -5102,7 +5112,18 @@ void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Sta
         return;
     }
     RtlZeroMemory(tcb, totalSize);
-    blockBase = StubAreaBase + LX_TLS_AREA_OFFSET;
+    if (g_PoolBase != 0)
+    {
+        blockBase = (g_MmapCurrent + 0xFFFFull) & ~0xFFFFull;
+        if (blockBase + totalSize > g_PoolBase + LX_POOL_SIZE)
+        {
+            blockBase = g_PoolBase + 0x100000ull;
+        }
+    }
+    else
+    {
+        blockBase = StubAreaBase + LX_TLS_AREA_OFFSET;
+    }
 
     for (index = 0; index < LX_MAX_LIBS; index++)
     {
