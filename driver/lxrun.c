@@ -678,6 +678,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcCode;
     ULONG64 ExcAddress;
     ULONG64 ExcMsr;
+    ULONG64 ExcArg0;
+    ULONG64 ExcArg1;
+    ULONG64 ExcArg2;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -3937,6 +3940,9 @@ static ULONG g_ExceptionDumpDone = 0;
 static ULONG64 g_ExcCode = 0;
 static ULONG64 g_ExcAddress = 0;
 static ULONG64 g_ExcMsr = 0;
+static ULONG64 g_ExcArg0 = 0;
+static ULONG64 g_ExcArg1 = 0;
+static ULONG64 g_ExcArg2 = 0;
 
 static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
 {
@@ -3975,27 +3981,9 @@ static NTSTATUS LxDispatchException(PVOID Args)
             g_ExceptionDump[i] = argument[i];
         }
         g_ExceptionDumpDone = 1;
-        {
-            ULONG64 *record = (ULONG64 *)argument[0];
-
-            if (record != NULL)
-            {
-                __try
-                {
-                    g_ExcCode = record[0];
-                    g_ExcAddress = record[3];
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_ExcCode = 0xDEAD0006ull;
-                }
-            }
-        }
-        {
-            NTSTATUS msrStatus = 0;
-
-            g_ExcMsr = LxReadMsrSafe(&msrStatus);
-        }
+        g_ExcArg0 = argument[0];
+        g_ExcArg1 = argument[1];
+        g_ExcArg2 = argument[2];
     }
     g_ExceptionCount++;
     return 0;
@@ -8682,6 +8670,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExcCode = g_ExcCode;
             result->ExcAddress = g_ExcAddress;
             result->ExcMsr = g_ExcMsr;
+            result->ExcArg0 = g_ExcArg0;
+            result->ExcArg1 = g_ExcArg1;
+            result->ExcArg2 = g_ExcArg2;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
