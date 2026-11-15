@@ -328,6 +328,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExcCtxRdi;
     ULONG64 ExcTrapFrame;
     ULONG64 FsSetTlsLive;
+    ULONG64 UserFsBefore;
+    ULONG64 UserFsAfter;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -977,6 +979,8 @@ int main(void)
                (unsigned long long)q.ExcCtxRdi);
         printf("  EXCTRAP: frame=0x%llx\n", (unsigned long long)q.ExcTrapFrame);
         printf("  FSSETTLS: live=0x%llx\n", (unsigned long long)q.FsSetTlsLive);
+        printf("  USERFS: before=0x%llx after=0x%llx\n",
+               (unsigned long long)q.UserFsBefore, (unsigned long long)q.UserFsAfter);
         printf("  resumeStatus=0x%08lx prevSuspend=%lu\n", q.ResumeStatus, q.PrevSuspendCount);
         printf("  pico=0x%llx elfStatus=0x%08lx elfBase=0x%llx copied=%llu\n",
                (unsigned long long)q.PicoHandle, q.ElfStatus, (unsigned long long)q.ElfBase,
