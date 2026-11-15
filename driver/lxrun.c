@@ -675,6 +675,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 PreResumeFs;
     ULONG64 FsRestoreCount;
     ULONG64 FsRestoreFault;
+    ULONG64 ExcCode;
+    ULONG64 ExcAddress;
+    ULONG64 ExcMsr;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -3931,11 +3934,40 @@ static VOID LxProcessExit(PVOID Args)
 static ULONG64 g_ExceptionDump[8];
 static ULONG g_ExceptionDumpDone = 0;
 
+static ULONG64 g_ExcCode = 0;
+static ULONG64 g_ExcAddress = 0;
+static ULONG64 g_ExcMsr = 0;
+
+static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
+{
+    ULONG64 value = 0;
+
+    if (OutStatus != NULL)
+    {
+        *OutStatus = 0xC0000001u;
+    }
+
+    __try
+    {
+        value = __readmsr(0xC0000100);
+
+        if (OutStatus != NULL)
+        {
+            *OutStatus = 0;
+        }
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        value = 0xDEAD0007ull;
+    }
+
+    return value;
+}
+
 static NTSTATUS LxDispatchException(PVOID Args)
 {
     ULONG64 *argument = (ULONG64 *)Args;
     ULONG i;
-
     if (Args != NULL && g_ExceptionDumpDone == 0)
     {
         for (i = 0; i < 8; i++)
@@ -3943,8 +3975,28 @@ static NTSTATUS LxDispatchException(PVOID Args)
             g_ExceptionDump[i] = argument[i];
         }
         g_ExceptionDumpDone = 1;
-    }
+        {
+            ULONG64 *record = (ULONG64 *)argument[0];
 
+            if (record != NULL)
+            {
+                __try
+                {
+                    g_ExcCode = record[0];
+                    g_ExcAddress = record[3];
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    g_ExcCode = 0xDEAD0006ull;
+                }
+            }
+        }
+        {
+            NTSTATUS msrStatus = 0;
+
+            g_ExcMsr = LxReadMsrSafe(&msrStatus);
+        }
+    }
     g_ExceptionCount++;
     return 0;
 }
@@ -8627,6 +8679,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->PreResumeFs = g_PreResumeFs;
             result->FsRestoreCount = g_FsRestoreCount;
             result->FsRestoreFault = g_FsRestoreFault;
+            result->ExcCode = g_ExcCode;
+            result->ExcAddress = g_ExcAddress;
+            result->ExcMsr = g_ExcMsr;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
