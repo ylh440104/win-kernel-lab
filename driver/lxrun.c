@@ -671,6 +671,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExitKthread678;
     ULONG64 ExitKthread74;
     ULONG64 ExitThreadPtr;
+    ULONG64 ExitTlsLive;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -758,6 +759,7 @@ static ULONG64 g_ExitMsr = 0;
 static ULONG64 g_ExitKthread678 = 0;
 static ULONG64 g_ExitKthread74 = 0;
 static ULONG64 g_ExitThreadPtr = 0;
+static ULONG64 g_ExitTlsLive = 0;
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfBase = 0;
@@ -3083,6 +3085,21 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             RtlCopyMemory(&exitValue, (UCHAR *)exitThread + 0x74, sizeof(exitValue));
             g_ExitKthread74 = exitValue;
             g_ExitThreadPtr = (ULONG64)(ULONG_PTR)exitThread;
+            {
+                ULONG64 liveValue = 0;
+                SIZE_T liveSize = 0;
+
+                if (NT_SUCCESS(MmCopyVirtualMemory(exitThread, (PVOID)(ULONG_PTR)0x50C010ull,
+                                                   PsGetCurrentProcess(), &liveValue, sizeof(liveValue),
+                                                   KernelMode, &liveSize)))
+                {
+                    g_ExitTlsLive = liveValue;
+                }
+                else
+                {
+                    g_ExitTlsLive = 0xDEAD0004ull;
+                }
+            }
         }
         return 0;
 
@@ -8603,6 +8620,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExitKthread678 = g_ExitKthread678;
             result->ExitKthread74 = g_ExitKthread74;
             result->ExitThreadPtr = g_ExitThreadPtr;
+            result->ExitTlsLive = g_ExitTlsLive;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
