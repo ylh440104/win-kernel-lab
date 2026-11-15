@@ -3072,7 +3072,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     {
                         PETHREAD userThread = PsGetCurrentThread();
                         ULONG64 userFsBase = 0;
-                        ULONG64 newFsBase = address;
+                        ULONG64 newFsBase = address - 0x2000;
 
                         RtlCopyMemory(&userFsBase, (UCHAR *)userThread + 0xF0, sizeof(userFsBase));
                         g_UserFsBefore = userFsBase;
