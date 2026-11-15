@@ -3916,7 +3916,10 @@ static NTSTATUS LxSysDispatch(PVOID Args)
         {
             __try
             {
-                wrmsr(0xC0000100, g_TlsBlockBase);
+                ULONG64 msrValue = g_TlsBlockBase;
+                ULONG msrIndex = 0xC0000100;
+
+                __writemsr(msrIndex, msrValue);
                 g_FsRestoreCount++;
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
