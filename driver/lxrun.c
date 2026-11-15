@@ -685,6 +685,11 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ExitTermStatus;
     ULONG64 FsUserValue;
     ULONG64 FsUserMarker;
+    ULONG64 ExcContextStatus;
+    ULONG64 ExcCtxRip;
+    ULONG64 ExcCtxRsp;
+    ULONG64 ExcCtxRax;
+    ULONG64 ExcCtxRdi;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -3962,6 +3967,11 @@ static ULONG64 g_ExcMsr = 0;
 static ULONG64 g_ExcArg0 = 0;
 static ULONG64 g_ExcArg1 = 0;
 static ULONG64 g_ExcArg2 = 0;
+static ULONG g_ExcContextStatus = 0xFFFFFFFFu;
+static ULONG64 g_ExcCtxRip = 0;
+static ULONG64 g_ExcCtxRsp = 0;
+static ULONG64 g_ExcCtxRax = 0;
+static ULONG64 g_ExcCtxRdi = 0;
 static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
 
@@ -4006,6 +4016,23 @@ static NTSTATUS LxDispatchException(PVOID Args)
         g_ExcArg0 = argument[0];
         g_ExcArg1 = argument[1];
         g_ExcArg2 = argument[2];
+        if (g_GetContextFn != 0)
+        {
+            UCHAR contextBuffer[0x300];
+            NTSTATUS contextStatus;
+
+            RtlZeroMemory(contextBuffer, sizeof(contextBuffer));
+            contextStatus = ((NTSTATUS (*)(PVOID, PVOID, ULONG))g_GetContextFn)(
+                KeGetCurrentThread(), contextBuffer, 0x10000Bu);
+            g_ExcContextStatus = (ULONG)contextStatus;
+            if (NT_SUCCESS(contextStatus))
+            {
+                g_ExcCtxRip = *(ULONG64 *)(contextBuffer + 0xF8);
+                g_ExcCtxRsp = *(ULONG64 *)(contextBuffer + 0x98);
+                g_ExcCtxRax = *(ULONG64 *)(contextBuffer + 0x78);
+                g_ExcCtxRdi = *(ULONG64 *)(contextBuffer + 0x68);
+            }
+        }
     }
     g_ExceptionCount++;
 
@@ -8708,6 +8735,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ExitTermStatus = (ULONG64)g_ExitTermStatus;
             result->FsUserValue = g_FsUserValue;
             result->FsUserMarker = g_FsUserMarker;
+            result->ExcContextStatus = (ULONG64)g_ExcContextStatus;
+            result->ExcCtxRip = g_ExcCtxRip;
+            result->ExcCtxRsp = g_ExcCtxRsp;
+            result->ExcCtxRax = g_ExcCtxRax;
+            result->ExcCtxRdi = g_ExcCtxRdi;
             result->StubAreaBase = g_StubStats.StubAreaBase;
             result->FsSetFault = g_FsSetFault;
             result->FlagFromScanUsed = g_FlagFromScanUsed;
