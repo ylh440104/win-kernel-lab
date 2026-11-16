@@ -722,6 +722,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 K24a5;
     LONG K1e4_1;
     LONG K1e4_5;
+    ULONG64 TrapGdtWrites;
+    ULONG64 TrapGdtFault;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -844,6 +846,8 @@ static ULONG64 g_K24a1 = 0;
 static ULONG64 g_K24a5 = 0;
 static LONG g_K1e4_1 = 0;
 static LONG g_K1e4_5 = 0;
+static ULONG64 g_TrapGdtWrites = 0;
+static ULONG g_TrapGdtFault = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -4028,6 +4032,22 @@ static NTSTATUS LxSysDispatch(PVOID Args)
     if (context != 0)
     {
         ULONG64 *fields = (ULONG64 *)context;
+        __try
+        {
+            ULONG64 fsBase = g_TlsBlockBase;
+            USHORT gdtLow = (USHORT)(fsBase & 0xFFFF);
+            UCHAR gdtMid = (UCHAR)((fsBase >> 16) & 0xFF);
+            UCHAR gdtHigh = (UCHAR)((fsBase >> 24) & 0xFF);
+
+            *(volatile USHORT *)((PUCHAR)fields + 0x52) = gdtLow;
+            *(volatile UCHAR *)((PUCHAR)fields + 0x54) = gdtMid;
+            *(volatile UCHAR *)((PUCHAR)fields + 0x57) = gdtHigh;
+            g_TrapGdtWrites++;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            g_TrapGdtFault = 1;
+        }
         ULONG64 syscallNumber = fields[0x30 / 8];
 
         if (g_SyscallCount == 1)
@@ -8898,6 +8918,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->K24a5 = g_K24a5;
             result->K1e4_1 = g_K1e4_1;
             result->K1e4_5 = g_K1e4_5;
+            result->TrapGdtWrites = g_TrapGdtWrites;
+            result->TrapGdtFault = (ULONG64)g_TrapGdtFault;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
