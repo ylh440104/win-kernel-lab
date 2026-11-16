@@ -704,6 +704,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsAutoSetDone;
     ULONG64 FsBaseAutoSet;
     ULONG64 FsSelfImplemented;
+    ULONG64 FsSyscallRefreshes;
+    ULONG64 FsSyscallRefreshFault;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -807,6 +809,8 @@ static ULONG g_TlsInElfBss = 0;
 static ULONG g_FsAutoSetDone = 0;
 static ULONG64 g_FsBaseAutoSet = 0;
 static ULONG g_FsSelfImplemented = 0;
+static ULONG64 g_FsSyscallRefreshes = 0;
+static ULONG g_FsSyscallRefreshFault = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -2190,6 +2194,23 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     ULONG64 arg0 = Parameters[0];
     ULONG64 arg1 = Parameters[1];
     ULONG64 arg2 = Parameters[2];
+
+    if (g_TlsBlockBase != 0 && g_SetDescriptorBaseFn != 0)
+    {
+        __try
+        {
+            PETHREAD tlsThread = PsGetCurrentThread();
+            ULONG64 tlsValue = g_TlsBlockBase;
+
+            RtlCopyMemory((UCHAR *)tlsThread + 0x678, &tlsValue, sizeof(tlsValue));
+            ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, g_TlsBlockBase);
+            g_FsSyscallRefreshes++;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            g_FsSyscallRefreshFault = 1;
+        }
+    }
 
     if (g_EntryCount < 8)
     {
@@ -8767,6 +8788,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FsAutoSetDone = (ULONG64)g_FsAutoSetDone;
             result->FsBaseAutoSet = g_FsBaseAutoSet;
             result->FsSelfImplemented = (ULONG64)g_FsSelfImplemented;
+            result->FsSyscallRefreshes = g_FsSyscallRefreshes;
+            result->FsSyscallRefreshFault = (ULONG64)g_FsSyscallRefreshFault;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
