@@ -3061,12 +3061,18 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_FsSetAttempt++;
             g_FsSetAddr = address;
             {
-                PETHREAD selfThread = PsGetCurrentThread();
-                ULONG64 fsValue = address;
+                LX_APC_STATE archApc;
 
-                RtlCopyMemory((UCHAR *)selfThread + 0x678, &fsValue, sizeof(fsValue));
-                __writemsr(0xC0000100, address);
-                g_FsSelfImplemented = 1;
+                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&archApc);
+                {
+                    PETHREAD selfThread = PsGetCurrentThread();
+                    ULONG64 fsValue = address;
+
+                    RtlCopyMemory((UCHAR *)selfThread + 0x678, &fsValue, sizeof(fsValue));
+                    ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, address);
+                    g_FsSelfImplemented = 1;
+                }
+                KeUnstackDetachProcess((PVOID)&archApc);
             }
             g_FsSetCalled = 1;
             g_FsBaseAfterSet = __readmsr(0xC0000100);
