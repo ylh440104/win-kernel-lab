@@ -2200,10 +2200,10 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         __try
         {
             PETHREAD tlsThread = PsGetCurrentThread();
-            ULONG64 tlsValue = g_TlsBlockBase;
+            ULONG64 tlsUserBase = g_TlsBlockBase - 0x2000;
 
-            RtlCopyMemory((UCHAR *)tlsThread + 0x678, &tlsValue, sizeof(tlsValue));
             ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, g_TlsBlockBase);
+            RtlCopyMemory((UCHAR *)tlsThread + 0xF0, &tlsUserBase, sizeof(tlsUserBase));
             g_FsSyscallRefreshes++;
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
