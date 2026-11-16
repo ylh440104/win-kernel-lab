@@ -799,6 +799,7 @@ static ULONG g_FsAddrRedirected = 0;
 static ULONG64 g_TlsPoolBase = 0;
 static ULONG g_TlsSectionStatus = 0xFFFFFFFFu;
 static ULONG g_TlsViewStatus = 0xFFFFFFFFu;
+static ULONG g_TlsInElfBss = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -5122,31 +5123,10 @@ void LxSetupTls(PEPROCESS TargetProcess, ULONG64 StubAreaBase, LX_LIB_STATS *Sta
     }
     RtlZeroMemory(tcb, totalSize);
     blockBase = StubAreaBase + LX_TLS_AREA_OFFSET;
+    if (g_ElfBase != 0)
     {
-        HANDLE tlsSection = NULL;
-        OBJECT_ATTRIBUTES tlsAttr;
-        LARGE_INTEGER tlsSize;
-        PVOID tlsView = (PVOID)(ULONG_PTR)0x700000ull;
-        SIZE_T tlsViewSize = 0;
-        NTSTATUS tlsStatus;
-
-        tlsSize.QuadPart = 0x10000;
-        InitializeObjectAttributes(&tlsAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-        tlsStatus = ZwCreateSection(&tlsSection, SECTION_ALL_ACCESS, &tlsAttr, &tlsSize,
-                                    PAGE_READWRITE, SEC_COMMIT, NULL);
-        g_TlsSectionStatus = (ULONG)tlsStatus;
-        if (NT_SUCCESS(tlsStatus))
-        {
-            tlsStatus = ZwMapViewOfSection(tlsSection, (HANDLE)g_LastPicoHandle, &tlsView, 0, 0,
-                                           NULL, &tlsViewSize, ViewUnmap, 0, PAGE_READWRITE);
-            ZwClose(tlsSection);
-            g_TlsViewStatus = (ULONG)tlsStatus;
-            if (NT_SUCCESS(tlsStatus))
-            {
-                blockBase = (ULONG64)(ULONG_PTR)tlsView;
-                g_TlsPoolBase = blockBase;
-            }
-        }
+        blockBase = g_ElfBase + 0x10000ull;
+        g_TlsInElfBss = 1;
     }
 
     for (index = 0; index < LX_MAX_LIBS; index++)
