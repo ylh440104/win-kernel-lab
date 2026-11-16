@@ -344,6 +344,12 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsSyscallRefreshFault;
     ULONG64 DispatchStackFirst;
     ULONG64 DispatchStack5;
+    ULONG64 MsrLstarFirst;
+    ULONG64 MsrSfmaskFirst;
+    ULONG64 MsrEferFirst;
+    ULONG64 MsrLstar5;
+    ULONG64 MsrSfmask5;
+    ULONG64 MsrEfer5;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -1029,6 +1035,10 @@ int main(void)
         printf("  DISPSTACK: first=0x%llx fifth=0x%llx\n",
                (unsigned long long)q.DispatchStackFirst,
                (unsigned long long)q.DispatchStack5);
+        printf("  MSRCMP: lstar 1st=0x%llx 5th=0x%llx | sfmask 1st=0x%llx 5th=0x%llx | efer 1st=0x%llx 5th=0x%llx\n",
+               (unsigned long long)q.MsrLstarFirst, (unsigned long long)q.MsrLstar5,
+               (unsigned long long)q.MsrSfmaskFirst, (unsigned long long)q.MsrSfmask5,
+               (unsigned long long)q.MsrEferFirst, (unsigned long long)q.MsrEfer5);
         printf("  TAIL: t0=0x%llx t1=0x%llx t2=0x%llx t3=0x%llx\n",
                (unsigned long long)q.ExcTailWords[0], (unsigned long long)q.ExcTailWords[1],
                (unsigned long long)q.ExcTailWords[2], (unsigned long long)q.ExcTailWords[3]);
