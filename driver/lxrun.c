@@ -2769,7 +2769,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                                     {
                                         __try
                                         {
-                                            ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, g_TlsBlockBase);
+                                            PETHREAD fsThread = PsGetCurrentThread();
+                                            ULONG64 fsValue = g_TlsBlockBase;
+
+                                            RtlCopyMemory((UCHAR *)fsThread + 0x678, &fsValue, sizeof(fsValue));
+                                            __writemsr(0xC0000100, g_TlsBlockBase);
                                             g_FsAutoSetDone = 1;
                                             g_FsBaseAutoSet = __readmsr(0xC0000100);
                                         }
