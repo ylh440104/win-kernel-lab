@@ -724,6 +724,8 @@ typedef struct _LX_QUERY_RESULT
     LONG K1e4_5;
     ULONG64 TrapGdtWrites;
     ULONG64 TrapGdtFault;
+    ULONG64 ExcPteVa;
+    ULONG64 ExcPteValue;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -848,6 +850,8 @@ static LONG g_K1e4_1 = 0;
 static LONG g_K1e4_5 = 0;
 static ULONG64 g_TrapGdtWrites = 0;
 static ULONG g_TrapGdtFault = 0;
+static ULONG64 g_ExcPteVa = 0;
+static ULONG64 g_ExcPteValue = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -4164,6 +4168,13 @@ static NTSTATUS LxDispatchException(PVOID Args)
                     RtlCopyMemory(&g_ExcCtxRdi, (UCHAR *)(ULONG_PTR)trapFrame + 0xA0, sizeof(g_ExcCtxRdi));
                     RtlCopyMemory(&g_ExcFrameWords[0], (UCHAR *)(ULONG_PTR)trapFrame + 0x150, sizeof(g_ExcFrameWords));
                     RtlCopyMemory(&g_ExcTailWords[0], (UCHAR *)(ULONG_PTR)trapFrame + 0x1A0, sizeof(g_ExcTailWords));
+                    {
+                        ULONG64 faultAddr = (g_ExcArg2 & ~0xFFFull);
+                        ULONG64 pteVa = 0xFFFFF68000000000ull + (faultAddr >> 9);
+                        ULONG64 pteValue = *(volatile ULONG64 *)(ULONG_PTR)pteVa;
+                        g_ExcPteVa = pteVa;
+                        g_ExcPteValue = pteValue;
+                    }
                 }
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
@@ -8920,6 +8931,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->K1e4_5 = g_K1e4_5;
             result->TrapGdtWrites = g_TrapGdtWrites;
             result->TrapGdtFault = (ULONG64)g_TrapGdtFault;
+            result->ExcPteVa = g_ExcPteVa;
+            result->ExcPteValue = g_ExcPteValue;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
