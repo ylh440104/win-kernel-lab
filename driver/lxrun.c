@@ -3029,31 +3029,22 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     {
         ULONG64 code = arg0;
         ULONG64 address = arg1;
-
         g_ArchArg0 = arg0;
         g_ArchArg1 = arg1;
-        g_ArchArg2 = arg2;
-        g_ArchArg3 = Parameters[3];
-        g_ArchArg4 = Parameters[4];
-        g_ArchArg5 = Parameters[5];
-
         if (code != 0x1001 && code != 0x1002 && code != 0x1003)
         {
             code = arg1;
             address = arg2;
         }
-
         if (code != 0x1001 && code != 0x1002 && code != 0x1003)
         {
             ULONG64 *shifted = Parameters + 1;
-
             if (shifted[0] == 0x1001 || shifted[0] == 0x1002 || shifted[0] == 0x1003)
             {
                 code = shifted[0];
                 address = shifted[2];
             }
         }
-
         if (code == 0x1002)
         {
             if (g_TlsSetupDone != 0 && g_TlsBlockBase != 0)
@@ -3061,123 +3052,24 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 address = g_TlsBlockBase;
                 g_FsAddrRedirected = 1;
             }
-        }
-        if (code == 0x1002)
-        {
             g_FsSetAttempt++;
             g_FsSetAddr = address;
             {
-                PETHREAD currentThread = PsGetCurrentThread();
-                PETHREAD picoThread = g_PicoThreadObject;
+                PETHREAD selfThread = PsGetCurrentThread();
+                ULONG64 fsValue = address;
 
-                g_ArchCurThread = (ULONG64)(ULONG_PTR)currentThread;
-                g_ArchPicoThread = (ULONG64)(ULONG_PTR)picoThread;
-                g_ArchThreadSame = (currentThread == picoThread) ? 1 : 0;
-                g_ArchCurProcess = (ULONG64)(ULONG_PTR)IoGetCurrentProcess();
+                RtlCopyMemory((UCHAR *)selfThread + 0x678, &fsValue, sizeof(fsValue));
+                __writemsr(0xC0000100, address);
+                g_FsSelfImplemented = 1;
             }
-            if (g_SetDescriptorBaseFn != 0)
-            {
-                __try
-                {
-                    {
-                        PETHREAD preThread = PsGetCurrentThread();
-                        ULONG64 preValue = 0;
-
-                        RtlCopyMemory(&preValue, (UCHAR *)preThread + 0x678, sizeof(preValue));
-                        g_Kthread678 = preValue;
-                        RtlCopyMemory(&preValue, (UCHAR *)preThread + 0x680, sizeof(preValue));
-                        g_Kthread680 = preValue;
-                    }
-                    {
-                        PETHREAD selfThread = PsGetCurrentThread();
-                        ULONG64 fsValue = address;
-
-                        RtlCopyMemory((UCHAR *)selfThread + 0x678, &fsValue, sizeof(fsValue));
-                        __writemsr(0xC0000100, address);
-                        g_FsSelfImplemented = 1;
-                    }
-                    g_FsSetCalled = 1;
-                    g_FsBaseAfterSet = __readmsr(0xC0000100);
-                    g_FsSetOk = (g_FsBaseAfterSet == address) ? 1 : 0;
-                    {
-                        ULONG64 tlsLive = 0;
-                        LX_APC_STATE fsApc;
-
-                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&fsApc);
-                        __try
-                        {
-                            ProbeForRead((PVOID)(ULONG_PTR)(address + 0x10), sizeof(tlsLive), 1);
-                            RtlCopyMemory(&tlsLive, (PVOID)(ULONG_PTR)(address + 0x10), sizeof(tlsLive));
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER)
-                        {
-                            tlsLive = 0xDEAD0006ull;
-                        }
-                        KeUnstackDetachProcess((PVOID)&fsApc);
-                        g_FsSetTlsLive = tlsLive;
-                    }
-                    {
-                        PETHREAD userThread = PsGetCurrentThread();
-                        ULONG64 userFsBase = 0;
-                        ULONG64 newFsBase = address - 0x2000;
-
-                        RtlCopyMemory(&userFsBase, (UCHAR *)userThread + 0xF0, sizeof(userFsBase));
-                        g_UserFsBefore = userFsBase;
-                        RtlCopyMemory((UCHAR *)userThread + 0xF0, &newFsBase, sizeof(newFsBase));
-                        RtlCopyMemory(&userFsBase, (UCHAR *)userThread + 0xF0, sizeof(userFsBase));
-                        g_UserFsAfter = userFsBase;
-                    }
-                    {
-                        PETHREAD curThread = PsGetCurrentThread();
-                        ULONG64 kthread678 = 0;
-
-                        RtlCopyMemory(&kthread678, (UCHAR *)curThread + 0x678, sizeof(kthread678));
-                        g_Kthread678After = kthread678;
-                    }
-                    {
-                        PETHREAD fixThread = PsGetCurrentThread();
-                        ULONG64 fixValue = address;
-
-                        RtlCopyMemory((UCHAR *)fixThread + 0x678, &fixValue, sizeof(fixValue));
-                        fixValue = 0;
-                        RtlCopyMemory(&fixValue, (UCHAR *)fixThread + 0x678, sizeof(fixValue));
-                        g_Kthread678Patched = fixValue;
-                    }
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_FsSetFault = 1;
-                }
-            }
-
-            g_ArchPrctlCalls++;
-
-            __try
-            {
-                g_FsBaseAfter = __readmsr(0xC0000100);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                g_FsBaseAfter = 0xDEAD0001u;
-            }
-
-            return 0;
-        }
-
-        if (code == 0x1001)
-        {
-            if (g_SetDescriptorBaseFn != 0)
-            {
-                ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(1, address);
-            }
-
+            g_FsSetCalled = 1;
+            g_FsBaseAfterSet = __readmsr(0xC0000100);
+            g_FsSetOk = (g_FsBaseAfterSet == address) ? 1 : 0;
             g_ArchPrctlCalls++;
             return 0;
         }
-
         return 0;
     }
-
     case LX_SYS_SET_TID_ADDRESS:
         return 1;
 
