@@ -350,6 +350,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 MsrLstar5;
     ULONG64 MsrSfmask5;
     ULONG64 MsrEfer5;
+    ULONG64 StackInElf;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -1039,6 +1040,8 @@ int main(void)
                (unsigned long long)q.MsrLstarFirst, (unsigned long long)q.MsrLstar5,
                (unsigned long long)q.MsrSfmaskFirst, (unsigned long long)q.MsrSfmask5,
                (unsigned long long)q.MsrEferFirst, (unsigned long long)q.MsrEfer5);
+        printf("  STACKELF: used=%llu stackBase=0x%llx\n",
+               (unsigned long long)q.StackInElf, (unsigned long long)q.StackBase);
         printf("  TAIL: t0=0x%llx t1=0x%llx t2=0x%llx t3=0x%llx\n",
                (unsigned long long)q.ExcTailWords[0], (unsigned long long)q.ExcTailWords[1],
                (unsigned long long)q.ExcTailWords[2], (unsigned long long)q.ExcTailWords[3]);
