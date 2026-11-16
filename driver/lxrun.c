@@ -708,6 +708,12 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsSyscallRefreshFault;
     ULONG64 DispatchStackFirst;
     ULONG64 DispatchStack5;
+    ULONG64 MsrLstarFirst;
+    ULONG64 MsrSfmaskFirst;
+    ULONG64 MsrEferFirst;
+    ULONG64 MsrLstar5;
+    ULONG64 MsrSfmask5;
+    ULONG64 MsrEfer5;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -816,6 +822,12 @@ static ULONG g_FsSyscallRefreshFault = 0;
 static ULONG64 g_DispatchStackSeq[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static ULONG64 g_DispatchStackFirst = 0;
 static ULONG64 g_DispatchStack5 = 0;
+static ULONG64 g_MsrLstarFirst = 0;
+static ULONG64 g_MsrSfmaskFirst = 0;
+static ULONG64 g_MsrEferFirst = 0;
+static ULONG64 g_MsrLstar5 = 0;
+static ULONG64 g_MsrSfmask5 = 0;
+static ULONG64 g_MsrEfer5 = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -3956,6 +3968,34 @@ static NTSTATUS LxSysDispatch(PVOID Args)
         if (g_SyscallCount == 5)
         {
             g_DispatchStack5 = dispatchStackBefore;
+        }
+        {
+            ULONG64 msrLstar = 0;
+            ULONG64 msrSfmask = 0;
+            ULONG64 msrEfer = 0;
+
+            __try
+            {
+                msrLstar = __readmsr(0xC0000082);
+                msrSfmask = __readmsr(0xC0000084);
+                msrEfer = __readmsr(0xC0000080);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                msrEfer = 0xDEAD0009ull;
+            }
+            if (g_SyscallCount == 1)
+            {
+                g_MsrLstarFirst = msrLstar;
+                g_MsrSfmaskFirst = msrSfmask;
+                g_MsrEferFirst = msrEfer;
+            }
+            if (g_SyscallCount == 5)
+            {
+                g_MsrLstar5 = msrLstar;
+                g_MsrSfmask5 = msrSfmask;
+                g_MsrEfer5 = msrEfer;
+            }
         }
     }
 
@@ -8813,6 +8853,12 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FsSyscallRefreshFault = (ULONG64)g_FsSyscallRefreshFault;
             result->DispatchStackFirst = g_DispatchStackFirst;
             result->DispatchStack5 = g_DispatchStack5;
+            result->MsrLstarFirst = g_MsrLstarFirst;
+            result->MsrSfmaskFirst = g_MsrSfmaskFirst;
+            result->MsrEferFirst = g_MsrEferFirst;
+            result->MsrLstar5 = g_MsrLstar5;
+            result->MsrSfmask5 = g_MsrSfmask5;
+            result->MsrEfer5 = g_MsrEfer5;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
