@@ -715,6 +715,13 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 MsrSfmask5;
     ULONG64 MsrEfer5;
     ULONG64 StackInElf;
+    ULONG64 Irql1;
+    ULONG64 Irql3;
+    ULONG64 Irql5;
+    ULONG64 K24a1;
+    ULONG64 K24a5;
+    LONG K1e4_1;
+    LONG K1e4_5;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -830,6 +837,13 @@ static ULONG64 g_MsrLstar5 = 0;
 static ULONG64 g_MsrSfmask5 = 0;
 static ULONG64 g_MsrEfer5 = 0;
 static ULONG g_StackInElf = 0;
+static ULONG64 g_Irql1 = 0;
+static ULONG64 g_Irql3 = 0;
+static ULONG64 g_Irql5 = 0;
+static ULONG64 g_K24a1 = 0;
+static ULONG64 g_K24a5 = 0;
+static LONG g_K1e4_1 = 0;
+static LONG g_K1e4_5 = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -3966,10 +3980,20 @@ static NTSTATUS LxSysDispatch(PVOID Args)
         if (g_SyscallCount == 1)
         {
             g_DispatchStackFirst = dispatchStackBefore;
+            g_Irql1 = (ULONG64)KeGetCurrentIrql();
+            g_K24a1 = (ULONG64)*((PUCHAR)PsGetCurrentThread() + 0x24A);
+            g_K1e4_1 = *(volatile LONG *)((PUCHAR)PsGetCurrentThread() + 0x1E4);
+        }
+        if (g_SyscallCount == 3)
+        {
+            g_Irql3 = (ULONG64)KeGetCurrentIrql();
         }
         if (g_SyscallCount == 5)
         {
             g_DispatchStack5 = dispatchStackBefore;
+            g_Irql5 = (ULONG64)KeGetCurrentIrql();
+            g_K24a5 = (ULONG64)*((PUCHAR)PsGetCurrentThread() + 0x24A);
+            g_K1e4_5 = *(volatile LONG *)((PUCHAR)PsGetCurrentThread() + 0x1E4);
         }
         {
             ULONG64 msrLstar = 0;
@@ -8867,6 +8891,13 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->MsrSfmask5 = g_MsrSfmask5;
             result->MsrEfer5 = g_MsrEfer5;
             result->StackInElf = (ULONG64)g_StackInElf;
+            result->Irql1 = g_Irql1;
+            result->Irql3 = g_Irql3;
+            result->Irql5 = g_Irql5;
+            result->K24a1 = g_K24a1;
+            result->K24a5 = g_K24a5;
+            result->K1e4_1 = g_K1e4_1;
+            result->K1e4_5 = g_K1e4_5;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
