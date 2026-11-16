@@ -342,6 +342,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsSelfImplemented;
     ULONG64 FsSyscallRefreshes;
     ULONG64 FsSyscallRefreshFault;
+    ULONG64 DispatchStackFirst;
+    ULONG64 DispatchStack5;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -1003,6 +1005,9 @@ int main(void)
         printf("  FSREFRESH: count=%llu fault=%llu\n",
                (unsigned long long)q.FsSyscallRefreshes,
                (unsigned long long)q.FsSyscallRefreshFault);
+        printf("  DISPSTACK: first=0x%llx fifth=0x%llx\n",
+               (unsigned long long)q.DispatchStackFirst,
+               (unsigned long long)q.DispatchStack5);
         printf("  TAIL: t0=0x%llx t1=0x%llx t2=0x%llx t3=0x%llx\n",
                (unsigned long long)q.ExcTailWords[0], (unsigned long long)q.ExcTailWords[1],
                (unsigned long long)q.ExcTailWords[2], (unsigned long long)q.ExcTailWords[3]);
