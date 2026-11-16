@@ -336,6 +336,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsPoolBase;
     ULONG64 TlsSectionStatus;
     ULONG64 TlsViewStatus;
+    ULONG64 TlsInElfBss;
+    ULONG64 FsAutoSetDone;
+    ULONG64 FsBaseAutoSet;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -990,6 +993,9 @@ int main(void)
         printf("  TLSPOOL: base=0x%llx sect=0x%08llx view=0x%08llx redirected=%llu\n",
                (unsigned long long)q.TlsPoolBase, (unsigned long long)q.TlsSectionStatus,
                (unsigned long long)q.TlsViewStatus, (unsigned long long)q.FsAddrRedirected);
+        printf("  FSAUTO: done=%llu msr=0x%llx elfBss=%llu\n",
+               (unsigned long long)q.FsAutoSetDone, (unsigned long long)q.FsBaseAutoSet,
+               (unsigned long long)q.TlsInElfBss);
         printf("  TAIL: t0=0x%llx t1=0x%llx t2=0x%llx t3=0x%llx\n",
                (unsigned long long)q.ExcTailWords[0], (unsigned long long)q.ExcTailWords[1],
                (unsigned long long)q.ExcTailWords[2], (unsigned long long)q.ExcTailWords[3]);
