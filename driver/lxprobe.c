@@ -945,6 +945,27 @@ int main(void)
         ok = DeviceIoControl(device, LX_IOCTL_QUERY, NULL, 0, &q, sizeof(q), &ret, NULL);
         printf("AFTER 3s: syscallCount=%llu lastSyscall=%llu\n",
                (unsigned long long)q.SyscallCount, (unsigned long long)q.LastSyscallNo);
+        {
+            ULONG64 prevCount = q.SyscallCount;
+            ULONG64 prevExc = q.ExceptionCount;
+            int poll;
+            for (poll = 1; poll <= 6; poll++)
+            {
+                Sleep(500);
+                memset(&q, 0, sizeof(q));
+                ret = 0;
+                DeviceIoControl(device, LX_IOCTL_QUERY, NULL, 0, &q, sizeof(q), &ret, NULL);
+                printf("  POLL%d: syscalls=%llu exceptions=%llu exitCalled=%llu\n",
+                       poll, (unsigned long long)q.SyscallCount,
+                       (unsigned long long)q.ExceptionCount,
+                       (unsigned long long)q.ExitCalled);
+                if (q.SyscallCount == prevCount)
+                {
+                    break;
+                }
+                prevCount = q.SyscallCount;
+            }
+        }
         printf("  ARCHARG: p0=0x%llx p1=0x%llx archCalls=%llu\n",
                (unsigned long long)q.ArchArg0, (unsigned long long)q.ArchArg1,
                (unsigned long long)q.ArchPrctlCalls);
