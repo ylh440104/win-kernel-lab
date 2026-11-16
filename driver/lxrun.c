@@ -714,6 +714,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 MsrLstar5;
     ULONG64 MsrSfmask5;
     ULONG64 MsrEfer5;
+    ULONG64 StackInElf;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -828,6 +829,7 @@ static ULONG64 g_MsrEferFirst = 0;
 static ULONG64 g_MsrLstar5 = 0;
 static ULONG64 g_MsrSfmask5 = 0;
 static ULONG64 g_MsrEfer5 = 0;
+static ULONG g_StackInElf = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -8032,6 +8034,11 @@ static void LxCreatePicoThread(void)
     }
 
     stackTop = (g_StackBase + 0x20000 - 0x100) & ~0xFull;
+    if (g_ElfBase != 0)
+    {
+        stackTop = (g_ElfBase + 0x20000 - 0x100) & ~0xFull;
+        g_StackInElf = 1;
+    }
 
     {
         ULONG64 newStackPointer = LxSetupStack(stackTop, &g_ElfLoad);
@@ -8859,6 +8866,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->MsrLstar5 = g_MsrLstar5;
             result->MsrSfmask5 = g_MsrSfmask5;
             result->MsrEfer5 = g_MsrEfer5;
+            result->StackInElf = (ULONG64)g_StackInElf;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
