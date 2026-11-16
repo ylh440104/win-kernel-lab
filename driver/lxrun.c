@@ -706,6 +706,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 FsSelfImplemented;
     ULONG64 FsSyscallRefreshes;
     ULONG64 FsSyscallRefreshFault;
+    ULONG64 DispatchStackFirst;
+    ULONG64 DispatchStack5;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -811,6 +813,9 @@ static ULONG64 g_FsBaseAutoSet = 0;
 static ULONG g_FsSelfImplemented = 0;
 static ULONG64 g_FsSyscallRefreshes = 0;
 static ULONG g_FsSyscallRefreshFault = 0;
+static ULONG64 g_DispatchStackSeq[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+static ULONG64 g_DispatchStackFirst = 0;
+static ULONG64 g_DispatchStack5 = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -3923,12 +3928,14 @@ static NTSTATUS LxSysDispatch(PVOID Args)
     ULONG64 *argument = (ULONG64 *)Args;
     ULONG64 context;
     ULONG i;
+    ULONG64 dispatchStackBefore = 0;
+    ULONG64 dispatchStackAfter = 0;
 
     if (argument == NULL)
     {
         return 0;
     }
-
+    dispatchStackBefore = (ULONG64)(ULONG_PTR)&dispatchStackAfter;
     if (g_SyscallCount == 0)
     {
         for (i = 0; i < 8; i++)
@@ -3936,10 +3943,21 @@ static NTSTATUS LxSysDispatch(PVOID Args)
             g_ArgsDump[i] = argument[i];
         }
     }
-
     context = argument[0];
     g_SyscallCount++;
     g_LastContext = context;
+    if (g_SyscallCount <= 16)
+    {
+        g_DispatchStackSeq[g_SyscallCount - 1] = dispatchStackBefore;
+        if (g_SyscallCount == 1)
+        {
+            g_DispatchStackFirst = dispatchStackBefore;
+        }
+        if (g_SyscallCount == 5)
+        {
+            g_DispatchStack5 = dispatchStackBefore;
+        }
+    }
 
     if (context != 0)
     {
@@ -8793,6 +8811,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->FsSelfImplemented = (ULONG64)g_FsSelfImplemented;
             result->FsSyscallRefreshes = g_FsSyscallRefreshes;
             result->FsSyscallRefreshFault = (ULONG64)g_FsSyscallRefreshFault;
+            result->DispatchStackFirst = g_DispatchStackFirst;
+            result->DispatchStack5 = g_DispatchStack5;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
