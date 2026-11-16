@@ -358,6 +358,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 K24a5;
     LONG K1e4_1;
     LONG K1e4_5;
+    ULONG64 TrapGdtWrites;
+    ULONG64 TrapGdtFault;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -1053,6 +1055,9 @@ int main(void)
                (unsigned long long)q.Irql1, (unsigned long long)q.Irql3, (unsigned long long)q.Irql5,
                (unsigned long long)q.K24a1, (unsigned long long)q.K24a5,
                (long)q.K1e4_1, (long)q.K1e4_5);
+        printf("  TRAPGDT: writes=%llu fault=%llu\n",
+               (unsigned long long)q.TrapGdtWrites,
+               (unsigned long long)q.TrapGdtFault);
         printf("  TAIL: t0=0x%llx t1=0x%llx t2=0x%llx t3=0x%llx\n",
                (unsigned long long)q.ExcTailWords[0], (unsigned long long)q.ExcTailWords[1],
                (unsigned long long)q.ExcTailWords[2], (unsigned long long)q.ExcTailWords[3]);
