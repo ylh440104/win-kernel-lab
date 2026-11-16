@@ -700,6 +700,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsPoolBase;
     ULONG64 TlsSectionStatus;
     ULONG64 TlsViewStatus;
+    ULONG64 TlsInElfBss;
+    ULONG64 FsAutoSetDone;
+    ULONG64 FsBaseAutoSet;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -800,6 +803,8 @@ static ULONG64 g_TlsPoolBase = 0;
 static ULONG g_TlsSectionStatus = 0xFFFFFFFFu;
 static ULONG g_TlsViewStatus = 0xFFFFFFFFu;
 static ULONG g_TlsInElfBss = 0;
+static ULONG g_FsAutoSetDone = 0;
+static ULONG64 g_FsBaseAutoSet = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -2756,6 +2761,20 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                                         RtlCopyMemory(&fsVal, staging + 8, sizeof(fsVal));
                                         g_FsUserMarker = marker;
                                         g_FsUserValue = fsVal;
+                                    }
+                                    if (g_SetDescriptorBaseFn != 0 && g_TlsBlockBase != 0 &&
+                                        g_FsAutoSetDone == 0)
+                                    {
+                                        __try
+                                        {
+                                            ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, g_TlsBlockBase);
+                                            g_FsAutoSetDone = 1;
+                                            g_FsBaseAutoSet = __readmsr(0xC0000100);
+                                        }
+                                        __except (EXCEPTION_EXECUTE_HANDLER)
+                                        {
+                                            g_FsAutoSetDone = 0xFF;
+                                        }
                                     }
                                     break;
                                 }
@@ -8831,6 +8850,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->TlsPoolBase = g_TlsPoolBase;
             result->TlsSectionStatus = (ULONG64)g_TlsSectionStatus;
             result->TlsViewStatus = (ULONG64)g_TlsViewStatus;
+            result->TlsInElfBss = (ULONG64)g_TlsInElfBss;
+            result->FsAutoSetDone = (ULONG64)g_FsAutoSetDone;
+            result->FsBaseAutoSet = g_FsBaseAutoSet;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
