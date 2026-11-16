@@ -703,6 +703,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TlsInElfBss;
     ULONG64 FsAutoSetDone;
     ULONG64 FsBaseAutoSet;
+    ULONG64 FsSelfImplemented;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -805,6 +806,7 @@ static ULONG g_TlsViewStatus = 0xFFFFFFFFu;
 static ULONG g_TlsInElfBss = 0;
 static ULONG g_FsAutoSetDone = 0;
 static ULONG64 g_FsBaseAutoSet = 0;
+static ULONG g_FsSelfImplemented = 0;
 static PVOID LxFindKernelExport(PCWSTR Name);
 static ULONG g_LastPicoStatus = 0xFFFFFFFFu;
 static ULONG g_ParentHandleStatus = 0xFFFFFFFFu;
@@ -3086,7 +3088,14 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                         RtlCopyMemory(&preValue, (UCHAR *)preThread + 0x680, sizeof(preValue));
                         g_Kthread680 = preValue;
                     }
-                    ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, address);
+                    {
+                        PETHREAD selfThread = PsGetCurrentThread();
+                        ULONG64 fsValue = address;
+
+                        RtlCopyMemory((UCHAR *)selfThread + 0x678, &fsValue, sizeof(fsValue));
+                        __writemsr(0xC0000100, address);
+                        g_FsSelfImplemented = 1;
+                    }
                     g_FsSetCalled = 1;
                     g_FsBaseAfterSet = __readmsr(0xC0000100);
                     g_FsSetOk = (g_FsBaseAfterSet == address) ? 1 : 0;
@@ -8853,6 +8862,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->TlsInElfBss = (ULONG64)g_TlsInElfBss;
             result->FsAutoSetDone = (ULONG64)g_FsAutoSetDone;
             result->FsBaseAutoSet = g_FsBaseAutoSet;
+            result->FsSelfImplemented = (ULONG64)g_FsSelfImplemented;
             result->ExcTailWords[0] = g_ExcTailWords[0];
             result->ExcTailWords[1] = g_ExcTailWords[1];
             result->ExcTailWords[2] = g_ExcTailWords[2];
