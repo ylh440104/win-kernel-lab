@@ -124,10 +124,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LibImageSize[4];
     ULONG64 LdsoEntry;
     ULONG64 LdsoBase;
-    ULONG64 LibEntryOffsets[4];
-    ULONG LibStage;
-    ULONG64 InterpBase;
-    ULONG64 InterpEntry;
     CHAR LibNames[4][48];
     ULONG GlobalCount;
     ULONG GlobalCapacity;
@@ -592,7 +588,6 @@ static int LoadFileToBuffer(const wchar_t *Path, UCHAR **OutData, ULONG *OutSize
     return 1;
 }
 
-static ULONG64 g_ShiftToBase = 0;
 static int SendLoadElf(HANDLE device, const wchar_t *Path)
 {
     UCHAR *fileData = NULL;
@@ -638,22 +633,6 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            ehdr->e_phnum, ehdr->e_phentsize);
 
     phdr = (ELF64_PHDR *)(fileData + ehdr->e_phoff);
-
-    if (g_ShiftToBase != 0)
-    {
-        for (i = 0; i < ehdr->e_phnum && i < 64; i++)
-        {
-            ELF64_PHDR *sp = (ELF64_PHDR *)((UCHAR *)phdr + i * ehdr->e_phentsize);
-            if (sp->p_type == 1 || sp->p_type == 2 || sp->p_type == 7)
-            {
-                sp->p_vaddr += g_ShiftToBase;
-                sp->p_paddr += g_ShiftToBase;
-            }
-        }
-        ehdr->e_entry += g_ShiftToBase;
-        printf("  SHIFT: rebased by 0x%llx entry=0x%llx\n",
-               (unsigned long long)g_ShiftToBase, (unsigned long long)ehdr->e_entry);
-    }
 
     for (i = 0; i < ehdr->e_phnum && i < 64; i++)
     {
@@ -838,10 +817,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  GLOBAL: [%lu] %.48s\n", gi, q.GlobalFirstNames[gi]);
         }
     }
-    printf("  LDSO: entry=0x%llx base=0x%llx stage=%lu\n",
-           (unsigned long long)q.LdsoEntry, (unsigned long long)q.LdsoBase, q.LibStage);
-    printf("  INTERP: base=0x%llx entry=0x%llx\n",
-           (unsigned long long)q.InterpBase, (unsigned long long)q.InterpEntry);
+        printf("  LDSO: entry=0x%llx base=0x%llx\n",
+               (unsigned long long)q.LdsoEntry, (unsigned long long)q.LdsoBase);
     printf("  LIBS: attempted=%lu loaded=%lu failed=%lu lastStatus=0x%08lx\n",
            q.LibAttempted, q.LibLoaded, q.LibFailed, q.LibLastStatus);
     printf("  LIBS: symbols=%lu relocs=%lu nameFail=%lu pathFail=%lu\n",
@@ -914,7 +891,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
 
         for (si = 0; si < q.SymDumped && si < 16; si++)
         {
-            printf("  SYMS: [%lu] off=0x%lx nameOff=%lu name=%.48s\n", si,
+            printf("  SYMS: [%lu] off=0x%lx nameOff=%lu name=%.32s\n", si,
                    q.SymRelocOffsets[si], q.SymNameOffsets[si], q.SymNames[si]);
         }
     }
@@ -970,7 +947,6 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        g_ShiftToBase = 0;
         SendLoadElf(device, L"C:\\Windows\\dy.x64");
 
         printf("\n");
