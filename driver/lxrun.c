@@ -874,6 +874,7 @@ static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
+static ULONG g_LdsoReadProbe = 1;
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
 static LX_RELOC_STATS g_RelocStats;
@@ -8140,7 +8141,11 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    if (g_LdsoEntry != 0)
+    if (g_LdsoEntry != 0 && g_LdsoReadProbe == 0)
+    {
+        threadArgs[2] = g_ElfEntry;
+    }
+    else if (g_LdsoEntry != 0)
     {
         threadArgs[2] = g_LdsoEntry;
     }
