@@ -7361,7 +7361,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                         destAddress = Entry->BaseAddress + rela.Offset;
                         newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
                     }
-                    else if (relocType == LX_R_X86_64_IRELATIVE)
+                    else if (relocType == LX_R_X86_64_IRELATIVE && g_LdsoReadProbe == 0)
                     {
                         destAddress = Entry->BaseAddress + rela.Offset;
                         newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
