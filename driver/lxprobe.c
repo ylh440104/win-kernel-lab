@@ -968,7 +968,7 @@ int main(void)
     {
         g_ShiftToBase = 0;
         SendLoadElf(device, L"C:\\Windows\\dy.x64");
-        g_ShiftToBase = 0x10000000ull;
+        g_ShiftToBase = 0x20000000ull;
         SendLoadElf(device, L"C:\\Windows\\lxroot\\lib\\x86_64-linux-gnu\\ld-linux-x86-64.so.2");
         g_ShiftToBase = 0;
 
