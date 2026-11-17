@@ -590,7 +590,7 @@ static int LoadFileToBuffer(const wchar_t *Path, UCHAR **OutData, ULONG *OutSize
     return 1;
 }
 
-static ULONG64 g_ShiftToBase = 0x400000ull;
+static ULONG64 g_ShiftToBase = 0;
 static int SendLoadElf(HANDLE device, const wchar_t *Path)
 {
     UCHAR *fileData = NULL;
@@ -966,7 +966,11 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
+        g_ShiftToBase = 0;
+        SendLoadElf(device, L"C:\\Windows\\dy.x64");
+        g_ShiftToBase = 0x10000000ull;
         SendLoadElf(device, L"C:\\Windows\\lxroot\\lib\\x86_64-linux-gnu\\ld-linux-x86-64.so.2");
+        g_ShiftToBase = 0;
 
         printf("\n");
         memset(&q, 0, sizeof(q));
