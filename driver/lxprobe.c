@@ -590,6 +590,7 @@ static int LoadFileToBuffer(const wchar_t *Path, UCHAR **OutData, ULONG *OutSize
     return 1;
 }
 
+static ULONG64 g_ShiftToBase = 0x400000ull;
 static int SendLoadElf(HANDLE device, const wchar_t *Path)
 {
     UCHAR *fileData = NULL;
@@ -635,6 +636,22 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            ehdr->e_phnum, ehdr->e_phentsize);
 
     phdr = (ELF64_PHDR *)(fileData + ehdr->e_phoff);
+
+    if (g_ShiftToBase != 0)
+    {
+        for (i = 0; i < ehdr->e_phnum && i < 64; i++)
+        {
+            ELF64_PHDR *sp = (ELF64_PHDR *)((UCHAR *)phdr + i * ehdr->e_phentsize);
+            if (sp->p_type == 1 || sp->p_type == 2 || sp->p_type == 7)
+            {
+                sp->p_vaddr += g_ShiftToBase;
+                sp->p_paddr += g_ShiftToBase;
+            }
+        }
+        ehdr->e_entry += g_ShiftToBase;
+        printf("  SHIFT: rebased by 0x%llx entry=0x%llx\n",
+               (unsigned long long)g_ShiftToBase, (unsigned long long)ehdr->e_entry);
+    }
 
     for (i = 0; i < ehdr->e_phnum && i < 64; i++)
     {
@@ -949,7 +966,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\dy.x64");
+        SendLoadElf(device, L"C:\\Windows\\lxroot\\lib\\x86_64-linux-gnu\\ld-linux-x86-64.so.2");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
