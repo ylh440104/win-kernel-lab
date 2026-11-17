@@ -276,6 +276,7 @@ typedef struct _LX_LIB_ENTRY
     ULONG TpoffCount;
     ULONG64 TpoffOffsets[64];
     ULONG TpoffApplied;
+    ULONG64 EntryOffset;
     ULONG SymDumped;
     ULONG LoadStatus;
     CHAR Name[LX_MAX_SYMBOL_NAME];
@@ -488,10 +489,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LibImageSize[4];
     ULONG64 LdsoEntry;
     ULONG64 LdsoBase;
-    ULONG64 LibEntryOffsets[4];
-    ULONG LibStage;
-    ULONG64 InterpBase;
-    ULONG64 InterpEntry;
     CHAR LibNames[4][48];
     ULONG GlobalCount;
     ULONG GlobalCapacity;
@@ -875,16 +872,9 @@ static volatile ULONG64 g_LastSyscallNo = 0;
 static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
-static ULONG64 g_InterpBase = 0;
-static ULONG64 g_InterpEntry = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
-static ULONG g_LdsoReadProbe = 0;
-static ULONG g_LdsoExecEnable = 0;
-static ULONG g_LibSkipSym = 1;
-static ULONG g_LibSkipReloc = 1;
-static ULONG g_LibStage = 0;
-static ULONG64 g_LibEntryOffsets[LX_MAX_LIBS] = {0, 0, 0, 0};
+static ULONG g_LdsoReadProbe = 1;
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
 static LX_RELOC_STATS g_RelocStats;
@@ -6999,7 +6989,6 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
     ULONG copiedName;
 
     RtlZeroMemory(Entry, sizeof(LX_LIB_ENTRY));
-    g_LibStage = 1;
 
     for (copiedName = 0; copiedName + 1 < LX_MAX_SYMBOL_NAME && Name[copiedName] != 0; copiedName++)
     {
@@ -7029,7 +7018,6 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         return 0;
     }
 
-    g_LibStage = 2;
     if (fileBuffer[0] != 0x7F || fileBuffer[1] != 'E' || fileBuffer[2] != 'L' || fileBuffer[3] != 'F')
     {
         Entry->LoadStatus = 0xC000007Bu;
@@ -7044,9 +7032,11 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         USHORT phnum = *(USHORT *)(fileBuffer + 56);
         USHORT phentsize = *(USHORT *)(fileBuffer + 54);
 
-        g_LibStage = 3;
         Entry->PhdrCount = phnum;
-        g_LibEntryOffsets[LibIndex] = *(ULONG64 *)(fileBuffer + 24);
+        if (g_LdsoReadProbe == 0)
+        {
+            Entry->EntryOffset = *(ULONG64 *)(fileBuffer + 24);
+        }
         Entry->PhdrEntrySize = phentsize;
 
         if (phoff + (ULONG64)phnum * phentsize > fileLength || phentsize < 56 || phnum == 0)
@@ -7115,7 +7105,6 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         }
     }
 
-    g_LibStage = 4;
     baseAddress = 0x10000000ull + (ULONG64)LibIndex * LX_LIB_BASE_STEP;
     Entry->BaseAddress = baseAddress;
 
@@ -7135,7 +7124,6 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         return 0;
     }
 
-    g_LibStage = 5;
     viewBase = (PVOID)(ULONG_PTR)baseAddress;
     viewSize = 0;
 
@@ -7187,7 +7175,6 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                 continue;
             }
 
-            g_LibStage = 6;
             destAddress = Entry->BaseAddress + (pVaddr - minVaddr);
 
             copyStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), fileBuffer + pOffset, TargetProcess,
@@ -7243,8 +7230,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                 Entry->NeededOffsets[phdrIndex] = libDynamic.NeededOffsets[phdrIndex];
             }
 
-            g_LibStage = 7;
-            if (libDynamic.SymTabVaddr != 0 && libDynamic.StrTabVaddr != 0 && g_LibSkipSym == 0)
+            if (libDynamic.SymTabVaddr != 0 && libDynamic.StrTabVaddr != 0)
             {
                 ULONG64 symTabOffset = libDynamic.SymTabVaddr - minVaddr;
                 ULONG64 strTabOffset = libDynamic.StrTabVaddr - minVaddr;
@@ -7336,8 +7322,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     Stats->TotalSymbols++;
                 }
             }
-            g_LibStage = 8;
-            if (libDynamic.HasDynamic && libDynamic.RelaSize > 0 && libDynamic.RelaVaddr != 0 && g_LibSkipReloc == 0)
+            if (libDynamic.HasDynamic && libDynamic.RelaSize > 0 && libDynamic.RelaVaddr != 0)
             {
                 ULONG64 relaOffset = libDynamic.RelaVaddr - minVaddr;
                 ULONG relaCount = (ULONG)(libDynamic.RelaSize / sizeof(LX_ELF_RELA));
@@ -7375,6 +7360,11 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                         continue;
                     }
                     if (relocType == LX_R_X86_64_RELATIVE)
+                    {
+                        destAddress = Entry->BaseAddress + rela.Offset;
+                        newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
+                    }
+                    else if (relocType == LX_R_X86_64_IRELATIVE && g_LdsoReadProbe == 0)
                     {
                         destAddress = Entry->BaseAddress + rela.Offset;
                         newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
@@ -7524,7 +7514,6 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     }
     }
 
-    g_LibStage = 10;
     Entry->LoadStatus = 0;
     Stats->Loaded++;
     {
@@ -7541,7 +7530,6 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
     ExFreePool(fileBuffer);
 
     /* 递归加载本库依赖的库（库依赖库） */
-    g_LibStage = 9;
     if (Entry->NeededCount > 0)
     {
         LX_ELF_DYNAMIC_INFO nestedInfo;
@@ -7658,32 +7646,33 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
         return;
     }
     LxLoadNeededLibrariesEx(ImageData, ImageSize, Load->MinVaddr, Info, TargetProcess, Stats, Globals);
-    if (g_LdsoReadProbe == 0)
     {
         ULONG libIdx;
         g_LdsoEntry = 0;
-        for (libIdx = 0; libIdx < LX_MAX_LIBS; libIdx++)
+        if (g_LdsoReadProbe == 0)
         {
-            if (Stats->Libs[libIdx].Used == 0)
+            for (libIdx = 0; libIdx < LX_MAX_LIBS; libIdx++)
             {
-                continue;
-            }
-            if (g_LibEntryOffsets[libIdx] == 0)
-            {
-                continue;
-            }
-            {
-                const char *n = Stats->Libs[libIdx].Name;
-                if (n[0] == 'l' && n[1] == 'd' && n[2] == '-' && n[3] == 'l')
+                if (Stats->Libs[libIdx].Used == 0)
                 {
-                    g_LdsoEntry = Stats->Libs[libIdx].BaseAddress + g_LibEntryOffsets[libIdx];
-                    g_LdsoBase = Stats->Libs[libIdx].BaseAddress;
+                    continue;
+                }
+                if (Stats->Libs[libIdx].EntryOffset == 0)
+                {
+                    continue;
+                }
+                {
+                    const char *n = Stats->Libs[libIdx].Name;
+                    if (n[0] == 'l' && n[1] == 'd' && n[2] == '-' && n[3] == 'l')
+                    {
+                        g_LdsoEntry = Stats->Libs[libIdx].BaseAddress + Stats->Libs[libIdx].EntryOffset;
+                        g_LdsoBase = Stats->Libs[libIdx].BaseAddress;
+                    }
                 }
             }
         }
     }
 }
-
 
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 {
@@ -7702,10 +7691,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 
     g_ElfStatus = 0xFFFFFFFFu;
     g_ElfMapStatus = 0xFFFFFFFFu;
-    if (load->MinVaddr < 0x10000000ull)
-    {
-        g_ElfBase = 0;
-    }
+    g_ElfBase = 0;
     g_ElfCopiedTotal = 0;
     g_ElfViewSize = 0;
 
@@ -7769,10 +7755,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
                                 ViewUnmap, 0, PAGE_EXECUTE_READWRITE);
 
     g_ElfMapStatus = (ULONG)status;
-    if (load->MinVaddr < 0x10000000ull)
-    {
-        g_ElfBase = (ULONG64)(ULONG_PTR)baseAddress;
-    }
+    g_ElfBase = (ULONG64)(ULONG_PTR)baseAddress;
     g_ElfViewSize = (ULONG64)viewSize;
 
     if (!NT_SUCCESS(status))
@@ -7809,16 +7792,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     }
 
     g_ElfStatus = 0;
-    if (load->MinVaddr >= 0x10000000ull)
-    {
-        g_InterpBase = load->MinVaddr;
-        g_InterpEntry = load->EntryPoint;
-    }
-    else
-    {
-        g_ElfEntry = load->EntryPoint;
-        RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
-    }
+    g_ElfEntry = load->EntryPoint;
+    RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
 
     {
         UCHAR expected[8];
@@ -7839,11 +7814,6 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     }
 
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
-    if (load->MinVaddr >= 0x10000000ull)
-    {
-        ObDereferenceObject(targetProcess);
-        return;
-    }
     LxApplyRelocations(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_RelocStats);
     LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
 
@@ -8182,7 +8152,18 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    threadArgs[2] = g_ElfEntry;
+    if (g_LdsoEntry != 0 && g_LdsoReadProbe == 0)
+    {
+        threadArgs[2] = g_ElfEntry;
+    }
+    else if (g_LdsoEntry != 0)
+    {
+        threadArgs[2] = g_LdsoEntry;
+    }
+    else
+    {
+        threadArgs[2] = g_ElfEntry;
+    }
     threadArgs[0x17] = g_PicoContext;
     threadArgs[7] = 0x002b0053ull;
 
@@ -8455,10 +8436,6 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
                 result->LdsoEntry = g_LdsoEntry;
                 result->LdsoBase = g_LdsoBase;
-                result->LibEntryOffsets[i] = g_LibEntryOffsets[i];
-                result->LibStage = g_LibStage;
-                result->InterpBase = g_InterpBase;
-                result->InterpEntry = g_InterpEntry;
                 RtlCopyMemory(result->LibNames[i], g_LibStats.Libs[i].Name, 48);
             }
 
