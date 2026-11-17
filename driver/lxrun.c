@@ -873,6 +873,8 @@ static volatile ULONG64 g_LastSyscallNo = 0;
 static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
+static ULONG64 g_InterpBase = 0;
+static ULONG64 g_InterpEntry = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 0;
@@ -7697,7 +7699,10 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 
     g_ElfStatus = 0xFFFFFFFFu;
     g_ElfMapStatus = 0xFFFFFFFFu;
-    g_ElfBase = 0;
+    if (load->MinVaddr < 0x10000000ull)
+    {
+        g_ElfBase = 0;
+    }
     g_ElfCopiedTotal = 0;
     g_ElfViewSize = 0;
 
@@ -7761,7 +7766,10 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
                                 ViewUnmap, 0, PAGE_EXECUTE_READWRITE);
 
     g_ElfMapStatus = (ULONG)status;
-    g_ElfBase = (ULONG64)(ULONG_PTR)baseAddress;
+    if (load->MinVaddr < 0x10000000ull)
+    {
+        g_ElfBase = (ULONG64)(ULONG_PTR)baseAddress;
+    }
     g_ElfViewSize = (ULONG64)viewSize;
 
     if (!NT_SUCCESS(status))
@@ -7798,8 +7806,16 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     }
 
     g_ElfStatus = 0;
-    g_ElfEntry = load->EntryPoint;
-    RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
+    if (load->MinVaddr >= 0x10000000ull)
+    {
+        g_InterpBase = load->MinVaddr;
+        g_InterpEntry = load->EntryPoint;
+    }
+    else
+    {
+        g_ElfEntry = load->EntryPoint;
+        RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
+    }
 
     {
         UCHAR expected[8];
@@ -7820,6 +7836,11 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     }
 
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
+    if (load->MinVaddr >= 0x10000000ull)
+    {
+        ObDereferenceObject(targetProcess);
+        return;
+    }
     LxApplyRelocations(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_RelocStats);
     LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
 
@@ -8039,6 +8060,8 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
     slots[index++] = Load->PhdrCount;
     slots[index++] = 9;
     slots[index++] = Load->EntryPoint;
+    slots[index++] = 7;
+    slots[index++] = g_InterpBase;
     slots[index++] = 11;
     slots[index++] = 0;
     slots[index++] = 12;
@@ -8158,9 +8181,9 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    if (g_LdsoEntry != 0 && g_LdsoExecEnable != 0)
+    if (g_InterpEntry != 0)
     {
-        threadArgs[2] = g_LdsoEntry;
+        threadArgs[2] = g_InterpEntry;
     }
     else
     {
