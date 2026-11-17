@@ -7033,7 +7033,10 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         USHORT phentsize = *(USHORT *)(fileBuffer + 54);
 
         Entry->PhdrCount = phnum;
-        Entry->EntryOffset = *(ULONG64 *)(fileBuffer + 24);
+        if (g_LdsoReadProbe == 0)
+        {
+            Entry->EntryOffset = *(ULONG64 *)(fileBuffer + 24);
+        }
         Entry->PhdrEntrySize = phentsize;
 
         if (phoff + (ULONG64)phnum * phentsize > fileLength || phentsize < 56 || phnum == 0)
@@ -7641,22 +7644,25 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
     {
         ULONG libIdx;
         g_LdsoEntry = 0;
-        for (libIdx = 0; libIdx < LX_MAX_LIBS; libIdx++)
+        if (g_LdsoReadProbe == 0)
         {
-            if (Stats->Libs[libIdx].Used == 0)
+            for (libIdx = 0; libIdx < LX_MAX_LIBS; libIdx++)
             {
-                continue;
-            }
-            if (Stats->Libs[libIdx].EntryOffset == 0)
-            {
-                continue;
-            }
-            {
-                const char *n = Stats->Libs[libIdx].Name;
-                if (n[0] == 'l' && n[1] == 'd' && n[2] == '-' && n[3] == 'l')
+                if (Stats->Libs[libIdx].Used == 0)
                 {
-                    g_LdsoEntry = Stats->Libs[libIdx].BaseAddress + Stats->Libs[libIdx].EntryOffset;
-                    g_LdsoBase = Stats->Libs[libIdx].BaseAddress;
+                    continue;
+                }
+                if (Stats->Libs[libIdx].EntryOffset == 0)
+                {
+                    continue;
+                }
+                {
+                    const char *n = Stats->Libs[libIdx].Name;
+                    if (n[0] == 'l' && n[1] == 'd' && n[2] == '-' && n[3] == 'l')
+                    {
+                        g_LdsoEntry = Stats->Libs[libIdx].BaseAddress + Stats->Libs[libIdx].EntryOffset;
+                        g_LdsoBase = Stats->Libs[libIdx].BaseAddress;
+                    }
                 }
             }
         }
