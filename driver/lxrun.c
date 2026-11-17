@@ -280,7 +280,6 @@ typedef struct _LX_LIB_ENTRY
     ULONG LoadStatus;
     CHAR Name[LX_MAX_SYMBOL_NAME];
     CHAR FirstSymbol[LX_MAX_SYMBOL_NAME];
-    ULONG64 EntryOffset;
 } LX_LIB_ENTRY;
 
 typedef struct _LX_LIB_STATS
@@ -873,6 +872,7 @@ static ULONG64 g_ElfEntry = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 1;
+static ULONG64 g_LibEntryOffsets[LX_MAX_LIBS] = {0, 0, 0, 0};
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
 static LX_RELOC_STATS g_RelocStats;
@@ -7031,7 +7031,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         USHORT phentsize = *(USHORT *)(fileBuffer + 54);
 
         Entry->PhdrCount = phnum;
-        Entry->EntryOffset = *(ULONG64 *)(fileBuffer + 24);
+        g_LibEntryOffsets[LibIndex] = *(ULONG64 *)(fileBuffer + 24);
         Entry->PhdrEntrySize = phentsize;
 
         if (phoff + (ULONG64)phnum * phentsize > fileLength || phentsize < 56 || phnum == 0)
@@ -7636,30 +7636,6 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
         return;
     }
     LxLoadNeededLibrariesEx(ImageData, ImageSize, Load->MinVaddr, Info, TargetProcess, Stats, Globals);
-    if (g_LdsoReadProbe == 0)
-    {
-        ULONG libIdx;
-        g_LdsoEntry = 0;
-        for (libIdx = 0; libIdx < LX_MAX_LIBS; libIdx++)
-        {
-            if (Stats->Libs[libIdx].Used == 0)
-            {
-                continue;
-            }
-            if (Stats->Libs[libIdx].EntryOffset == 0)
-            {
-                continue;
-            }
-            {
-                const char *n = Stats->Libs[libIdx].Name;
-                if (n[0] == 'l' && n[1] == 'd' && n[2] == '-' && n[3] == 'l')
-                {
-                    g_LdsoEntry = Stats->Libs[libIdx].BaseAddress + Stats->Libs[libIdx].EntryOffset;
-                    g_LdsoBase = Stats->Libs[libIdx].BaseAddress;
-                }
-            }
-        }
-    }
 }
 
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
@@ -8140,14 +8116,7 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    if (g_LdsoEntry != 0 && g_LdsoReadProbe == 0)
-    {
-        threadArgs[2] = g_LdsoEntry;
-    }
-    else
-    {
-        threadArgs[2] = g_ElfEntry;
-    }
+    threadArgs[2] = g_ElfEntry;
     threadArgs[0x17] = g_PicoContext;
     threadArgs[7] = 0x002b0053ull;
 
