@@ -489,6 +489,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LdsoEntry;
     ULONG64 LdsoBase;
     ULONG64 LibEntryOffsets[4];
+    ULONG LibStage;
     CHAR LibNames[4][48];
     ULONG GlobalCount;
     ULONG GlobalCapacity;
@@ -878,6 +879,7 @@ static ULONG g_LdsoReadProbe = 0;
 static ULONG g_LdsoExecEnable = 0;
 static ULONG g_LibSkipSym = 0;
 static ULONG g_LibSkipReloc = 1;
+static ULONG g_LibStage = 0;
 static ULONG64 g_LibEntryOffsets[LX_MAX_LIBS] = {0, 0, 0, 0};
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
@@ -6993,6 +6995,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
     ULONG copiedName;
 
     RtlZeroMemory(Entry, sizeof(LX_LIB_ENTRY));
+    g_LibStage = 1;
 
     for (copiedName = 0; copiedName + 1 < LX_MAX_SYMBOL_NAME && Name[copiedName] != 0; copiedName++)
     {
@@ -7022,6 +7025,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         return 0;
     }
 
+    g_LibStage = 2;
     if (fileBuffer[0] != 0x7F || fileBuffer[1] != 'E' || fileBuffer[2] != 'L' || fileBuffer[3] != 'F')
     {
         Entry->LoadStatus = 0xC000007Bu;
@@ -7036,6 +7040,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         USHORT phnum = *(USHORT *)(fileBuffer + 56);
         USHORT phentsize = *(USHORT *)(fileBuffer + 54);
 
+        g_LibStage = 3;
         Entry->PhdrCount = phnum;
         g_LibEntryOffsets[LibIndex] = *(ULONG64 *)(fileBuffer + 24);
         Entry->PhdrEntrySize = phentsize;
@@ -7106,6 +7111,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         }
     }
 
+    g_LibStage = 4;
     baseAddress = 0x10000000ull + (ULONG64)LibIndex * LX_LIB_BASE_STEP;
     Entry->BaseAddress = baseAddress;
 
@@ -7125,6 +7131,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         return 0;
     }
 
+    g_LibStage = 5;
     viewBase = (PVOID)(ULONG_PTR)baseAddress;
     viewSize = 0;
 
@@ -7176,6 +7183,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                 continue;
             }
 
+            g_LibStage = 6;
             destAddress = Entry->BaseAddress + (pVaddr - minVaddr);
 
             copyStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), fileBuffer + pOffset, TargetProcess,
@@ -7231,6 +7239,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                 Entry->NeededOffsets[phdrIndex] = libDynamic.NeededOffsets[phdrIndex];
             }
 
+            g_LibStage = 7;
             if (libDynamic.SymTabVaddr != 0 && libDynamic.StrTabVaddr != 0 && g_LibSkipSym == 0)
             {
                 ULONG64 symTabOffset = libDynamic.SymTabVaddr - minVaddr;
@@ -7323,6 +7332,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     Stats->TotalSymbols++;
                 }
             }
+            g_LibStage = 8;
             if (libDynamic.HasDynamic && libDynamic.RelaSize > 0 && libDynamic.RelaVaddr != 0 && g_LibSkipReloc == 0)
             {
                 ULONG64 relaOffset = libDynamic.RelaVaddr - minVaddr;
@@ -7510,6 +7520,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     }
     }
 
+    g_LibStage = 10;
     Entry->LoadStatus = 0;
     Stats->Loaded++;
     {
@@ -7526,6 +7537,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
     ExFreePool(fileBuffer);
 
     /* 递归加载本库依赖的库（库依赖库） */
+    g_LibStage = 9;
     if (Entry->NeededCount > 0)
     {
         LX_ELF_DYNAMIC_INFO nestedInfo;
@@ -8427,6 +8439,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LdsoEntry = g_LdsoEntry;
                 result->LdsoBase = g_LdsoBase;
                 result->LibEntryOffsets[i] = g_LibEntryOffsets[i];
+                result->LibStage = g_LibStage;
                 RtlCopyMemory(result->LibNames[i], g_LibStats.Libs[i].Name, 48);
             }
 
