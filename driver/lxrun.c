@@ -7685,7 +7685,7 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
 }
 
 
-static void LxLoadInterpImage(const UCHAR *MainImage, ULONG MainSize, PEPROCESS TargetProcess, ULONG64 PrefBase)
+static void LxLoadInterpImage(const UCHAR *MainImage, ULONG MainSize, PEPROCESS TargetProcess, ULONG64 PlaceBase)
 {
     ULONG64 phoff;
     USHORT phnum;
@@ -7699,17 +7699,10 @@ static void LxLoadInterpImage(const UCHAR *MainImage, ULONG MainSize, PEPROCESS 
     ULONG openStatus;
     ULONG64 minVaddr;
     ULONG64 maxEnd;
-    ULONG64 imageSize;
-    HANDLE secHandle;
-    OBJECT_ATTRIBUTES secAttr;
-    LARGE_INTEGER secSize;
-    PVOID viewBase;
-    SIZE_T viewSize;
-    NTSTATUS st;
 
     g_InterpBase = 0;
     g_InterpEntry = 0;
-    if (MainImage == NULL || MainSize < 64 || TargetProcess == NULL)
+    if (MainImage == NULL || MainSize < 64 || TargetProcess == NULL || PlaceBase == 0)
     {
         return;
     }
@@ -7783,6 +7776,7 @@ static void LxLoadInterpImage(const UCHAR *MainImage, ULONG MainSize, PEPROCESS 
         ULONG64 iphoff = *(const ULONG64 *)(fb + 32);
         USHORT iphnum = *(const USHORT *)(fb + 56);
         USHORT iphentsize = *(const USHORT *)(fb + 54);
+        ULONG64 entryVaddr = *(const ULONG64 *)(fb + 24);
         minVaddr = 0xFFFFFFFFFFFFFFFFull;
         maxEnd = 0;
         if (iphentsize < 56 || iphnum == 0 || iphoff + (ULONG64)iphnum * iphentsize > fl)
@@ -7815,26 +7809,6 @@ static void LxLoadInterpImage(const UCHAR *MainImage, ULONG MainSize, PEPROCESS 
             ExFreePool(fb);
             return;
         }
-        imageSize = maxEnd - minVaddr;
-        secSize.QuadPart = (LONGLONG)((imageSize + 0xFFFull) & ~0xFFFull);
-        InitializeObjectAttributes(&secAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-        secHandle = NULL;
-        st = ZwCreateSection(&secHandle, SECTION_ALL_ACCESS, &secAttr, &secSize, PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL);
-        if (!NT_SUCCESS(st))
-        {
-            ExFreePool(fb);
-            return;
-        }
-        viewBase = (PVOID)(ULONG_PTR)PrefBase;
-        viewSize = 0;
-        st = ZwMapViewOfSection(secHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0, 0, NULL, &viewSize,
-                                ViewUnmap, 0, PAGE_EXECUTE_READWRITE);
-        ZwClose(secHandle);
-        if (!NT_SUCCESS(st))
-        {
-            ExFreePool(fb);
-            return;
-        }
         for (i = 0; i < iphnum && i < 64; i++)
         {
             const UCHAR *ph = fb + iphoff + (ULONG64)i * iphentsize;
@@ -7854,11 +7828,11 @@ static void LxLoadInterpImage(const UCHAR *MainImage, ULONG MainSize, PEPROCESS 
                 continue;
             }
             MmCopyVirtualMemory(PsGetCurrentProcess(), fb + pOff, TargetProcess,
-                                (PVOID)(ULONG_PTR)((ULONG64)(ULONG_PTR)viewBase + (pV - minVaddr)),
+                                (PVOID)(ULONG_PTR)(PlaceBase + (pV - minVaddr)),
                                 (SIZE_T)pFs, KernelMode, &copied);
         }
-        g_InterpBase = (ULONG64)(ULONG_PTR)viewBase;
-        g_InterpEntry = g_InterpBase + (*(const ULONG64 *)(fb + 24) - minVaddr);
+        g_InterpBase = PlaceBase;
+        g_InterpEntry = PlaceBase + (entryVaddr - minVaddr);
     }
     ExFreePool(fb);
 }
@@ -7929,6 +7903,10 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     g_PicoProcessObject = targetProcess;
 
     maximumSize.QuadPart = (LONGLONG)((load->ImageSize + 0xFFF) & ~0xFFFull);
+    if (maximumSize.QuadPart < 0x90000)
+    {
+        maximumSize.QuadPart = 0x90000;
+    }
     InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
     status = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &objectAttributes, &maximumSize,
@@ -8017,7 +7995,10 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     }
 
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
-    LxLoadInterpImage(imageData, load->DataSize, targetProcess, 0x10000000ull);
+    if (g_ElfBase != 0)
+    {
+        LxLoadInterpImage(imageData, load->DataSize, targetProcess, g_ElfBase + 0x40000ull);
+    }
     if (load->MinVaddr >= 0x10000000ull)
     {
         ObDereferenceObject(targetProcess);
