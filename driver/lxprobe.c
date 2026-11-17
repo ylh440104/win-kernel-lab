@@ -603,8 +603,7 @@ static DWORD WINAPI StageWatch(LPVOID param)
         memset(&wq, 0, sizeof(wq));
         if (DeviceIoControl(device, LX_IOCTL_QUERY, NULL, 0, &wq, sizeof(wq), &wret, NULL))
         {
-            printf("  STAGE: %lu (tick %d)
-", wq.LibStage, tick);
+            printf("  STAGE: %lu (tick %d)\n", wq.LibStage, tick);
             fflush(stdout);
         }
         Sleep(600);
