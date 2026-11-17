@@ -876,6 +876,7 @@ static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG64 g_InterpBase = 0;
+static ULONG g_InterpEnable = 0;
 static ULONG64 g_InterpEntry = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
@@ -8009,7 +8010,10 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
     if (g_ElfBase != 0)
     {
-        LxLoadInterpImage(imageData, load->DataSize, targetProcess, g_ElfBase + 0x40000ull);
+        if (g_InterpEnable != 0)
+        {
+            LxLoadInterpImage(imageData, load->DataSize, targetProcess, g_ElfBase + 0x40000ull);
+        }
     }
     if (load->MinVaddr >= 0x10000000ull)
     {
