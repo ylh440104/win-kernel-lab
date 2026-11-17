@@ -362,6 +362,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TrapGdtFault;
     ULONG64 ExcPteVa;
     ULONG64 ExcPteValue;
+    ULONG64 ExcCodeBytes;
     ULONG64 FsSetOk;
     ULONG64 FsSetFault;
     ULONG64 FlagFromScanUsed;
@@ -1063,6 +1064,8 @@ int main(void)
         printf("  EXCPTE: va=0x%llx value=0x%llx\n",
                (unsigned long long)q.ExcPteVa,
                (unsigned long long)q.ExcPteValue);
+        printf("  EXCCODE: ripBytes=0x%016llx\n",
+               (unsigned long long)q.ExcCodeBytes);
         printf("  TAIL: t0=0x%llx t1=0x%llx t2=0x%llx t3=0x%llx\n",
                (unsigned long long)q.ExcTailWords[0], (unsigned long long)q.ExcTailWords[1],
                (unsigned long long)q.ExcTailWords[2], (unsigned long long)q.ExcTailWords[3]);
