@@ -276,11 +276,11 @@ typedef struct _LX_LIB_ENTRY
     ULONG TpoffCount;
     ULONG64 TpoffOffsets[64];
     ULONG TpoffApplied;
-    ULONG64 EntryOffset;
     ULONG SymDumped;
     ULONG LoadStatus;
     CHAR Name[LX_MAX_SYMBOL_NAME];
     CHAR FirstSymbol[LX_MAX_SYMBOL_NAME];
+    ULONG64 EntryOffset;
 } LX_LIB_ENTRY;
 
 typedef struct _LX_LIB_STATS
