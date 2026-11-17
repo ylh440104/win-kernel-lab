@@ -122,8 +122,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG LibNeededCount[4];
     ULONG64 LibBase[4];
     ULONG64 LibImageSize[4];
-    ULONG64 LdsoEntry;
-    ULONG64 LdsoBase;
     CHAR LibNames[4][48];
     ULONG GlobalCount;
     ULONG GlobalCapacity;
@@ -817,8 +815,6 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  GLOBAL: [%lu] %.48s\n", gi, q.GlobalFirstNames[gi]);
         }
     }
-        printf("  LDSO: entry=0x%llx base=0x%llx\n",
-               (unsigned long long)q.LdsoEntry, (unsigned long long)q.LdsoBase);
     printf("  LIBS: attempted=%lu loaded=%lu failed=%lu lastStatus=0x%08lx\n",
            q.LibAttempted, q.LibLoaded, q.LibFailed, q.LibLastStatus);
     printf("  LIBS: symbols=%lu relocs=%lu nameFail=%lu pathFail=%lu\n",
@@ -891,7 +887,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
 
         for (si = 0; si < q.SymDumped && si < 16; si++)
         {
-            printf("  SYMS: [%lu] off=0x%lx nameOff=%lu name=%.32s\n", si,
+            printf("  SYMS: [%lu] off=0x%lx nameOff=%lu name=%.48s\n", si,
                    q.SymRelocOffsets[si], q.SymNameOffsets[si], q.SymNames[si]);
         }
     }
