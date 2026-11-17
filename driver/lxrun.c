@@ -876,7 +876,6 @@ static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG64 g_InterpBase = 0;
-static ULONG g_InterpEnable = 0;
 static ULONG64 g_InterpEntry = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
@@ -7686,170 +7685,6 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
 }
 
 
-static void LxLoadInterpImage(const UCHAR *MainImage, ULONG MainSize, PEPROCESS TargetProcess, ULONG64 PlaceBase)
-{
-    ULONG64 phoff;
-    USHORT phnum;
-    USHORT phentsize;
-    ULONG i;
-    CHAR interpPath[128];
-    CHAR baseName[64];
-    ULONG bl;
-    UCHAR *fb;
-    ULONG fl;
-    ULONG openStatus;
-    ULONG64 minVaddr;
-    ULONG64 maxEnd;
-
-    g_InterpBase = 0;
-    g_InterpEntry = 0;
-    if (MainImage == NULL || MainSize < 64 || TargetProcess == NULL || PlaceBase == 0)
-    {
-        return;
-    }
-    phoff = *(const ULONG64 *)(MainImage + 32);
-    phnum = *(const USHORT *)(MainImage + 56);
-    phentsize = *(const USHORT *)(MainImage + 54);
-    if (phentsize < 56 || phnum == 0 || phoff + (ULONG64)phnum * phentsize > MainSize)
-    {
-        return;
-    }
-    RtlZeroMemory(interpPath, sizeof(interpPath));
-    for (i = 0; i < phnum && i < 64; i++)
-    {
-        const UCHAR *ph = MainImage + phoff + (ULONG64)i * phentsize;
-        if (*(const ULONG *)(ph + 0) == 3)
-        {
-            ULONG64 off = *(const ULONG64 *)(ph + 8);
-            ULONG64 sz = *(const ULONG64 *)(ph + 32);
-            ULONG k;
-            if (off < MainSize && sz > 0 && sz < 128)
-            {
-                for (k = 0; k < sz && k < 127; k++)
-                {
-                    interpPath[k] = (CHAR)MainImage[off + k];
-                    if (interpPath[k] == 0)
-                    {
-                        break;
-                    }
-                }
-            }
-            break;
-        }
-    }
-    if (interpPath[0] == 0)
-    {
-        return;
-    }
-    RtlZeroMemory(baseName, sizeof(baseName));
-    bl = 0;
-    for (i = 0; interpPath[i] != 0 && i < 127; i++)
-    {
-        if (interpPath[i] == '/')
-        {
-            bl = 0;
-            baseName[0] = 0;
-            continue;
-        }
-        if (bl + 1 < sizeof(baseName))
-        {
-            baseName[bl++] = interpPath[i];
-            baseName[bl] = 0;
-        }
-    }
-    if (baseName[0] == 0)
-    {
-        return;
-    }
-    fb = NULL;
-    fl = 0;
-    openStatus = 0;
-    if (LxTryLoadLibraryFile(baseName, &fb, &fl, &openStatus) == 0 || fb == NULL)
-    {
-        return;
-    }
-    if (fl < 64 || fb[0] != 0x7F || fb[1] != 'E' || fb[2] != 'L' || fb[3] != 'F')
-    {
-        ExFreePool(fb);
-        return;
-    }
-    {
-        ULONG64 iphoff = *(const ULONG64 *)(fb + 32);
-        USHORT iphnum = *(const USHORT *)(fb + 56);
-        USHORT iphentsize = *(const USHORT *)(fb + 54);
-        ULONG64 entryVaddr = *(const ULONG64 *)(fb + 24);
-        minVaddr = 0xFFFFFFFFFFFFFFFFull;
-        maxEnd = 0;
-        if (iphentsize < 56 || iphnum == 0 || iphoff + (ULONG64)iphnum * iphentsize > fl)
-        {
-            ExFreePool(fb);
-            return;
-        }
-        for (i = 0; i < iphnum && i < 64; i++)
-        {
-            const UCHAR *ph = fb + iphoff + (ULONG64)i * iphentsize;
-            ULONG64 pv;
-            ULONG64 pm;
-            if (*(const ULONG *)(ph + 0) != 1)
-            {
-                continue;
-            }
-            pv = *(const ULONG64 *)(ph + 16);
-            pm = *(const ULONG64 *)(ph + 40);
-            if ((pv & ~0xFFFull) < minVaddr)
-            {
-                minVaddr = pv & ~0xFFFull;
-            }
-            if (((pv + pm) + 0xFFFull) > maxEnd)
-            {
-                maxEnd = ((pv + pm) + 0xFFFull) & ~0xFFFull;
-            }
-        }
-        if (minVaddr == 0xFFFFFFFFFFFFFFFFull || maxEnd <= minVaddr)
-        {
-            ExFreePool(fb);
-            return;
-        }
-        for (i = 0; i < iphnum && i < 64; i++)
-        {
-            const UCHAR *ph = fb + iphoff + (ULONG64)i * iphentsize;
-            ULONG64 pOff;
-            ULONG64 pV;
-            ULONG64 pFs;
-            SIZE_T copied = 0;
-            if (*(const ULONG *)(ph + 0) != 1)
-            {
-                continue;
-            }
-            pOff = *(const ULONG64 *)(ph + 8);
-            pV = *(const ULONG64 *)(ph + 16);
-            pFs = *(const ULONG64 *)(ph + 32);
-            if (pFs == 0 || pOff + pFs > fl)
-            {
-                continue;
-            }
-            {
-                ULONG64 done = 0;
-                while (done < pFs)
-                {
-                    ULONG chunk = (ULONG)((pFs - done) > 0x1000 ? 0x1000 : (pFs - done));
-                    copied = 0;
-                    if (!NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), fb + pOff + done, TargetProcess,
-                                                        (PVOID)(ULONG_PTR)(PlaceBase + (pV - minVaddr) + done),
-                                                        (SIZE_T)chunk, KernelMode, &copied)))
-                    {
-                        break;
-                    }
-                    done += chunk;
-                }
-            }
-        }
-        g_InterpBase = PlaceBase;
-        g_InterpEntry = PlaceBase + (entryVaddr - minVaddr);
-    }
-    ExFreePool(fb);
-}
-
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
 {
     LX_ELF_LOAD *load;
@@ -7916,10 +7751,6 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     g_PicoProcessObject = targetProcess;
 
     maximumSize.QuadPart = (LONGLONG)((load->ImageSize + 0xFFF) & ~0xFFFull);
-    if (maximumSize.QuadPart < 0x90000)
-    {
-        maximumSize.QuadPart = 0x90000;
-    }
     InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
     status = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &objectAttributes, &maximumSize,
@@ -8008,13 +7839,6 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     }
 
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
-    if (g_ElfBase != 0)
-    {
-        if (g_InterpEnable != 0)
-        {
-            LxLoadInterpImage(imageData, load->DataSize, targetProcess, g_ElfBase + 0x40000ull);
-        }
-    }
     if (load->MinVaddr >= 0x10000000ull)
     {
         ObDereferenceObject(targetProcess);
@@ -8239,8 +8063,6 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
     slots[index++] = Load->PhdrCount;
     slots[index++] = 9;
     slots[index++] = Load->EntryPoint;
-    slots[index++] = 7;
-    slots[index++] = g_InterpBase;
     slots[index++] = 11;
     slots[index++] = 0;
     slots[index++] = 12;
@@ -8360,14 +8182,7 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    if (g_InterpEntry != 0)
-    {
-        threadArgs[2] = g_InterpEntry;
-    }
-    else
-    {
-        threadArgs[2] = g_ElfEntry;
-    }
+    threadArgs[2] = g_ElfEntry;
     threadArgs[0x17] = g_PicoContext;
     threadArgs[7] = 0x002b0053ull;
 
