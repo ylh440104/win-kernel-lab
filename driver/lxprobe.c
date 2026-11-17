@@ -591,6 +591,17 @@ static int LoadFileToBuffer(const wchar_t *Path, UCHAR **OutData, ULONG *OutSize
 }
 
 
+
+static int SendLoadElf(HANDLE device, const wchar_t *Path);
+static HANDLE LoadThread = NULL;
+static HANDLE SendLoadElfArg = NULL;
+static volatile ULONG g_LastStageSeen = 0;
+static DWORD WINAPI LoadElfThread(LPVOID param)
+{
+    SendLoadElf((HANDLE)param, L"C:\\Windows\\dy.x64");
+    return 0;
+}
+
 static volatile LONG g_StageWatchStop = 0;
 static DWORD WINAPI StageWatch(LPVOID param)
 {
@@ -603,6 +614,7 @@ static DWORD WINAPI StageWatch(LPVOID param)
         memset(&wq, 0, sizeof(wq));
         if (DeviceIoControl(device, LX_IOCTL_QUERY, NULL, 0, &wq, sizeof(wq), &wret, NULL))
         {
+            g_LastStageSeen = wq.LibStage;
             printf("  STAGE: %lu (tick %d)\n", wq.LibStage, tick);
             fflush(stdout);
         }
@@ -980,7 +992,19 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\dy.x64");
+        {
+            DWORD waited;
+            SendLoadElfArg = device;
+            LoadThread = CreateThread(NULL, 0, LoadElfThread, device, 0, NULL);
+            waited = WaitForSingleObject(LoadThread, 90000);
+            if (waited != WAIT_OBJECT_0)
+            {
+                printf("  LOAD_ELF TIMEOUT: lastStage=%lu\n", g_LastStageSeen);
+                fflush(stdout);
+                ExitProcess(9);
+            }
+            CloseHandle(LoadThread);
+        }
 
         printf("\n");
         memset(&q, 0, sizeof(q));
