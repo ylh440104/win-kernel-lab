@@ -486,6 +486,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG LibNeededCount[4];
     ULONG64 LibBase[4];
     ULONG64 LibImageSize[4];
+    ULONG64 LdsoEntry;
+    ULONG64 LdsoBase;
+    ULONG64 LibEntryOffsets[4];
     CHAR LibNames[4][48];
     ULONG GlobalCount;
     ULONG GlobalCapacity;
@@ -871,7 +874,8 @@ static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
-static ULONG g_LdsoReadProbe = 1;
+static ULONG g_LdsoReadProbe = 0;
+static ULONG g_LdsoExecEnable = 0;
 static ULONG64 g_LibEntryOffsets[LX_MAX_LIBS] = {0, 0, 0, 0};
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
@@ -7636,6 +7640,30 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
         return;
     }
     LxLoadNeededLibrariesEx(ImageData, ImageSize, Load->MinVaddr, Info, TargetProcess, Stats, Globals);
+    if (g_LdsoReadProbe == 0)
+    {
+        ULONG libIdx;
+        g_LdsoEntry = 0;
+        for (libIdx = 0; libIdx < LX_MAX_LIBS; libIdx++)
+        {
+            if (Stats->Libs[libIdx].Used == 0)
+            {
+                continue;
+            }
+            if (g_LibEntryOffsets[libIdx] == 0)
+            {
+                continue;
+            }
+            {
+                const char *n = Stats->Libs[libIdx].Name;
+                if (n[0] == 'l' && n[1] == 'd' && n[2] == '-' && n[3] == 'l')
+                {
+                    g_LdsoEntry = Stats->Libs[libIdx].BaseAddress + g_LibEntryOffsets[libIdx];
+                    g_LdsoBase = Stats->Libs[libIdx].BaseAddress;
+                }
+            }
+        }
+    }
 }
 
 static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
@@ -8116,7 +8144,14 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    threadArgs[2] = g_ElfEntry;
+    if (g_LdsoEntry != 0 && g_LdsoExecEnable != 0)
+    {
+        threadArgs[2] = g_LdsoEntry;
+    }
+    else
+    {
+        threadArgs[2] = g_ElfEntry;
+    }
     threadArgs[0x17] = g_PicoContext;
     threadArgs[7] = 0x002b0053ull;
 
@@ -8387,6 +8422,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibRelrApplied[i] = g_LibStats.Libs[i].RelrApplied;
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
+                result->LdsoEntry = g_LdsoEntry;
+                result->LdsoBase = g_LdsoBase;
+                result->LibEntryOffsets[i] = g_LibEntryOffsets[i];
                 RtlCopyMemory(result->LibNames[i], g_LibStats.Libs[i].Name, 48);
             }
 
