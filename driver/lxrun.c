@@ -7827,9 +7827,21 @@ static void LxLoadInterpImage(const UCHAR *MainImage, ULONG MainSize, PEPROCESS 
             {
                 continue;
             }
-            MmCopyVirtualMemory(PsGetCurrentProcess(), fb + pOff, TargetProcess,
-                                (PVOID)(ULONG_PTR)(PlaceBase + (pV - minVaddr)),
-                                (SIZE_T)pFs, KernelMode, &copied);
+            {
+                ULONG64 done = 0;
+                while (done < pFs)
+                {
+                    ULONG chunk = (ULONG)((pFs - done) > 0x1000 ? 0x1000 : (pFs - done));
+                    copied = 0;
+                    if (!NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), fb + pOff + done, TargetProcess,
+                                                        (PVOID)(ULONG_PTR)(PlaceBase + (pV - minVaddr) + done),
+                                                        (SIZE_T)chunk, KernelMode, &copied)))
+                    {
+                        break;
+                    }
+                    done += chunk;
+                }
+            }
         }
         g_InterpBase = PlaceBase;
         g_InterpEntry = PlaceBase + (entryVaddr - minVaddr);
