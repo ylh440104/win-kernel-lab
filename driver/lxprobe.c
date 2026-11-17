@@ -590,40 +590,6 @@ static int LoadFileToBuffer(const wchar_t *Path, UCHAR **OutData, ULONG *OutSize
     return 1;
 }
 
-
-
-static int SendLoadElf(HANDLE device, const wchar_t *Path);
-static HANDLE LoadThread = NULL;
-static HANDLE SendLoadElfArg = NULL;
-static volatile ULONG g_LastStageSeen = 0;
-static DWORD WINAPI LoadElfThread(LPVOID param)
-{
-    SendLoadElf((HANDLE)param, L"C:\\Windows\\dy.x64");
-    return 0;
-}
-
-static volatile LONG g_StageWatchStop = 0;
-static DWORD WINAPI StageWatch(LPVOID param)
-{
-    HANDLE device = (HANDLE)param;
-    int tick = 0;
-    while (g_StageWatchStop == 0 && tick < 120)
-    {
-        LX_QUERY_RESULT wq;
-        DWORD wret = 0;
-        memset(&wq, 0, sizeof(wq));
-        if (DeviceIoControl(device, LX_IOCTL_QUERY, NULL, 0, &wq, sizeof(wq), &wret, NULL))
-        {
-            g_LastStageSeen = wq.LibStage;
-            printf("  STAGE: %lu (tick %d)\n", wq.LibStage, tick);
-            fflush(stdout);
-        }
-        Sleep(600);
-        tick++;
-    }
-    return 0;
-}
-
 static int SendLoadElf(HANDLE device, const wchar_t *Path)
 {
     UCHAR *fileData = NULL;
@@ -768,16 +734,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            load->DataSize, bufferSize);
 
     memset(&q, 0, sizeof(q));
-    {
-        HANDLE watch = CreateThread(NULL, 0, StageWatch, device, 0, NULL);
-        ok = DeviceIoControl(device, LX_IOCTL_LOAD_ELF, buffer, bufferSize, &q, sizeof(q), &ret, NULL);
-        g_StageWatchStop = 1;
-        if (watch != NULL)
-        {
-            WaitForSingleObject(watch, 3000);
-            CloseHandle(watch);
-        }
-    }
+    ok = DeviceIoControl(device, LX_IOCTL_LOAD_ELF, buffer, bufferSize, &q, sizeof(q), &ret, NULL);
 
     printf("LOAD_ELF: ok=%d ret=%lu\n", ok ? 1 : 0, ret);
     printf("  GOTDUMP: arch=0x%llx g0=0x%llx g1=0x%llx g2=0x%llx g7=0x%llx\n", (unsigned long long)q.GotArch, (unsigned long long)q.GotDump[0], (unsigned long long)q.GotDump[1], (unsigned long long)q.GotDump[2], (unsigned long long)q.GotDump[7]);
@@ -862,8 +819,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  GLOBAL: [%lu] %.48s\n", gi, q.GlobalFirstNames[gi]);
         }
     }
-    printf("  LDSO: entry=0x%llx base=0x%llx\n",
-           (unsigned long long)q.LdsoEntry, (unsigned long long)q.LdsoBase);
+    printf("  LDSO: entry=0x%llx base=0x%llx stage=%lu\n",
+           (unsigned long long)q.LdsoEntry, (unsigned long long)q.LdsoBase, q.LibStage);
     printf("  LIBS: attempted=%lu loaded=%lu failed=%lu lastStatus=0x%08lx\n",
            q.LibAttempted, q.LibLoaded, q.LibFailed, q.LibLastStatus);
     printf("  LIBS: symbols=%lu relocs=%lu nameFail=%lu pathFail=%lu\n",
@@ -992,19 +949,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        {
-            DWORD waited;
-            SendLoadElfArg = device;
-            LoadThread = CreateThread(NULL, 0, LoadElfThread, device, 0, NULL);
-            waited = WaitForSingleObject(LoadThread, 90000);
-            if (waited != WAIT_OBJECT_0)
-            {
-                printf("  LOAD_ELF TIMEOUT: lastStage=%lu\n", g_LastStageSeen);
-                fflush(stdout);
-                ExitProcess(9);
-            }
-            CloseHandle(LoadThread);
-        }
+        SendLoadElf(device, L"C:\\Windows\\dy.x64");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
