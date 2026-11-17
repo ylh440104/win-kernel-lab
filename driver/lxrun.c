@@ -7354,6 +7354,11 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                         destAddress = Entry->BaseAddress + rela.Offset;
                         newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
                     }
+                    else if (relocType == LX_R_X86_64_IRELATIVE)
+                    {
+                        destAddress = Entry->BaseAddress + rela.Offset;
+                        newValue = Entry->BaseAddress + (ULONG64)rela.Addend;
+                    }
                     else if (relocType == LX_R_X86_64_JUMP_SLOT || relocType == LX_R_X86_64_GLOB_DAT)
                     {
                         ULONG64 symIndex = rela.Info >> 32;
