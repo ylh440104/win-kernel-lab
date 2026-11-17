@@ -126,6 +126,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LdsoBase;
     ULONG64 LibEntryOffsets[4];
     ULONG LibStage;
+    ULONG64 InterpBase;
+    ULONG64 InterpEntry;
     CHAR LibNames[4][48];
     ULONG GlobalCount;
     ULONG GlobalCapacity;
@@ -838,6 +840,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     }
     printf("  LDSO: entry=0x%llx base=0x%llx stage=%lu\n",
            (unsigned long long)q.LdsoEntry, (unsigned long long)q.LdsoBase, q.LibStage);
+    printf("  INTERP: base=0x%llx entry=0x%llx\n",
+           (unsigned long long)q.InterpBase, (unsigned long long)q.InterpEntry);
     printf("  LIBS: attempted=%lu loaded=%lu failed=%lu lastStatus=0x%08lx\n",
            q.LibAttempted, q.LibLoaded, q.LibFailed, q.LibLastStatus);
     printf("  LIBS: symbols=%lu relocs=%lu nameFail=%lu pathFail=%lu\n",
@@ -968,9 +972,6 @@ int main(void)
     {
         g_ShiftToBase = 0;
         SendLoadElf(device, L"C:\\Windows\\dy.x64");
-        g_ShiftToBase = 0x20000000ull;
-        SendLoadElf(device, L"C:\\Windows\\lxroot\\lib\\x86_64-linux-gnu\\ld-linux-x86-64.so.2");
-        g_ShiftToBase = 0;
 
         printf("\n");
         memset(&q, 0, sizeof(q));
