@@ -1278,10 +1278,18 @@ printf("  writeLen=%lu\n", q.WriteLength);
             if (q.WriteLength > 0)
             {
                 char text[513];
-
                 memcpy(text, q.WriteBuffer, q.WriteLength < 512 ? q.WriteLength : 512);
                 text[q.WriteLength < 512 ? q.WriteLength : 512] = 0;
-                printf("  WRITE OUTPUT: [%s]\n", text);
+                printf("  WRITE OUTPUT: [%s]\\n", text);
+                {
+                    unsigned long long wi;
+                    printf("  WRITE HEX:");
+                    for (wi = 0; wi < q.WriteLength && wi < 32; wi++)
+                    {
+                        printf(" %02x", (unsigned char)text[wi]);
+                    }
+                    printf("\\n");
+                }
             }
         }
     }
