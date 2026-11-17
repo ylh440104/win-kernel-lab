@@ -125,6 +125,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 LdsoEntry;
     ULONG64 LdsoBase;
     ULONG64 LibEntryOffsets[4];
+    ULONG LibStage;
     CHAR LibNames[4][48];
     ULONG GlobalCount;
     ULONG GlobalCapacity;
@@ -589,6 +590,29 @@ static int LoadFileToBuffer(const wchar_t *Path, UCHAR **OutData, ULONG *OutSize
     return 1;
 }
 
+
+static volatile LONG g_StageWatchStop = 0;
+static DWORD WINAPI StageWatch(LPVOID param)
+{
+    HANDLE device = (HANDLE)param;
+    int tick = 0;
+    while (g_StageWatchStop == 0 && tick < 120)
+    {
+        LX_QUERY_RESULT wq;
+        DWORD wret = 0;
+        memset(&wq, 0, sizeof(wq));
+        if (DeviceIoControl(device, LX_IOCTL_QUERY, NULL, 0, &wq, sizeof(wq), &wret, NULL))
+        {
+            printf("  STAGE: %lu (tick %d)
+", wq.LibStage, tick);
+            fflush(stdout);
+        }
+        Sleep(600);
+        tick++;
+    }
+    return 0;
+}
+
 static int SendLoadElf(HANDLE device, const wchar_t *Path)
 {
     UCHAR *fileData = NULL;
@@ -733,7 +757,16 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            load->DataSize, bufferSize);
 
     memset(&q, 0, sizeof(q));
-    ok = DeviceIoControl(device, LX_IOCTL_LOAD_ELF, buffer, bufferSize, &q, sizeof(q), &ret, NULL);
+    {
+        HANDLE watch = CreateThread(NULL, 0, StageWatch, device, 0, NULL);
+        ok = DeviceIoControl(device, LX_IOCTL_LOAD_ELF, buffer, bufferSize, &q, sizeof(q), &ret, NULL);
+        g_StageWatchStop = 1;
+        if (watch != NULL)
+        {
+            WaitForSingleObject(watch, 3000);
+            CloseHandle(watch);
+        }
+    }
 
     printf("LOAD_ELF: ok=%d ret=%lu\n", ok ? 1 : 0, ret);
     printf("  GOTDUMP: arch=0x%llx g0=0x%llx g1=0x%llx g2=0x%llx g7=0x%llx\n", (unsigned long long)q.GotArch, (unsigned long long)q.GotDump[0], (unsigned long long)q.GotDump[1], (unsigned long long)q.GotDump[2], (unsigned long long)q.GotDump[7]);
