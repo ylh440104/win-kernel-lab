@@ -876,6 +876,8 @@ static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 0;
 static ULONG g_LdsoExecEnable = 0;
+static ULONG g_LibSkipSym = 0;
+static ULONG g_LibSkipReloc = 1;
 static ULONG64 g_LibEntryOffsets[LX_MAX_LIBS] = {0, 0, 0, 0};
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
@@ -7229,7 +7231,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                 Entry->NeededOffsets[phdrIndex] = libDynamic.NeededOffsets[phdrIndex];
             }
 
-            if (libDynamic.SymTabVaddr != 0 && libDynamic.StrTabVaddr != 0)
+            if (libDynamic.SymTabVaddr != 0 && libDynamic.StrTabVaddr != 0 && g_LibSkipSym == 0)
             {
                 ULONG64 symTabOffset = libDynamic.SymTabVaddr - minVaddr;
                 ULONG64 strTabOffset = libDynamic.StrTabVaddr - minVaddr;
@@ -7321,7 +7323,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
                     Stats->TotalSymbols++;
                 }
             }
-            if (libDynamic.HasDynamic && libDynamic.RelaSize > 0 && libDynamic.RelaVaddr != 0)
+            if (libDynamic.HasDynamic && libDynamic.RelaSize > 0 && libDynamic.RelaVaddr != 0 && g_LibSkipReloc == 0)
             {
                 ULONG64 relaOffset = libDynamic.RelaVaddr - minVaddr;
                 ULONG relaCount = (ULONG)(libDynamic.RelaSize / sizeof(LX_ELF_RELA));
