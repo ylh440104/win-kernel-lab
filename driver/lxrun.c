@@ -779,6 +779,9 @@ static ULONG g_GotReadStatus = 0xFFFFFFFFu;
 static ULONG g_StubReadStatus = 0xFFFFFFFFu;
 static ULONG g_GotReadAfterStatus = 0xFFFFFFFFu;
 static ULONG64 g_ElfExpMagic = 0;
+static ULONG64 g_ElfIarrayStatus = 0;
+static ULONG64 g_ElfIarrayValue = 0;
+static ULONG64 g_ElfSecureValue = 0;
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
 static ULONG64 g_ArchArg0 = 0;
@@ -8159,6 +8162,20 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         g_ElfBackSize = (ULONG)backSize;
         g_ElfBackMagic = readBack;
         g_ElfBackVaddr = segs[0].Vaddr;
+        {
+            ULONG64 ia0 = 0;
+            ULONG64 ensec = 0;
+            SIZE_T iaSize = 0;
+            NTSTATUS iaStatus;
+            iaStatus = MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x4a5f68ull,
+                                          PsGetCurrentProcess(), &ia0, sizeof(ia0), KernelMode, &iaSize);
+            g_ElfIarrayStatus = (ULONG)iaStatus;
+            g_ElfIarrayValue = ia0;
+            ensec = 0;
+            iaStatus = MmCopyVirtualMemory(targetProcess, (PVOID)(ULONG_PTR)0x4ab0f8ull,
+                                          PsGetCurrentProcess(), &ensec, sizeof(ensec), KernelMode, &iaSize);
+            g_ElfSecureValue = ensec;
+        }
     }
 
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
@@ -8664,6 +8681,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ElfBase = g_ElfBase;
             result->ElfExpMagic = g_ElfExpMagic;
             result->ElfBackMagic = g_ElfBackMagic;
+    result->ElfIarrayStatus = g_ElfIarrayStatus;
+    result->ElfIarrayValue = g_ElfIarrayValue;
+    result->ElfSecureValue = g_ElfSecureValue;
             result->ElfBackVaddr = g_ElfBackVaddr;
             result->ElfBackStatus = g_ElfBackStatus;
             result->ElfBackSize = g_ElfBackSize;
