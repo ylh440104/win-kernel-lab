@@ -1288,7 +1288,7 @@ printf("  writeLen=%lu\n", q.WriteLength);
                 {
                     unsigned long long wi;
                     printf("  WRITE HEX:");
-                    for (wi = 0; wi < q.WriteLength && wi < 32; wi++)
+                    for (wi = 0; wi < q.WriteLength && wi < 96; wi++)
                     {
                         printf(" %02x", (unsigned char)text[wi]);
                     }
