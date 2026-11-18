@@ -2323,8 +2323,26 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             modeBits = Parameters[2];
             pathLength = LxCopyLinuxPath(Parameters[0], kernelPath, sizeof(kernelPath));
         }
-        g_StatDebug[3] = Parameters[1];
+        g_StatDebug[3] = (Number == LX_SYS_OPENAT) ? Parameters[1] : Parameters[0];
         g_StatDebug[4] = pathLength;
+        g_StatDebug[5] = g_PicoProcessObject ? 1 : 0;
+        {
+            ULONG64 rawPath = (Number == LX_SYS_OPENAT) ? Parameters[1] : Parameters[0];
+            ULONG64 raw8 = 0;
+            LX_APC_STATE dbgApc;
+            BOOLEAN dbgAtt = FALSE;
+            if (g_PicoProcessObject != NULL)
+            {
+                __try { KeStackAttachProcess(g_PicoProcessObject, (PVOID)&dbgApc); dbgAtt = TRUE; } __except (EXCEPTION_EXECUTE_HANDLER) { dbgAtt = FALSE; }
+            }
+            __try { RtlCopyMemory(&raw8, (PVOID)(ULONG_PTR)rawPath, 8); } __except (EXCEPTION_EXECUTE_HANDLER) { raw8 = 0xDEAD0001ull; }
+            if (dbgAtt)
+            {
+                __try { KeUnstackDetachProcess((PVOID)&dbgApc); } __except (EXCEPTION_EXECUTE_HANDLER) { }
+            }
+            g_StatDebug[6] = raw8;
+            g_StatDebug[7] = rawPath;
+        }
 
         g_OpenCount++;
 
