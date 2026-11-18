@@ -905,7 +905,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  DYNAMIC: needed[%lu] strOff=%llu\n", ni, (unsigned long long)q.DynNeededOffsets[ni]);
         }
     }
-    for (i = 0; i < 4 && i < LX_ELF_MAX_SEGMENTS; i++)
+    for (i = 0; i < LX_ELF_MAX_SEGMENTS; i++)
     {
         printf("  seg[%lu] status=0x%08lx\n", i, q.ElfSegStatus[i]);
     }
