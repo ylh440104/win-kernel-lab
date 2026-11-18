@@ -3228,6 +3228,50 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
         }
 
+        if (g_PicoProcessObject != NULL && g_LastPicoHandle != NULL)
+        {
+            HANDLE anonSection = NULL;
+            OBJECT_ATTRIBUTES anonAttr;
+            PVOID anonBase = (PVOID)(ULONG_PTR)mapAddress;
+            SIZE_T anonViewSize = 0;
+            LARGE_INTEGER anonSize;
+            NTSTATUS anonStatus;
+            SECTION_MAP_PROTECTION anonProt = PAGE_READWRITE;
+            if (mapProt & 0x4u)
+            {
+                anonProt = PAGE_EXECUTE_READWRITE;
+            }
+            else if (mapProt & 0x2u)
+            {
+                anonProt = PAGE_READWRITE;
+            }
+            else
+            {
+                anonProt = PAGE_READONLY;
+            }
+            anonSize.QuadPart = (LONGLONG)mapLength;
+            InitializeObjectAttributes(&anonAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+            anonStatus = ZwCreateSection(&anonSection, SECTION_MAP_READ | SECTION_MAP_WRITE,
+                                         &anonAttr, &anonSize, PAGE_READWRITE, SEC_COMMIT, NULL);
+            g_LastMmapStatus = (ULONG64)anonStatus | 0x300000000ull;
+            if (NT_SUCCESS(anonStatus))
+            {
+                anonStatus = ZwMapViewOfSection(anonSection, (HANDLE)g_LastPicoHandle, &anonBase, 0, 0, NULL,
+                                                &anonViewSize, ViewUnmap, 0, anonProt);
+                ZwClose(anonSection);
+                g_LastMmapStatus = (ULONG64)anonStatus | 0x400000000ull;
+                if (NT_SUCCESS(anonStatus))
+                {
+                    g_MmapCurrent = (ULONG64)(ULONG_PTR)anonBase + anonViewSize;
+                    g_MmapCount++;
+                    g_LastMmapAddress = (ULONG64)(ULONG_PTR)anonBase;
+                    g_LastMmapStatus = 0;
+                    g_MmapDebug[6] = (ULONG64)(ULONG_PTR)anonBase;
+                    g_MmapDebug[7] = (ULONG64)anonViewSize;
+                    return g_LastMmapAddress;
+                }
+            }
+        }
         g_MmapCurrent = mapAddress + mapLength;
         g_MmapCount++;
         g_LastMmapAddress = mapAddress;
@@ -3483,10 +3527,109 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return 0;
 
     case LX_SYS_MPROTECT:
-        return 0;
-
+    {
+        ULONG64 protAddr = Parameters[1];
+        ULONG64 protLen = Parameters[2];
+        ULONG protFlags = (ULONG)Parameters[3];
+        ULONG newProt = PAGE_READONLY;
+        ULONG64 oldProt = 0;
+        NTSTATUS mpStatus = STATUS_UNSUCCESSFUL;
+        LX_APC_STATE mpApc;
+        BOOLEAN mpAtt = FALSE;
+        if (protFlags & 0x4u)
+        {
+            newProt = PAGE_EXECUTE_READWRITE;
+        }
+        else if (protFlags & 0x2u)
+        {
+            newProt = PAGE_READWRITE;
+        }
+        else if (protFlags & 0x1u)
+        {
+            newProt = PAGE_READONLY;
+        }
+        else
+        {
+            newProt = PAGE_NOACCESS;
+        }
+        protLen = (protLen + 0xFFF) & ~0xFFFull;
+        if (protAddr == 0 || protLen == 0 || g_PicoProcessObject == NULL || g_LastPicoHandle == NULL)
+        {
+            return (ULONG64)(-22);
+        }
+        __try
+        {
+            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&mpApc);
+            mpAtt = TRUE;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            mpAtt = FALSE;
+        }
+        __try
+        {
+            mpStatus = ZwProtectVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&protAddr,
+                                              &protLen, newProt, (PULONG)&oldProt);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            mpStatus = STATUS_ACCESS_VIOLATION;
+        }
+        if (mpAtt)
+        {
+            __try
+            {
+                KeUnstackDetachProcess((PVOID)&mpApc);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
+        }
+        g_MmapDebug[5] = (ULONG64)mpStatus;
+        return NT_SUCCESS(mpStatus) ? 0 : (ULONG64)(-12);
+    }
     case LX_SYS_MUNMAP:
+    {
+        ULONG64 unAddr = Parameters[1];
+        ULONG64 unLen = Parameters[2];
+        NTSTATUS umStatus = STATUS_UNSUCCESSFUL;
+        LX_APC_STATE umApc;
+        BOOLEAN umAtt = FALSE;
+        unLen = (unLen + 0xFFF) & ~0xFFFull;
+        if (unAddr == 0 || unLen == 0 || g_PicoProcessObject == NULL || g_LastPicoHandle == NULL)
+        {
+            return 0;
+        }
+        __try
+        {
+            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&umApc);
+            umAtt = TRUE;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            umAtt = FALSE;
+        }
+        __try
+        {
+            umStatus = ZwUnmapViewOfSection((HANDLE)g_LastPicoHandle, (PVOID)(ULONG_PTR)unAddr);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            umStatus = STATUS_ACCESS_VIOLATION;
+        }
+        if (umAtt)
+        {
+            __try
+            {
+                KeUnstackDetachProcess((PVOID)&umApc);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
+        }
+        g_MmapDebug[4] = (ULONG64)umStatus;
         return 0;
+    }
 
     case LX_SYS_GETTIMEOFDAY:
     {
