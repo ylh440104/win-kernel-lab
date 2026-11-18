@@ -1959,6 +1959,11 @@ static ULONG64 LxReadFile(ULONG Fd, PVOID UserBuffer, ULONG Count)
     NTSTATUS status;
     LARGE_INTEGER offset;
 
+    g_StatDebug[0] = (ULONG64)Fd;
+    g_StatDebug[1] = (ULONG64)(ULONG_PTR)UserBuffer;
+    g_StatDebug[2] = (ULONG64)Count;
+    g_StatDebug[3] = (Fd < LX_MAX_FD && g_FdTable[Fd].Used) ? 1 : 0;
+    g_StatDebug[4] = (ULONG64)g_GetDentsCount;
     if (Fd >= LX_MAX_FD || !g_FdTable[Fd].Used || UserBuffer == NULL || Count == 0)
     {
         return (ULONG64)(-9);
@@ -2617,17 +2622,19 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 tfRdx = 0;
                 tfR10 = 0;
             }
-            if (tfRsi != 0 && tfRsi < 0x1000)
-            {
-                fd = (ULONG)tfRsi;
-            }
-            if (tfRdx != 0)
+            g_StatDebug[5] = tfRsi;
+            g_StatDebug[6] = tfRdx;
+            if (tfRdx > 0x1000)
             {
                 gdBuf = tfRdx;
             }
-            if (tfR10 != 0 && tfR10 <= 0x100000)
+            if (tfR10 > 0 && tfR10 <= 0x100000)
             {
                 count = (ULONG)tfR10;
+            }
+            if (Parameters[1] != 0 && Parameters[1] < 0x1000)
+            {
+                fd = (ULONG)Parameters[1];
             }
         }
         if (count == 0 || count > 0x4000)
