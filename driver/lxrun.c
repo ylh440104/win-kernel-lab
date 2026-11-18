@@ -2599,19 +2599,43 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_GETDENTS64:
     {
         ULONG fd = (ULONG)Parameters[1];
+        ULONG64 gdBuf = Parameters[2];
         ULONG count = (ULONG)Parameters[3];
-
-        if (count > 0x4000)
         {
-            count = 0x4000;
+            ULONG64 tfRsi = 0;
+            ULONG64 tfRdx = 0;
+            ULONG64 tfR10 = 0;
+            __try
+            {
+                RtlCopyMemory(&tfRsi, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
+                RtlCopyMemory(&tfRdx, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+                RtlCopyMemory(&tfR10, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                tfRsi = 0;
+                tfRdx = 0;
+                tfR10 = 0;
+            }
+            if (tfRsi != 0 && tfRsi < 0x1000)
+            {
+                fd = (ULONG)tfRsi;
+            }
+            if (tfRdx != 0)
+            {
+                gdBuf = tfRdx;
+            }
+            if (tfR10 != 0 && tfR10 <= 0x100000)
+            {
+                count = (ULONG)tfR10;
+            }
         }
-
-        if (count == 0)
+        if (count == 0 || count > 0x4000)
         {
-            count = 1024;
+            count = (count == 0) ? 1024 : 0x4000;
         }
-
-        return LxGetDents64(fd, (PVOID)(ULONG_PTR)Parameters[2], count);
+        g_StatDebug[7] = gdBuf;
+        return LxGetDents64(fd, (PVOID)(ULONG_PTR)gdBuf, count);
     }
 
     case LX_SYS_ACCESS:
