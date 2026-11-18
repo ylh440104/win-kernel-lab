@@ -873,7 +873,9 @@ static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG g_SkipNeededLibs = 0;
+extern PEPROCESS PsInitialSystemProcess;
 static ULONG g_TlsRegMode = 1;
+static ULONG g_OpenInSystemContext = 1;
 static ULONG g_LibStage = 0;
 static ULONG g_LibStopAfterMap = 0;
 static ULONG g_LibStopBeforeOpen = 0;
@@ -1912,8 +1914,34 @@ static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
     }
 
     g_FdTable[slot].Handle = NULL;
-    status = ZwCreateFile(&g_FdTable[slot].Handle, access, &attributes, &statusBlock, NULL, FILE_ATTRIBUTE_NORMAL,
-                          share, disposition, options, NULL, 0);
+    {
+        LX_APC_STATE sysApc;
+        BOOLEAN sysAttached = FALSE;
+        if (g_OpenInSystemContext != 0)
+        {
+            __try
+            {
+                KeStackAttachProcess(PsInitialSystemProcess, (PVOID)&sysApc);
+                sysAttached = TRUE;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                sysAttached = FALSE;
+            }
+        }
+        status = ZwCreateFile(&g_FdTable[slot].Handle, access, &attributes, &statusBlock, NULL, FILE_ATTRIBUTE_NORMAL,
+                              share, disposition, options, NULL, 0);
+        if (sysAttached)
+        {
+            __try
+            {
+                KeUnstackDetachProcess((PVOID)&sysApc);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
+        }
+    }
     g_OpenCount++;
     g_LastOpenStatus = (ULONG)status;
 
