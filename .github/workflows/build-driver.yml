@@ -149,6 +149,8 @@ jobs:
           curl -sL -o C:\Windows\hello_x64.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/hello_x64
           curl -sL -o C:\Windows\catfile_x64.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/catfile_x64
           echo HELLO-FROM-LINUX-VFS-OK > C:\Windows\testfile.txt
+          icacls C:\Windows\testfile.txt /grant Everyone:(F)
+          icacls C:\Windows\testfile.txt
           type C:\testfile.txt
           dir C:\Windows\lxroot\lib\x86_64-linux-gnu
           copy C:\Windows\hello.x64 C:\Windows\h
