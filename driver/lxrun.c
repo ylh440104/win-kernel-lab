@@ -1403,7 +1403,7 @@ static void LxProbeSlots(ULONG64 *Parameters)
 
 static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
 {
-    CHAR staging[64];
+    CHAR staging[256];
     ULONG i;
     ULONG limit = Capacity - 1;
     ULONG attempt;
@@ -1413,9 +1413,9 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
         return 0;
     }
 
-    if (limit > 60)
+    if (limit > 250)
     {
-        limit = 60;
+        limit = 250;
     }
 
     KernelPath[0] = 0;
@@ -1424,16 +1424,40 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
     {
         BOOLEAN copied = FALSE;
 
+        LX_APC_STATE pathApc;
+        BOOLEAN pathAttached = FALSE;
+        if (g_PicoProcessObject != NULL)
+        {
+            __try
+            {
+                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&pathApc);
+                pathAttached = TRUE;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                pathAttached = FALSE;
+            }
+        }
         RtlZeroMemory(staging, sizeof(staging));
 
         __try
         {
-            RtlCopyMemory(staging, (PVOID)(ULONG_PTR)UserPath, 32);
+            RtlCopyMemory(staging, (PVOID)(ULONG_PTR)UserPath, 200);
             copied = TRUE;
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
             copied = FALSE;
+        }
+        if (pathAttached)
+        {
+            __try
+            {
+                KeUnstackDetachProcess((PVOID)&pathApc);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
         }
 
         if (!copied)
@@ -1441,7 +1465,7 @@ static ULONG LxCopyLinuxPath(ULONG64 UserPath, CHAR *KernelPath, ULONG Capacity)
             continue;
         }
 
-        for (i = 0; i < limit && i < 32; i++)
+        for (i = 0; i < limit && i < 200; i++)
         {
             CHAR value = staging[i];
 
