@@ -2313,21 +2313,23 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 modeBits;
         if (Number == LX_SYS_OPENAT)
         {
+            /* openat(dirfd, path, flags, mode) -> Parameters[1..4] */
+            openFlags = Parameters[3];
+            modeBits = Parameters[4];
+            pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
+        }
+        else
+        {
+            /* open(path, flags, mode) -> Parameters[1..3] */
             openFlags = Parameters[2];
             modeBits = Parameters[3];
             pathLength = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
         }
-        else
-        {
-            openFlags = Parameters[1];
-            modeBits = Parameters[2];
-            pathLength = LxCopyLinuxPath(Parameters[0], kernelPath, sizeof(kernelPath));
-        }
-        g_StatDebug[3] = (Number == LX_SYS_OPENAT) ? Parameters[1] : Parameters[0];
+        g_StatDebug[3] = (Number == LX_SYS_OPENAT) ? Parameters[2] : Parameters[1];
         g_StatDebug[4] = pathLength;
         g_StatDebug[5] = g_PicoProcessObject ? 1 : 0;
         {
-            ULONG64 rawPath = (Number == LX_SYS_OPENAT) ? Parameters[1] : Parameters[0];
+            ULONG64 rawPath = (Number == LX_SYS_OPENAT) ? Parameters[2] : Parameters[1];
             ULONG64 raw8 = 0;
             LX_APC_STATE dbgApc;
             BOOLEAN dbgAtt = FALSE;
