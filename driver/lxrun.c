@@ -8069,8 +8069,6 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
     slots[index++] = nameAddress;
     slots[index++] = 0;
     slots[index++] = 0;
-    slots[index++] = 0;
-
     slots[index++] = 6;
     slots[index++] = 4096;
     slots[index++] = 3;
