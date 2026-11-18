@@ -8128,6 +8128,10 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
 
     __try
     {
+        if (g_ElfBase != 0 && stackPointer > g_ElfBase + 0x100000ull)
+        {
+            RtlZeroMemory((PVOID)(ULONG_PTR)(stackPointer - 0x100000ull), 0x100000ull);
+        }
         RtlCopyMemory((PVOID)(ULONG_PTR)stackPointer, buffer, totalBytes);
         RtlCopyMemory((PVOID)(ULONG_PTR)nameAddress, name, sizeof(name));
         RtlCopyMemory((PVOID)(ULONG_PTR)platformAddress, platform, sizeof(platform));
@@ -8215,7 +8219,7 @@ static void LxCreatePicoThread(void)
     stackTop = (g_StackBase + 0x20000 - 0x100) & ~0xFull;
     if (g_ElfBase != 0)
     {
-        stackTop = (g_ElfBase + 0x20000 - 0x100) & ~0xFull;
+        stackTop = (g_ElfBase + g_ElfViewSize - 0x100) & ~0xFull;
         g_StackInElf = 1;
     }
 
