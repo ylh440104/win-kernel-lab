@@ -2285,24 +2285,22 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     {
         CHAR kernelPath[260];
         ULONG pathLength;
-        ULONG64 openFlags = Parameters[1];
-        ULONG64 modeBits = Parameters[3];
-
-        pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
-
-        g_StatDebug[3] = Parameters[2];
-        g_StatDebug[4] = pathLength;
-
-        if (pathLength == 0)
+        ULONG64 openFlags;
+        ULONG64 modeBits;
+        if (Number == LX_SYS_OPENAT)
         {
+            openFlags = Parameters[2];
+            modeBits = Parameters[3];
             pathLength = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
-
-            if (pathLength > 0)
-            {
-                openFlags = Parameters[2];
-                modeBits = Parameters[3];
-            }
         }
+        else
+        {
+            openFlags = Parameters[1];
+            modeBits = Parameters[2];
+            pathLength = LxCopyLinuxPath(Parameters[0], kernelPath, sizeof(kernelPath));
+        }
+        g_StatDebug[3] = Parameters[1];
+        g_StatDebug[4] = pathLength;
 
         g_OpenCount++;
 
