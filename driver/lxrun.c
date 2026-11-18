@@ -8149,7 +8149,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         }
         if (segs[i].MemSize > segs[i].FileSize)
         {
-            ULONG64 bssLen = segs[i].MemSize - segs[i].FileSize;
+            ULONG64 bssLen = segs[i].MemSize - segs[i].FileSize + 0x2000ull;
             ULONG64 bssAt = segs[i].Vaddr + segs[i].FileSize;
             NTSTATUS zeroStatus = STATUS_SUCCESS;
             PVOID zeroPool = ExAllocatePoolWithTag(NonPagedPool, 4096, 'zBxL');
@@ -8595,30 +8595,6 @@ static void LxCreatePicoThread(void)
     }
 
     LxMapPool();
-    if (g_ElfHeapBase != 0 && g_PicoProcessObject != NULL)
-    {
-        PVOID heapPool = ExAllocatePoolWithTag(NonPagedPool, 4096, 'hPxL');
-        if (heapPool != NULL)
-        {
-            ULONG64 cursor = g_ElfHeapBase;
-            ULONG heapPages = 0;
-            RtlZeroMemory(heapPool, 4096);
-            while (heapPages < 4)
-            {
-                SIZE_T touched = 0;
-                NTSTATUS heapStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), heapPool, g_PicoProcessObject,
-                                                          (PVOID)(ULONG_PTR)cursor, 4096, KernelMode, &touched);
-                if (!NT_SUCCESS(heapStatus))
-                {
-                    break;
-                }
-                heapPages++;
-                cursor += 4096;
-            }
-            ExFreePoolWithTag(heapPool, 'hPxL');
-            g_HeapTouchPages = heapPages;
-        }
-    }
 
     maximumSize.QuadPart = 0x20000;
     InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
