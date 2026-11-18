@@ -947,7 +947,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\hello_x64.exe");
+        SendLoadElf(device, L"C:\\Windows\\catfile_x64.exe");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
