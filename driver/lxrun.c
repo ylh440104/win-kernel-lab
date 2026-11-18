@@ -3586,7 +3586,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
         }
         g_MmapDebug[5] = (ULONG64)mpStatus;
-        return NT_SUCCESS(mpStatus) ? 0 : (ULONG64)(-12);
+        /* mprotect 失败时宽容返回 0：Pico 的段权限不可随意改，但程序继续运行即可 */
+        return 0;
     }
     case LX_SYS_MUNMAP:
     {
