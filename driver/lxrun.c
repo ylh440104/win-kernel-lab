@@ -874,7 +874,8 @@ static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG g_SkipNeededLibs = 0;
 static ULONG g_LibStage = 0;
-static ULONG g_LibStopAfterMap = 1;
+static ULONG g_LibStopAfterMap = 0;
+static ULONG g_LibStopBeforeOpen = 1;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 1;
@@ -7005,6 +7006,12 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
     Stats->Attempted++;
 
     g_LibStage = 2;
+    if (g_LibStopBeforeOpen != 0)
+    {
+        Stats->Failed++;
+        Stats->LastStatus = 0xC0000001u;
+        return 0;
+    }
     if (LxTryLoadLibraryFile(Name, &fileBuffer, &fileLength, &openStatus) == 0 || fileBuffer == NULL)
     {
         Entry->LoadStatus = openStatus == 0 ? 0xC0000001u : openStatus;
