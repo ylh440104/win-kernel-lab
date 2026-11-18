@@ -786,6 +786,7 @@ static ULONG64 g_ElfIarrayStatus = 0;
 static ULONG64 g_ElfIarrayValue = 0;
 static ULONG64 g_ElfSecureValue = 0;
 static ULONG g_ProtectEnable = 0;
+static ULONG g_PoolTouchStatus = 0;
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
 static ULONG64 g_ArchArg0 = 0;
@@ -8323,6 +8324,38 @@ static void LxMapPool(void)
     {
         g_BrkCurrent = g_PoolBase;
         g_MmapCurrent = g_PoolBase + LX_POOL_SIZE / 2;
+        {
+            LX_APC_STATE poolApc;
+            BOOLEAN poolAtt = FALSE;
+            __try
+            {
+                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&poolApc);
+                poolAtt = TRUE;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                poolAtt = FALSE;
+            }
+            if (poolAtt)
+            {
+                __try
+                {
+                    RtlZeroMemory((PVOID)(ULONG_PTR)g_PoolBase, 0x100000);
+                    g_PoolTouchStatus = 1;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    g_PoolTouchStatus = 0xEE;
+                }
+                __try
+                {
+                    KeUnstackDetachProcess((PVOID)&poolApc);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                }
+            }
+        }
     }
 
     ZwClose(sectionHandle);
