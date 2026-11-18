@@ -787,6 +787,8 @@ static ULONG64 g_ElfIarrayValue = 0;
 static ULONG64 g_ElfSecureValue = 0;
 static ULONG g_ProtectEnable = 0;
 static ULONG g_PoolTouchStatus = 0;
+static ULONG64 g_ElfHeapBase = 0;
+static ULONG64 g_BrkTouched = 0;
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
 static ULONG64 g_ArchArg0 = 0;
@@ -3060,6 +3062,28 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
             if (g_ElfBase != 0 && brkTarget >= g_ElfBase && brkTarget <= g_ElfBase + g_ElfViewSize)
             {
+                if (brkTarget > g_BrkCurrent && g_PicoProcessObject != NULL)
+                {
+                    PVOID brkPool = ExAllocatePoolWithTag(NonPagedPool, 4096, 'kBxL');
+                    if (brkPool != NULL)
+                    {
+                        ULONG64 cursor = g_BrkCurrent & ~0xFFFull;
+                        RtlZeroMemory(brkPool, 4096);
+                        while (cursor < brkTarget)
+                        {
+                            SIZE_T touched = 0;
+                            NTSTATUS touchStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), brkPool, g_PicoProcessObject,
+                                                                      (PVOID)(ULONG_PTR)cursor, 4096, KernelMode, &touched);
+                            if (!NT_SUCCESS(touchStatus))
+                            {
+                                break;
+                            }
+                            g_BrkTouched++;
+                            cursor += 4096;
+                        }
+                        ExFreePoolWithTag(brkPool, 'kBxL');
+                    }
+                }
                 g_BrkCurrent = brkTarget;
                 g_BrkOk++;
                 return brkTarget;
@@ -8069,7 +8093,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     ObReferenceObject(targetProcess);
     g_PicoProcessObject = targetProcess;
 
-    maximumSize.QuadPart = (LONGLONG)((load->ImageSize + 0xFFF) & ~0xFFFull) + 0x100000ll;
+    maximumSize.QuadPart = (LONGLONG)((load->ImageSize + 0xFFF) & ~0xFFFull) + 0x400000ll;
     InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
     status = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &objectAttributes, &maximumSize,
@@ -8155,6 +8179,8 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
             g_ElfSegStatus[i] = (ULONG)zeroStatus;
     }
         }
+    g_BrkCurrent = g_ElfBase + ((load->ImageSize + 0xFFF) & ~0xFFFull);
+    g_ElfHeapBase = g_BrkCurrent;
     g_ElfEntry = load->EntryPoint;
     RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
 
@@ -8322,8 +8348,13 @@ static void LxMapPool(void)
 
     if (NT_SUCCESS(status))
     {
-        g_BrkCurrent = g_PoolBase;
         g_MmapCurrent = g_PoolBase + LX_POOL_SIZE / 2;
+        if (g_BrkCurrent == 0)
+        {
+            g_BrkCurrent = g_PoolBase;
+        }
+        g_MmapDebug[2] = (ULONG64)(ULONG_PTR)g_PoolBase;
+        g_MmapDebug[1] = (ULONG64)viewSize;
         {
             LX_APC_STATE poolApc;
             BOOLEAN poolAtt = FALSE;
@@ -8368,6 +8399,7 @@ static void LxMapPool(void)
                     }
                     ExFreePoolWithTag(touchPool, 'tPxL');
                     g_PoolTouchStatus = okPages;
+                    g_MmapDebug[3] = (ULONG64)okPages;
                 }
                 else
                 {
