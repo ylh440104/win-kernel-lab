@@ -874,6 +874,7 @@ static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG g_SkipNeededLibs = 0;
 static ULONG g_LibStage = 0;
+static ULONG g_LibStopAfterMap = 1;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 1;
@@ -7149,7 +7150,14 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
     }
 
     Entry->BaseAddress = (ULONG64)(ULONG_PTR)viewBase;
-
+    g_LibStage = 5;
+    if (g_LibStopAfterMap != 0)
+    {
+        Entry->LoadStatus = 0;
+        Stats->Loaded++;
+        ExFreePool(fileBuffer);
+        return Entry->BaseAddress;
+    }
     {
         ULONG64 phoff = *(ULONG64 *)(fileBuffer + 32);
         USHORT phnum = *(USHORT *)(fileBuffer + 56);
