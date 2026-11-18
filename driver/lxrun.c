@@ -2313,19 +2313,63 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG pathLength;
         ULONG64 openFlags;
         ULONG64 modeBits;
-        if (Number == LX_SYS_OPENAT)
         {
-            /* openat(dirfd, path, flags, mode) -> Parameters[1..4] */
-            openFlags = Parameters[3];
-            modeBits = Parameters[4];
-            pathLength = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
-        }
-        else
-        {
-            /* open(path, flags, mode) -> Parameters[1..3] */
-            openFlags = Parameters[2];
-            modeBits = Parameters[3];
-            pathLength = LxCopyLinuxPath(Parameters[1], kernelPath, sizeof(kernelPath));
+            ULONG64 tfRsi = 0;
+            ULONG64 tfRdx = 0;
+            ULONG64 tfR10 = 0;
+            ULONG64 pathCand[4];
+            ULONG ci;
+            BOOLEAN got = FALSE;
+            __try
+            {
+                RtlCopyMemory(&tfRsi, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
+                RtlCopyMemory(&tfRdx, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+                RtlCopyMemory(&tfR10, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                tfRsi = 0;
+                tfRdx = 0;
+                tfR10 = 0;
+            }
+            pathCand[0] = (Number == LX_SYS_OPENAT) ? Parameters[2] : Parameters[1];
+            pathCand[1] = tfRsi;
+            pathCand[2] = (Number == LX_SYS_OPENAT) ? tfRsi : Parameters[1];
+            pathCand[3] = 0;
+            pathLength = 0;
+            for (ci = 0; ci < 4; ci++)
+            {
+                ULONG pl;
+                if (pathCand[ci] == 0)
+                {
+                    continue;
+                }
+                pl = LxCopyLinuxPath(pathCand[ci], kernelPath, sizeof(kernelPath));
+                if (pl > 0 && kernelPath[0] == '/')
+                {
+                    pathLength = pl;
+                    got = TRUE;
+                    break;
+                }
+            }
+            if (!got)
+            {
+                pathLength = LxCopyLinuxPath(pathCand[0], kernelPath, sizeof(kernelPath));
+            }
+            if (Number == LX_SYS_OPENAT)
+            {
+                openFlags = tfRdx;
+                modeBits = tfR10;
+            }
+            else
+            {
+                openFlags = Parameters[2];
+                modeBits = Parameters[3];
+            }
+            if (openFlags > 0xFFFFu)
+            {
+                openFlags = 0;
+            }
         }
         g_StatDebug[3] = (Number == LX_SYS_OPENAT) ? Parameters[2] : Parameters[1];
         g_StatDebug[4] = pathLength;
