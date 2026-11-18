@@ -2300,6 +2300,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             if (pathLength > 0)
             {
                 openFlags = Parameters[2];
+                modeBits = Parameters[3];
             }
         }
 
