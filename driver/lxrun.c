@@ -872,7 +872,8 @@ static volatile ULONG64 g_LastSyscallNo = 0;
 static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
-static ULONG g_SkipNeededLibs = 1;
+static ULONG g_SkipNeededLibs = 0;
+static ULONG g_LibStage = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 1;
@@ -6990,6 +6991,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
     ULONG copiedName;
 
     RtlZeroMemory(Entry, sizeof(LX_LIB_ENTRY));
+    g_LibStage = 1;
 
     for (copiedName = 0; copiedName + 1 < LX_MAX_SYMBOL_NAME && Name[copiedName] != 0; copiedName++)
     {
@@ -7001,6 +7003,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
 
     Stats->Attempted++;
 
+    g_LibStage = 2;
     if (LxTryLoadLibraryFile(Name, &fileBuffer, &fileLength, &openStatus) == 0 || fileBuffer == NULL)
     {
         Entry->LoadStatus = openStatus == 0 ? 0xC0000001u : openStatus;
@@ -7106,6 +7109,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         }
     }
 
+    g_LibStage = 3;
     baseAddress = 0x10000000ull + (ULONG64)LibIndex * LX_LIB_BASE_STEP;
     Entry->BaseAddress = baseAddress;
 
@@ -7125,6 +7129,7 @@ static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, UL
         return 0;
     }
 
+    g_LibStage = 4;
     viewBase = (PVOID)(ULONG_PTR)baseAddress;
     viewSize = 0;
 
@@ -8440,7 +8445,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
                 result->LdsoEntry = g_LdsoEntry;
-                result->LdsoBase = g_LdsoBase;
+                result->LdsoBase = (ULONG64)g_LibStage;
                 RtlCopyMemory(result->LibNames[i], g_LibStats.Libs[i].Name, 48);
             }
 
