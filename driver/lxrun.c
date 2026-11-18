@@ -2930,6 +2930,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 return g_BrkCurrent;
             }
 
+            if (g_ElfBase != 0 && brkTarget >= g_ElfBase && brkTarget <= g_ElfBase + g_ElfViewSize)
+            {
+                g_BrkCurrent = brkTarget;
+                g_BrkOk++;
+                return brkTarget;
+            }
             if (brkTarget >= g_PoolBase && brkTarget <= g_PoolBase + LX_POOL_SIZE)
             {
                 g_BrkCurrent = brkTarget;
@@ -7784,7 +7790,7 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     ObReferenceObject(targetProcess);
     g_PicoProcessObject = targetProcess;
 
-    maximumSize.QuadPart = (LONGLONG)((load->ImageSize + 0xFFF) & ~0xFFFull);
+    maximumSize.QuadPart = (LONGLONG)((load->ImageSize + 0xFFF) & ~0xFFFull) + 0x100000ll;
     InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
 
     status = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &objectAttributes, &maximumSize,
