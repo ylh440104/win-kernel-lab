@@ -1525,7 +1525,7 @@ static ULONG LxBuildNtPath(const char *LinuxPath, WCHAR *OutBuffer, ULONG OutCha
 {
     static const WCHAR PrefixSlash[] = {L'\\', L'?', L'?', L'\\', 0};
     static const WCHAR LxRoot[] = {L'\\', L'S', L'y', L's', L't', L'e', L'm', L'R', L'o', L'o', L't', L'\\', L'l', L'x', L'r', L'o', L'o', L't', 0};
-    static const WCHAR DrivePrefix[] = {L'\\', L'S', L'y', L's', L't', L'e', L'm', L'R', L'o', L'o', L't', 0};
+    static const WCHAR DrivePrefix[] = {L'\\', L'?', L'?', L'\\', L'C', L':', 0};
     ULONG index = 0;
     ULONG out = 0;
     BOOLEAN isMntC = FALSE;
