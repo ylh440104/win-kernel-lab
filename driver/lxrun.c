@@ -2145,7 +2145,7 @@ g_GetDentsCount++;
         {
             index++;
 
-            if (index >= g_FdTable[Fd].DirectoryCursor)
+            if (index > g_FdTable[Fd].DirectoryCursor)
             {
                 ULONG nameLength = info->FileNameLength / sizeof(WCHAR);
                 ULONG recordLength;
