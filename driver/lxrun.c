@@ -785,6 +785,7 @@ static ULONG64 g_ElfExpMagic = 0;
 static ULONG64 g_ElfIarrayStatus = 0;
 static ULONG64 g_ElfIarrayValue = 0;
 static ULONG64 g_ElfSecureValue = 0;
+static ULONG g_ProtectEnable = 0;
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
 static ULONG64 g_ArchArg0 = 0;
@@ -3574,8 +3575,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
         __try
         {
-            mpStatus = ZwProtectVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&protAddr,
-                                              &protLen, newProt, (PULONG)&oldProt);
+            if (g_ProtectEnable != 0)
+            {
+                mpStatus = ZwProtectVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&protAddr,
+                                                  &protLen, newProt, (PULONG)&oldProt);
+            }
+            else
+            {
+                mpStatus = STATUS_SUCCESS;
+            }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
