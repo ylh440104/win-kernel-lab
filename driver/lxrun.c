@@ -8182,29 +8182,6 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         }
     g_BrkCurrent = g_ElfBase + ((load->ImageSize + 0xFFF) & ~0xFFFull);
     g_ElfHeapBase = g_BrkCurrent;
-    {
-        PVOID heapPool = ExAllocatePoolWithTag(NonPagedPool, 4096, 'hPxL');
-        if (heapPool != NULL)
-        {
-            ULONG64 cursor = g_ElfHeapBase;
-            ULONG heapPages = 0;
-            RtlZeroMemory(heapPool, 4096);
-            while (heapPages < 128)
-            {
-                SIZE_T touched = 0;
-                NTSTATUS heapStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), heapPool, targetProcess,
-                                                          (PVOID)(ULONG_PTR)cursor, 4096, KernelMode, &touched);
-                if (!NT_SUCCESS(heapStatus))
-                {
-                    break;
-                }
-                heapPages++;
-                cursor += 4096;
-            }
-            ExFreePoolWithTag(heapPool, 'hPxL');
-            g_HeapTouchPages = heapPages;
-        }
-    }
     g_ElfEntry = load->EntryPoint;
     RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
 
@@ -8618,6 +8595,30 @@ static void LxCreatePicoThread(void)
     }
 
     LxMapPool();
+    if (g_ElfHeapBase != 0 && g_PicoProcessObject != NULL)
+    {
+        PVOID heapPool = ExAllocatePoolWithTag(NonPagedPool, 4096, 'hPxL');
+        if (heapPool != NULL)
+        {
+            ULONG64 cursor = g_ElfHeapBase;
+            ULONG heapPages = 0;
+            RtlZeroMemory(heapPool, 4096);
+            while (heapPages < 128)
+            {
+                SIZE_T touched = 0;
+                NTSTATUS heapStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), heapPool, g_PicoProcessObject,
+                                                          (PVOID)(ULONG_PTR)cursor, 4096, KernelMode, &touched);
+                if (!NT_SUCCESS(heapStatus))
+                {
+                    break;
+                }
+                heapPages++;
+                cursor += 4096;
+            }
+            ExFreePoolWithTag(heapPool, 'hPxL');
+            g_HeapTouchPages = heapPages;
+        }
+    }
 
     maximumSize.QuadPart = 0x20000;
     InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
