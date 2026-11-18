@@ -8107,6 +8107,32 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
             ObDereferenceObject(targetProcess);
             return;
         }
+        if (segs[i].MemSize > segs[i].FileSize)
+        {
+            ULONG64 bssLen = segs[i].MemSize - segs[i].FileSize;
+            ULONG64 bssAt = segs[i].Vaddr + segs[i].FileSize;
+            SIZE_T zeroed = 0;
+            UCHAR zeroChunk[256];
+            ULONG64 remain = bssLen;
+            NTSTATUS zeroStatus = STATUS_SUCCESS;
+            RtlZeroMemory(zeroChunk, sizeof(zeroChunk));
+            while (remain > 0)
+            {
+                SIZE_T chunk = (remain > sizeof(zeroChunk)) ? sizeof(zeroChunk) : (SIZE_T)remain;
+                zeroStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), zeroChunk, targetProcess,
+                                                 (PVOID)(ULONG_PTR)bssAt, chunk, KernelMode, &zeroed);
+                if (!NT_SUCCESS(zeroStatus))
+                {
+                    break;
+                }
+                bssAt += chunk;
+                remain -= chunk;
+            }
+            if (NT_SUCCESS(zeroStatus))
+            {
+                g_ElfSegStatus[i] = 0;
+            }
+        }
     }
 
     g_ElfStatus = 0;
