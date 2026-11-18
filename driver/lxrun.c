@@ -8340,19 +8340,38 @@ static void LxMapPool(void)
             {
                 __try
                 {
-                    RtlZeroMemory((PVOID)(ULONG_PTR)g_PoolBase, 0x100000);
-                    g_PoolTouchStatus = 1;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_PoolTouchStatus = 0xEE;
-                }
-                __try
-                {
                     KeUnstackDetachProcess((PVOID)&poolApc);
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
                 {
+                }
+            }
+            {
+                PVOID touchPool = ExAllocatePoolWithTag(NonPagedPool, 4096, 'tPxL');
+                if (touchPool != NULL)
+                {
+                    ULONG64 cursor = g_PoolBase;
+                    ULONG pages = 0;
+                    ULONG okPages = 0;
+                    RtlZeroMemory(touchPool, 4096);
+                    for (pages = 0; pages < 16; pages++)
+                    {
+                        SIZE_T touched = 0;
+                        NTSTATUS touchStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), touchPool, g_PicoProcessObject,
+                                                                  (PVOID)(ULONG_PTR)cursor, 4096, KernelMode, &touched);
+                        if (!NT_SUCCESS(touchStatus))
+                        {
+                            break;
+                        }
+                        okPages++;
+                        cursor += 4096;
+                    }
+                    ExFreePoolWithTag(touchPool, 'tPxL');
+                    g_PoolTouchStatus = okPages;
+                }
+                else
+                {
+                    g_PoolTouchStatus = 0xFE;
                 }
             }
         }
