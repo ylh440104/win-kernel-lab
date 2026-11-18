@@ -146,6 +146,7 @@ jobs:
           curl -sL -o C:\Windows\lxroot\lib\x86_64-linux-gnu\libdep.so https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/libc.so.6
           curl -sL -o C:\Windows\lxroot\lib\x86_64-linux-gnu\ld-linux-x86-64.so.2 https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/ld-linux-x86-64.so.2
           curl -sL -o C:\Windows\hello_musl.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/hello_musl
+          curl -sL -o C:\Windows\hello_x64.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/hello_x64
           dir C:\Windows\lxroot\lib\x86_64-linux-gnu
           copy C:\Windows\hello.x64 C:\Windows\h
           dir C:\Windows\mp.x64 C:\Windows\h
