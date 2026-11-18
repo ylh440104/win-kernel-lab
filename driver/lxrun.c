@@ -8111,27 +8111,41 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
         {
             ULONG64 bssLen = segs[i].MemSize - segs[i].FileSize;
             ULONG64 bssAt = segs[i].Vaddr + segs[i].FileSize;
-            SIZE_T zeroed = 0;
-            UCHAR zeroChunk[256];
-            ULONG64 remain = bssLen;
             NTSTATUS zeroStatus = STATUS_SUCCESS;
-            RtlZeroMemory(zeroChunk, sizeof(zeroChunk));
-            while (remain > 0)
+            LX_APC_STATE zeroApc;
+            BOOLEAN zeroAtt = FALSE;
+            __try
             {
-                SIZE_T chunk = (remain > sizeof(zeroChunk)) ? sizeof(zeroChunk) : (SIZE_T)remain;
-                zeroStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), zeroChunk, targetProcess,
-                                                 (PVOID)(ULONG_PTR)bssAt, chunk, KernelMode, &zeroed);
-                if (!NT_SUCCESS(zeroStatus))
+                KeStackAttachProcess((PEPROCESS)targetProcess, (PVOID)&zeroApc);
+                zeroAtt = TRUE;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                zeroAtt = FALSE;
+            }
+            if (zeroAtt)
+            {
+                __try
                 {
-                    break;
+                    RtlZeroMemory((PVOID)(ULONG_PTR)bssAt, (SIZE_T)bssLen);
                 }
-                bssAt += chunk;
-                remain -= chunk;
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    zeroStatus = STATUS_ACCESS_VIOLATION;
+                }
+                __try
+                {
+                    KeUnstackDetachProcess((PVOID)&zeroApc);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                }
             }
-            if (NT_SUCCESS(zeroStatus))
+            else
             {
-                g_ElfSegStatus[i] = 0;
+                zeroStatus = STATUS_ACCESS_DENIED;
             }
+            g_ElfSegStatus[i] = (ULONG)zeroStatus;
         }
     }
 
