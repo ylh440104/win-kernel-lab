@@ -873,6 +873,7 @@ static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG g_SkipNeededLibs = 0;
+static ULONG g_TlsRegMode = 1;
 static ULONG g_LibStage = 0;
 static ULONG g_LibStopAfterMap = 0;
 static ULONG g_LibStopBeforeOpen = 0;
@@ -3130,10 +3131,18 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
         if (code == 0x1002)
         {
-            if (g_TlsSetupDone != 0 && g_TlsBlockBase != 0)
+            if (g_TlsRegMode == 0)
             {
-                address = g_TlsBlockBase;
-                g_FsAddrRedirected = 1;
+                if (g_TlsSetupDone != 0 && g_TlsBlockBase != 0)
+                {
+                    address = g_TlsBlockBase;
+                    g_FsAddrRedirected = 1;
+                }
+            }
+            else if (address != 0)
+            {
+                g_TlsBlockBase = address;
+                g_FsAddrRedirected = 0;
             }
             g_FsSetAttempt++;
             g_FsSetAddr = address;
