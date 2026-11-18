@@ -644,6 +644,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 GotReadAfterStatus;
     ULONG64 ElfExpMagic;
     ULONG64 ElfBackMagic;
+    ULONG64 ElfIarrayStatus;
+    ULONG64 ElfIarrayValue;
+    ULONG64 ElfSecureValue;
     ULONG64 ElfBackVaddr;
     ULONG ElfBackStatus;
     ULONG ElfBackSize;
