@@ -8052,18 +8052,23 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
     ULONG64 *slots = (ULONG64 *)buffer;
     ULONG index = 0;
     ULONG64 nameAddress;
+    ULONG64 platformAddress;
+    ULONG64 randomAddress;
     ULONG64 stackPointer;
     ULONG totalBytes;
     NTSTATUS status;
     PVOID processObject = NULL;
     LX_APC_STATE apcState;
     const char name[] = "busybox";
+    const char platform[] = "x86_64";
 
     g_StackSetupStatus = 0xFFFFFFFFu;
 
     RtlZeroMemory(buffer, sizeof(buffer));
 
     nameAddress = StackTop - (ULONG64)sizeof(name);
+    platformAddress = nameAddress - (ULONG64)sizeof(platform);
+    randomAddress = platformAddress - 16ull;
 
     slots[index++] = 1;
     slots[index++] = nameAddress;
@@ -8089,11 +8094,21 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
     slots[index++] = 0;
     slots[index++] = 23;
     slots[index++] = 0;
+    slots[index++] = 25;
+    slots[index++] = randomAddress;
+    slots[index++] = 15;
+    slots[index++] = platformAddress;
+    slots[index++] = 16;
+    slots[index++] = 0;
+    slots[index++] = 17;
+    slots[index++] = 100;
+    slots[index++] = 31;
+    slots[index++] = nameAddress;
     slots[index++] = 0;
     slots[index++] = 0;
 
     totalBytes = index * sizeof(ULONG64);
-    stackPointer = (nameAddress - totalBytes) & ~0xFull;
+    stackPointer = (randomAddress - totalBytes) & ~0xFull;
 
     status = ObReferenceObjectByHandle((HANDLE)g_LastPicoHandle, LX_PROCESS_VM_ACCESS, *PsProcessType, KernelMode,
                                        &processObject, NULL);
@@ -8109,6 +8124,18 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
     {
         RtlCopyMemory((PVOID)(ULONG_PTR)stackPointer, buffer, totalBytes);
         RtlCopyMemory((PVOID)(ULONG_PTR)nameAddress, name, sizeof(name));
+        RtlCopyMemory((PVOID)(ULONG_PTR)platformAddress, platform, sizeof(platform));
+        {
+            UCHAR rnd[16];
+            ULONG ri;
+            ULONG64 seed = (ULONG64)__rdtsc() ^ ((ULONG64)(ULONG_PTR)StackTop << 16);
+            for (ri = 0; ri < 16; ri++)
+            {
+                seed = seed * 6364136223846793005ull + 1442695040888963407ull;
+                rnd[ri] = (UCHAR)(seed >> 33);
+            }
+            RtlCopyMemory((PVOID)(ULONG_PTR)randomAddress, rnd, 16);
+        }
         g_StackSetupStatus = 0;
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
