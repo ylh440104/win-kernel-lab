@@ -875,7 +875,7 @@ static ULONG64 g_ElfEntry = 0;
 static ULONG g_SkipNeededLibs = 0;
 static ULONG g_LibStage = 0;
 static ULONG g_LibStopAfterMap = 0;
-static ULONG g_LibStopBeforeOpen = 1;
+static ULONG g_LibStopBeforeOpen = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 1;
@@ -7598,6 +7598,20 @@ static void LxLoadNeededLibrariesEx(UCHAR *ImageData, ULONG ImageSize, ULONG64 M
         }
         /* 读名字：优先从已映射的目标进程内存读取（递归时 ImageData 为 NULL） */
         RtlZeroMemory(libName, sizeof(libName));
+        if (ImageData != NULL && ImageSize != 0)
+        {
+            ULONG k;
+            for (k = 0; k + 1 < LX_MAX_SYMBOL_NAME && (strOffset + k) < ImageSize; k++)
+            {
+                libName[k] = (CHAR)ImageData[strOffset + k];
+                if (libName[k] == 0)
+                {
+                    break;
+                }
+            }
+            libName[LX_MAX_SYMBOL_NAME - 1] = 0;
+        }
+        else
         {
             SIZE_T rd = 0;
             if (!NT_SUCCESS(MmCopyVirtualMemory(TargetProcess, (PVOID)(ULONG_PTR)nameOffset,
@@ -7606,8 +7620,8 @@ static void LxLoadNeededLibrariesEx(UCHAR *ImageData, ULONG ImageSize, ULONG64 M
             {
                 continue;
             }
+            libName[LX_MAX_SYMBOL_NAME - 1] = 0;
         }
-        libName[LX_MAX_SYMBOL_NAME - 1] = 0;
         if (libName[0] == 0)
         {
             continue;
