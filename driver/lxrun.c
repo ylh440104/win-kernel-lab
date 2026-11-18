@@ -8603,7 +8603,7 @@ static void LxCreatePicoThread(void)
             ULONG64 cursor = g_ElfHeapBase;
             ULONG heapPages = 0;
             RtlZeroMemory(heapPool, 4096);
-            while (heapPages < 128)
+            while (heapPages < 4)
             {
                 SIZE_T touched = 0;
                 NTSTATUS heapStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), heapPool, g_PicoProcessObject,
