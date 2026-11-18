@@ -947,7 +947,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\dy.x64");
+        SendLoadElf(device, L"C:\\Windows\\hello_musl.exe");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
