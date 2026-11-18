@@ -3236,7 +3236,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             SIZE_T anonViewSize = 0;
             LARGE_INTEGER anonSize;
             NTSTATUS anonStatus;
-            SECTION_MAP_PROTECTION anonProt = PAGE_READWRITE;
+            ULONG anonProt = PAGE_READWRITE;
             if (mapProt & 0x4u)
             {
                 anonProt = PAGE_EXECUTE_READWRITE;
