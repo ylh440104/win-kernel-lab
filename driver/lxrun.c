@@ -872,6 +872,7 @@ static volatile ULONG64 g_LastSyscallNo = 0;
 static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
+static ULONG g_SkipNeededLibs = 1;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 1;
@@ -7645,7 +7646,11 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
     {
         return;
     }
-    LxLoadNeededLibrariesEx(ImageData, ImageSize, Load->MinVaddr, Info, TargetProcess, Stats, Globals);
+    if (g_SkipNeededLibs != 0)
+    {
+        return;
+    }
+LxLoadNeededLibrariesEx(ImageData, ImageSize, Load->MinVaddr, Info, TargetProcess, Stats, Globals);
     {
         ULONG libIdx;
         g_LdsoEntry = 0;
