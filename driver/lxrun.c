@@ -8112,44 +8112,34 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
             ULONG64 bssLen = segs[i].MemSize - segs[i].FileSize;
             ULONG64 bssAt = segs[i].Vaddr + segs[i].FileSize;
             NTSTATUS zeroStatus = STATUS_SUCCESS;
-            LX_APC_STATE zeroApc;
-            BOOLEAN zeroAtt = FALSE;
-            __try
+            PVOID zeroPool = ExAllocatePoolWithTag(NonPagedPool, 4096, 'zBxL');
+            if (zeroPool != NULL)
             {
-                KeStackAttachProcess((PEPROCESS)targetProcess, (PVOID)&zeroApc);
-                zeroAtt = TRUE;
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                zeroAtt = FALSE;
-            }
-            if (zeroAtt)
-            {
-                __try
+                ULONG64 remain = bssLen;
+                ULONG64 cursor = bssAt;
+                RtlZeroMemory(zeroPool, 4096);
+                while (remain > 0)
                 {
-                    RtlZeroMemory((PVOID)(ULONG_PTR)bssAt, (SIZE_T)bssLen);
+                    SIZE_T chunk = (remain > 4096) ? 4096 : (SIZE_T)remain;
+                    SIZE_T zeroed = 0;
+                    zeroStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), zeroPool, targetProcess,
+                                                     (PVOID)(ULONG_PTR)cursor, chunk, KernelMode, &zeroed);
+                    if (!NT_SUCCESS(zeroStatus))
+                    {
+                        break;
+                    }
+                    cursor += chunk;
+                    remain -= chunk;
                 }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    zeroStatus = STATUS_ACCESS_VIOLATION;
-                }
-                __try
-                {
-                    KeUnstackDetachProcess((PVOID)&zeroApc);
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                }
+                ExFreePoolWithTag(zeroPool, 'zBxL');
             }
             else
             {
-                zeroStatus = STATUS_ACCESS_DENIED;
+                zeroStatus = STATUS_INSUFFICIENT_RESOURCES;
             }
             g_ElfSegStatus[i] = (ULONG)zeroStatus;
-        }
     }
-
-    g_ElfStatus = 0;
+        }
     g_ElfEntry = load->EntryPoint;
     RtlCopyMemory(&g_ElfLoad, load, sizeof(LX_ELF_LOAD));
 
