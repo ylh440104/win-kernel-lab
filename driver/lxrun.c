@@ -1822,6 +1822,7 @@ static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
 
     UNREFERENCED_PARAMETER(Mode);
 
+    g_StatDebug[7] = (ULONG64)LinuxFlags;
     pathLength = LxBuildNtPath(LinuxPath, ntPathBuffer, RTL_NUMBER_OF(ntPathBuffer));
     if (pathLength == 0)
     {
@@ -1866,6 +1867,7 @@ static ULONG64 LxOpenFile(const char *LinuxPath, ULONG LinuxFlags, ULONG Mode)
         disposition = FILE_OVERWRITE;
         if (accessMode == 0)
         {
+            g_StatDebug[0] = 0xBAD0BAD0ull;
             g_LastOpenStatus = STATUS_ACCESS_DENIED;
             return (ULONG64)(-13);
         }
