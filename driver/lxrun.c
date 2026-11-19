@@ -4863,17 +4863,22 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
         LONG64 dTag;
         ULONG64 dVal;
 
-        if (entryOffset + 16 > ImageSize || entryOffset + 16 > Info->DynamicOffset + Info->DynamicSize)
+        if (entryOffset + 16 > ImageSize)
         {
             break;
         }
 
-        dTag = *(const LONG64 *)(ImageData + entryOffset);
-        dVal = *(const ULONG64 *)(ImageData + entryOffset + 8);
+        {
+            UCHAR tagBuf[16];
+            RtlCopyMemory(tagBuf, ImageData + entryOffset, 16);
+            RtlCopyMemory(&dTag, tagBuf, 8);
+            RtlCopyMemory(&dVal, tagBuf + 8, 8);
+        }
         if (index < 8)
         {
-            g_ParseTags[index * 2] = (ULONG64)dTag;
-            g_ParseTags[index * 2 + 1] = dVal;
+            g_ParseTags[index * 2] = entryOffset;
+            g_ParseTags[index * 2 + 1] = (ULONG64)dTag;
+            g_ParseTags2[index] = dVal;
         }
 
         Info->DynamicCount++;
