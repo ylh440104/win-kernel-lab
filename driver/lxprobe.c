@@ -53,6 +53,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 DynDynamicVaddr;
     ULONG64 DynDynamicSize;
     ULONG DynDynamicCount;
+    ULONG64 ParseDbgMinVaddr;
+    ULONG64 ParseDbgImageSize;
+    ULONG64 ParseDbgDynOff;
+    ULONG64 ParseDbgStrTab;
     ULONG64 DynParseMinVaddr;
     ULONG64 DynStrTabVaddr;
     ULONG64 DynSymTabVaddr;
@@ -790,6 +794,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  DYNAMIC: hasDyn=%lu dynVaddr=0x%llx dynSize=0x%llx entries=%lu\n", q.DynHasDynamic,
            (unsigned long long)q.DynDynamicVaddr, (unsigned long long)q.DynDynamicSize,
            q.DynDynamicCount);
+    printf("  PARSEDBG: minVaddr=0x%llx imageSize=0x%llx dynOff=0x%llx strtab=0x%llx\n", (unsigned long long)q.ParseDbgMinVaddr,(unsigned long long)q.ParseDbgImageSize,(unsigned long long)q.ParseDbgDynOff,(unsigned long long)q.ParseDbgStrTab);
     printf("  DRVDYN: strtab=0x%llx symtab=0x%llx needed=%lu minVaddr=0x%llx\n", (unsigned long long)q.DynStrTabVaddr, (unsigned long long)q.DynSymTabVaddr, q.DynNeededCount, (unsigned long long)q.DynParseMinVaddr);
     printf("  DYNAMIC: strtab=0x%llx symtab=0x%llx sonameOff=%llu needed=%lu\n",
            (unsigned long long)q.DynStrTabVaddr, (unsigned long long)q.DynSymTabVaddr,
