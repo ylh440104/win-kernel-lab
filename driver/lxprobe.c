@@ -57,13 +57,6 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ParseDbgImageSize;
     ULONG64 ParseDbgDynOff;
     ULONG64 ParseDbgStrTab;
-    ULONG64 TraceTotal;
-    ULONG64 FuseTripped;
-    ULONG64 TraceRing[16];
-    ULONG64 WritevFd;
-    ULONG64 WritevCnt;
-    ULONG64 WritevBase;
-    ULONG64 WritevStatus;
     ULONG64 ParseTags[32];
     ULONG64 ParseTags2[8];
     ULONG64 DynParseMinVaddr;
@@ -807,7 +800,6 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
 
 
     printf("  TRC2: total=%llu wvfd=%llu\n", (unsigned long long)q.ParseTags2[6],(unsigned long long)q.ParseTags2[7]);
-    printf("  TD=%llu WVF=%llu WVS=%llx TR0=%llx TR1=%llx\n", (unsigned long long)q.TraceTotal, (unsigned long long)q.WritevFd, (unsigned long long)q.WritevStatus, (unsigned long long)q.TraceRing[0], (unsigned long long)q.TraceRing[1]);
     printf("  TAGVALS=%llx %llx %llx %llx %llx %llx %llx %llx\n", (unsigned long long)q.ParseTags2[0],(unsigned long long)q.ParseTags2[1],(unsigned long long)q.ParseTags2[2],(unsigned long long)q.ParseTags2[3],(unsigned long long)q.ParseTags2[4],(unsigned long long)q.ParseTags2[5],(unsigned long long)q.ParseTags2[6],(unsigned long long)q.ParseTags2[7]);
     printf("  TMID: %llx=%llx %llx=%llx %llx=%llx %llx=%llx\n", (unsigned long long)q.ParseTags[16],(unsigned long long)q.ParseTags[17],(unsigned long long)q.ParseTags[18],(unsigned long long)q.ParseTags[19],(unsigned long long)q.ParseTags[20],(unsigned long long)q.ParseTags[21],(unsigned long long)q.ParseTags[22],(unsigned long long)q.ParseTags[23]);
     printf("  DRVDYN: strtab=0x%llx symtab=0x%llx needed=%lu minVaddr=0x%llx\n", (unsigned long long)q.DynStrTabVaddr, (unsigned long long)q.DynSymTabVaddr, q.DynNeededCount, (unsigned long long)q.DynParseMinVaddr);
