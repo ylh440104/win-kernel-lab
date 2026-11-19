@@ -4871,10 +4871,21 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
         }
 
         {
-            UCHAR tagBuf[16];
-            RtlCopyMemory(tagBuf, ImageData + entryOffset, 16);
-            RtlCopyMemory(&dTag, tagBuf, 8);
-            RtlCopyMemory(&dVal, tagBuf + 8, 8);
+            volatile UCHAR tagBuf[16];
+            ULONG64 tagRaw = 0;
+            volatile UCHAR *src = (volatile UCHAR *)(ImageData + entryOffset);
+            ULONG bi;
+            for (bi = 0; bi < 16; bi++)
+            {
+                tagBuf[bi] = src[bi];
+            }
+            dVal = 0;
+            for (bi = 0; bi < 8; bi++)
+            {
+                dVal |= ((ULONG64)tagBuf[bi + 8]) << (bi * 8);
+                tagRaw |= ((ULONG64)tagBuf[bi]) << (bi * 8);
+            }
+            dTag = (LONG64)tagRaw;
         }
         if (index < 8)
         {
