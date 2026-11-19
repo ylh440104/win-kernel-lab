@@ -150,6 +150,7 @@ jobs:
           curl -sL -o C:\Windows\catfile_x64.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/catfile_x64
           curl -sL -o C:\Windows\lsdir_x64.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/lsdir_x64
           curl -sL -o C:\Windows\mmtest_x64.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/mmtest_x64
+          curl -sL -o C:\Windows\bigmem_x64.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/bigmem_x64
           curl -sL -o C:\Windows\mmmin_x64.exe https://raw.githubusercontent.com/ylh440104/win-kernel-lab/main/testassets/mmmin_x64
           mkdir C:\Windows\lsdir
           echo AAA > C:\Windows\lsdir\alpha.txt
