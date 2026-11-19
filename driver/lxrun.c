@@ -3340,6 +3340,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     {
                     }
                     g_MmapTouchPages = tpages;
+                g_MmapDebug[0] = (ULONG64)tpages;
                 }
                 g_MmapCurrent = allocBase + allocSize;
                 g_MmapCount++;
