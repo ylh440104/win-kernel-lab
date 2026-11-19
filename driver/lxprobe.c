@@ -806,6 +806,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  PARSEDBG: minVaddr=0x%llx imageSize=0x%llx dynOff=0x%llx strtab=0x%llx\n", (unsigned long long)q.ParseDbgMinVaddr,(unsigned long long)q.ParseDbgImageSize,(unsigned long long)q.ParseDbgDynOff,(unsigned long long)q.ParseDbgStrTab);
 
 
+    printf("  TRC2: total=%llu wvfd=%llu\n", (unsigned long long)q.ParseTags2[6],(unsigned long long)q.ParseTags2[7]);
     printf("  TD=%llu WVF=%llu WVS=%llx TR0=%llx TR1=%llx\n", (unsigned long long)q.TraceTotal, (unsigned long long)q.WritevFd, (unsigned long long)q.WritevStatus, (unsigned long long)q.TraceRing[0], (unsigned long long)q.TraceRing[1]);
     printf("  TAGVALS=%llx %llx %llx %llx %llx %llx %llx %llx\n", (unsigned long long)q.ParseTags2[0],(unsigned long long)q.ParseTags2[1],(unsigned long long)q.ParseTags2[2],(unsigned long long)q.ParseTags2[3],(unsigned long long)q.ParseTags2[4],(unsigned long long)q.ParseTags2[5],(unsigned long long)q.ParseTags2[6],(unsigned long long)q.ParseTags2[7]);
     printf("  TMID: %llx=%llx %llx=%llx %llx=%llx %llx=%llx\n", (unsigned long long)q.ParseTags[16],(unsigned long long)q.ParseTags[17],(unsigned long long)q.ParseTags[18],(unsigned long long)q.ParseTags[19],(unsigned long long)q.ParseTags[20],(unsigned long long)q.ParseTags[21],(unsigned long long)q.ParseTags[22],(unsigned long long)q.ParseTags[23]);
