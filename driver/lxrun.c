@@ -8986,13 +8986,6 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ParseDbgMinVaddr = g_ParseDbgMinVaddr;
             result->ParseDbgImageSize = g_ParseDbgImageSize;
             result->ParseDbgDynOff = g_ParseDbgDynOff;
-            result->WritevFd = g_WritevFd;
-    result->WritevCnt = g_WritevCnt;
-    result->WritevBase = g_WritevBase;
-    result->WritevStatus = g_WritevStatus;
-    result->TraceTotal = g_TraceTotal;
-    result->FuseTripped = g_FuseTripped;
-    { ULONG tri; for (tri = 0; tri < 16; tri++) { result->TraceRing[tri] = g_TraceRing[tri]; } }
     result->ParseDbgStrTab = g_ParseDbgStrTab;
     result->ParseTags2[6] = g_TraceTotal;
     result->ParseTags2[7] = g_WritevFd;
