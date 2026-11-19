@@ -418,6 +418,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 DynDynamicVaddr;
     ULONG64 DynDynamicSize;
     ULONG DynDynamicCount;
+    ULONG64 DynParseMinVaddr;
     ULONG64 DynStrTabVaddr;
     ULONG64 DynSymTabVaddr;
     ULONG64 DynRelaVaddr;
@@ -8881,6 +8882,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->DynDynamicVaddr = g_ElfDynamic.DynamicVaddr;
             result->DynDynamicSize = g_ElfDynamic.DynamicSize;
             result->DynDynamicCount = g_ElfDynamic.DynamicCount;
+            result->DynParseMinVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynStrTabVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynSymTabVaddr = g_ElfDynamic.SymTabVaddr;
             result->DynRelaVaddr = g_ElfDynamic.RelaVaddr;
