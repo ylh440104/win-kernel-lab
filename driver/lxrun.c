@@ -646,6 +646,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ElfBackMagic;
     ULONG64 ElfIarrayStatus;
     ULONG64 MmapRaw[8];
+    ULONG64 PoolTouchPages;
+    ULONG64 BrkCommitStatus;
+    ULONG64 BrkCommitBase;
+    ULONG64 BrkCommitSize;
     ULONG64 ElfIarrayValue;
     ULONG64 ElfSecureValue;
     ULONG64 ElfBackVaddr;
@@ -8394,6 +8398,24 @@ static void LxMapPool(void)
     }
     g_MmapDebug[2] = g_PoolBase;
     g_MmapDebug[1] = g_PoolSize;
+    {
+        ULONG64 tp = g_PoolBase;
+        ULONG64 tend = g_PoolBase + g_PoolSize;
+        ULONG tpages = 0;
+        __try
+        {
+            while (tp < tend && tpages < 512)
+            {
+                *(volatile UCHAR *)(ULONG_PTR)tp = 0;
+                tp += 4096;
+                tpages++;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+        }
+        g_PoolTouchStatus = tpages;
+    }
 }
 
 #define LX_PROCESS_VM_ACCESS 0x0028ul
@@ -8764,7 +8786,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     result->ElfIarrayValue = g_ElfIarrayValue;
     result->ElfSecureValue = g_ElfSecureValue;
     { ULONG ri; for (ri = 0; ri < 8; ri++) { result->MmapRaw[ri] = g_MmapRaw[ri]; } }
-            result->ElfBackVaddr = g_ElfBackVaddr;
+            result->PoolTouchPages = (ULONG64)g_PoolTouchStatus;
+    result->BrkCommitStatus = g_BrkCommitStatus;
+    result->BrkCommitBase = g_BrkCommitBase;
+    result->BrkCommitSize = g_BrkCommitSize;
+    result->ElfBackVaddr = g_ElfBackVaddr;
             result->ElfBackStatus = g_ElfBackStatus;
             result->ElfBackSize = g_ElfBackSize;
             result->DynInterpVaddr = g_ElfDynamic.InterpVaddr;
