@@ -418,6 +418,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 DynDynamicVaddr;
     ULONG64 DynDynamicSize;
     ULONG DynDynamicCount;
+    ULONG64 ParseDbgMinVaddr;
+    ULONG64 ParseDbgImageSize;
+    ULONG64 ParseDbgDynOff;
+    ULONG64 ParseDbgStrTab;
     ULONG64 DynParseMinVaddr;
     ULONG64 DynStrTabVaddr;
     ULONG64 DynSymTabVaddr;
@@ -802,6 +806,10 @@ static ULONG64 g_BrkCommitStatus = 0;
 static ULONG64 g_BrkRegionBase = 0;
 static ULONG64 g_BrkRegionSize = 0;
 static ULONG64 g_BrkRegionStatus = 0;
+static ULONG64 g_ParseDbgMinVaddr = 0;
+static ULONG64 g_ParseDbgImageSize = 0;
+static ULONG64 g_ParseDbgDynOff = 0;
+static ULONG64 g_ParseDbgStrTab = 0;
 static ULONG64 g_BrkProbe[8] = {0,0,0,0,0,0,0,0};
 static ULONG64 g_BrkCommitBase = 0;
 static ULONG64 g_BrkCommitSize = 0;
@@ -4810,6 +4818,10 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
     }
     /* PIE 场景：probe 已把段 vaddr 抬高，但 .dynamic 里的 vaddr 仍是相对值，
        统一补上 MinVaddr（仅当尚未抬高时）。 */
+    g_ParseDbgMinVaddr = Load->MinVaddr;
+    g_ParseDbgImageSize = ImageSize;
+    g_ParseDbgDynOff = Info->DynamicOffset;
+    g_ParseDbgStrTab = Info->StrTabVaddr;
     if (Load->MinVaddr != 0)
     {
         ULONG64 mv = Load->MinVaddr;
@@ -8882,6 +8894,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->DynDynamicVaddr = g_ElfDynamic.DynamicVaddr;
             result->DynDynamicSize = g_ElfDynamic.DynamicSize;
             result->DynDynamicCount = g_ElfDynamic.DynamicCount;
+            result->ParseDbgMinVaddr = g_ParseDbgMinVaddr;
+            result->ParseDbgImageSize = g_ParseDbgImageSize;
+            result->ParseDbgDynOff = g_ParseDbgDynOff;
+            result->ParseDbgStrTab = g_ParseDbgStrTab;
             result->DynParseMinVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynStrTabVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynSymTabVaddr = g_ElfDynamic.SymTabVaddr;
