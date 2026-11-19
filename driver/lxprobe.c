@@ -57,6 +57,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ParseDbgImageSize;
     ULONG64 ParseDbgDynOff;
     ULONG64 ParseDbgStrTab;
+    ULONG64 TraceTotal;
+    ULONG64 FuseTripped;
+    ULONG64 TraceRing[16];
     ULONG64 ParseTags[32];
     ULONG64 ParseTags2[8];
     ULONG64 DynParseMinVaddr;
