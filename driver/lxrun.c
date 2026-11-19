@@ -794,6 +794,9 @@ static ULONG g_ProtectEnable = 0;
 static ULONG g_PoolTouchStatus = 0;
 static ULONG g_MmapTouchPages = 0;
 static ULONG64 g_BrkCommitStatus = 0;
+static ULONG64 g_BrkRegionBase = 0;
+static ULONG64 g_BrkRegionSize = 0;
+static ULONG64 g_BrkRegionStatus = 0;
 static ULONG64 g_BrkCommitBase = 0;
 static ULONG64 g_BrkCommitSize = 0;
 static ULONG64 g_MmapRaw[8] = {0xAAAA0001ull,0xAAAA0002ull,0xAAAA0003ull,0xAAAA0004ull,0xAAAA0005ull,0xAAAA0006ull,0xAAAA0007ull,0xAAAA0008ull};
@@ -3064,6 +3067,28 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_BrkDebug[5] = 0;
             g_BrkDumpCount++;
 
+            if (g_BrkRegionBase == 0 && g_LastPicoHandle != 0)
+            {
+                PVOID regionBase = NULL;
+                SIZE_T regionSize = (SIZE_T)0x2000000ull;
+                NTSTATUS regionStatus;
+                regionStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &regionBase, 0, &regionSize,
+                                                       MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                g_BrkRegionStatus = (ULONG64)regionStatus;
+                if (NT_SUCCESS(regionStatus))
+                {
+                    g_BrkRegionBase = (ULONG64)(ULONG_PTR)regionBase;
+                    g_BrkRegionSize = (ULONG64)regionSize;
+                    g_BrkCurrent = g_BrkRegionBase;
+                }
+            }
+            if (g_BrkRegionBase != 0 && brkTarget != 0 && brkTarget >= g_BrkRegionBase &&
+                brkTarget <= g_BrkRegionBase + g_BrkRegionSize)
+            {
+                g_BrkCurrent = brkTarget;
+                g_BrkOk++;
+                return brkTarget;
+            }
             if (brkTarget == 0)
             {
                 return g_BrkCurrent;
