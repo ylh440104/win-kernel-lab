@@ -4193,7 +4193,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         LX_APC_STATE vectorApc;
         BOOLEAN vectorAttached = FALSE;
 
-        if (vectorFd >= LX_MAX_FD || !g_FdTable[vectorFd].Used)
+        if (vectorFd >= 1 && vectorFd <= 2)
+        {
+            /* stdout/stderr：不查 fd 表，直接允许 */
+        }
+        else if (vectorFd >= LX_MAX_FD || !g_FdTable[vectorFd].Used)
         {
             return (ULONG64)(-9);
         }
