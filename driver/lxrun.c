@@ -645,6 +645,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ElfExpMagic;
     ULONG64 ElfBackMagic;
     ULONG64 ElfIarrayStatus;
+    ULONG64 MmapRaw[8];
     ULONG64 ElfIarrayValue;
     ULONG64 ElfSecureValue;
     ULONG64 ElfBackVaddr;
@@ -787,6 +788,7 @@ static ULONG64 g_ElfIarrayValue = 0;
 static ULONG64 g_ElfSecureValue = 0;
 static ULONG g_ProtectEnable = 0;
 static ULONG g_PoolTouchStatus = 0;
+static ULONG64 g_MmapRaw[8] = {0,0,0,0,0,0,0,0};
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
 static ULONG64 g_ArchArg0 = 0;
@@ -3115,6 +3117,22 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             mapFd = (ULONG64)(-1);
         }
 
+        {
+            ULONG di;
+            for (di = 0; di < 8; di++)
+            {
+                ULONG64 raw = 0;
+                __try
+                {
+                    RtlCopyMemory(&raw, (PUCHAR)(ULONG_PTR)Context + 0x028 + di * 8, 8);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    raw = 0;
+                }
+                g_MmapRaw[di] = raw;
+            }
+        }
         g_MmapDebug[0] = mapAddress;
         g_MmapDebug[1] = mapLength;
         g_MmapDebug[2] = mapProt;
@@ -8704,6 +8722,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     result->ElfIarrayStatus = g_ElfIarrayStatus;
     result->ElfIarrayValue = g_ElfIarrayValue;
     result->ElfSecureValue = g_ElfSecureValue;
+    { ULONG ri; for (ri = 0; ri < 8; ri++) { result->MmapRaw[ri] = g_MmapRaw[ri]; } }
             result->ElfBackVaddr = g_ElfBackVaddr;
             result->ElfBackStatus = g_ElfBackStatus;
             result->ElfBackSize = g_ElfBackSize;
