@@ -788,6 +788,7 @@ static ULONG64 g_ElfIarrayValue = 0;
 static ULONG64 g_ElfSecureValue = 0;
 static ULONG g_ProtectEnable = 0;
 static ULONG g_PoolTouchStatus = 0;
+static ULONG g_MmapTouchPages = 0;
 static ULONG64 g_MmapRaw[8] = {0xAAAA0001ull,0xAAAA0002ull,0xAAAA0003ull,0xAAAA0004ull,0xAAAA0005ull,0xAAAA0006ull,0xAAAA0007ull,0xAAAA0008ull};
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
@@ -3281,6 +3282,45 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_MmapDebug[7] = allocBase;
             if (NT_SUCCESS(allocStatus))
             {
+                {
+                    LX_APC_STATE tApc;
+                    BOOLEAN tAtt = FALSE;
+                    __try
+                    {
+                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&tApc);
+                        tAtt = TRUE;
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        tAtt = FALSE;
+                    }
+                    if (tAtt)
+                    {
+                        ULONG64 tp = allocBase;
+                        ULONG64 tend = allocBase + allocSize;
+                        ULONG tpages = 0;
+                        __try
+                        {
+                            while (tp < tend && tpages < 96)
+                            {
+                                *(volatile UCHAR *)(ULONG_PTR)tp = 0;
+                                tp += 4096;
+                                tpages++;
+                            }
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                        }
+                        g_MmapTouchPages = tpages;
+                        __try
+                        {
+                            KeUnstackDetachProcess((PVOID)&tApc);
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                        }
+                    }
+                }
                 g_MmapCurrent = allocBase + allocSize;
                 g_MmapCount++;
                 g_LastMmapAddress = allocBase;
