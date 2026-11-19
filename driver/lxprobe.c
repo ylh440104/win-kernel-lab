@@ -932,8 +932,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
 
         for (si = 0; si < q.SymDumped && si < 16; si++)
         {
-            printf("  SYMS: [%lu] off=0x%lx nameOff=%lu name=%.32s\n", si,
-                   q.SymRelocOffsets[si], q.SymNameOffsets[si], q.SymNames[si]);
+            printf("  SYMS: [%lu] name=%.32s\n", si, q.SymNames[si]);
         }
     }
     printf("  DYNAMIC: init=0x%llx fini=0x%llx\n", (unsigned long long)q.DynInitVaddr,
