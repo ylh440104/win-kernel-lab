@@ -647,6 +647,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ElfIarrayStatus;
     ULONG64 MmapRaw[8];
     ULONG64 PoolTouchPages;
+    ULONG64 BrkProbe[8];
     ULONG64 BrkRegionBase;
     ULONG64 BrkRegionSize;
     ULONG64 BrkRegionStatus;
@@ -800,6 +801,7 @@ static ULONG64 g_BrkCommitStatus = 0;
 static ULONG64 g_BrkRegionBase = 0;
 static ULONG64 g_BrkRegionSize = 0;
 static ULONG64 g_BrkRegionStatus = 0;
+static ULONG64 g_BrkProbe[8] = {0,0,0,0,0,0,0,0};
 static ULONG64 g_BrkCommitBase = 0;
 static ULONG64 g_BrkCommitSize = 0;
 static ULONG64 g_MmapRaw[8] = {0xAAAA0001ull,0xAAAA0002ull,0xAAAA0003ull,0xAAAA0004ull,0xAAAA0005ull,0xAAAA0006ull,0xAAAA0007ull,0xAAAA0008ull};
@@ -1984,11 +1986,11 @@ static ULONG64 LxReadFile(ULONG Fd, PVOID UserBuffer, ULONG Count)
     NTSTATUS status;
     LARGE_INTEGER offset;
 
-    g_StatDebug[0] = (ULONG64)Fd;
-    g_StatDebug[1] = (ULONG64)(ULONG_PTR)UserBuffer;
-    g_StatDebug[2] = (ULONG64)Count;
+    g_BrkProbe[0] = (ULONG64)Fd;
+    g_BrkProbe[1] = (ULONG64)(ULONG_PTR)UserBuffer;
+    g_BrkProbe[2] = (ULONG64)Count;
     g_StatDebug[3] = (Fd < LX_MAX_FD && g_FdTable[Fd].Used) ? 1 : 0;
-    g_StatDebug[4] = (ULONG64)g_GetDentsCount;
+    g_BrkProbe[4] = (ULONG64)g_GetDentsCount;
     if (Fd >= LX_MAX_FD || !g_FdTable[Fd].Used || UserBuffer == NULL || Count == 0)
     {
         return (ULONG64)(-9);
@@ -3072,11 +3074,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
             if (g_BrkRegionBase == 0 && g_LastPicoHandle != 0)
             {
-                PVOID regionBase = NULL;
+                PVOID regionBase = (PVOID)(ULONG_PTR)0x50000000ull;
                 SIZE_T regionSize = (SIZE_T)0x2000000ull;
                 NTSTATUS regionStatus;
+                g_StatDebug[0] = (ULONG64)(ULONG_PTR)g_LastPicoHandle;
+                g_StatDebug[1] = (ULONG64)(ULONG_PTR)regionBase;
+                g_StatDebug[2] = (ULONG64)regionSize;
                 regionStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &regionBase, 0, &regionSize,
                                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                g_BrkProbe[3] = (ULONG64)(ULONG_PTR)regionBase;
+                g_StatDebug[4] = (ULONG64)regionSize;
                 g_BrkRegionStatus = (ULONG64)regionStatus;
                 if (NT_SUCCESS(regionStatus))
                 {
@@ -8797,6 +8804,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     result->ElfSecureValue = g_ElfSecureValue;
     { ULONG ri; for (ri = 0; ri < 8; ri++) { result->MmapRaw[ri] = g_MmapRaw[ri]; } }
             result->PoolTouchPages = (ULONG64)g_PoolTouchStatus;
+    { ULONG bi; for (bi = 0; bi < 8; bi++) { result->BrkProbe[bi] = g_BrkProbe[bi]; } }
     result->BrkRegionBase = g_BrkRegionBase;
     result->BrkRegionSize = g_BrkRegionSize;
     result->BrkRegionStatus = g_BrkRegionStatus;
