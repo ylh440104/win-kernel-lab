@@ -905,7 +905,7 @@ static ULONG g_LibStopAfterMap = 0;
 static ULONG g_LibStopBeforeOpen = 0;
 static ULONG64 g_LdsoEntry = 0;
 static ULONG64 g_LdsoBase = 0;
-static ULONG g_LdsoReadProbe = 1;
+static ULONG g_LdsoReadProbe = 0;
 static LX_ELF_LOAD g_ElfLoad;
 static LX_ELF_DYNAMIC_INFO g_ElfDynamic;
 static LX_RELOC_STATS g_RelocStats;
@@ -8541,6 +8541,11 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
     slots[index++] = Load->PhdrCount;
     slots[index++] = 9;
     slots[index++] = Load->EntryPoint;
+    if (g_LdsoBase != 0)
+    {
+        slots[index++] = 7;
+        slots[index++] = g_LdsoBase;
+    }
     slots[index++] = 11;
     slots[index++] = 0;
     slots[index++] = 12;
