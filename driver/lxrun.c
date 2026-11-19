@@ -4820,44 +4820,7 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
     {
         return;
     }
-    /* PIE 场景：probe 已把段 vaddr 抬高，但 .dynamic 里的 vaddr 仍是相对值，
-       统一补上 MinVaddr（仅当尚未抬高时）。 */
-    g_ParseDbgMinVaddr = Load->MinVaddr;
-    g_ParseDbgImageSize = ImageSize;
-    g_ParseDbgDynOff = Info->DynamicOffset;
-    g_ParseDbgStrTab = Info->StrTabVaddr;
-    if (Load->MinVaddr != 0)
-    {
-        ULONG64 mv = Load->MinVaddr;
-        if (Info->StrTabVaddr != 0 && Info->StrTabVaddr < mv)
-        {
-            Info->StrTabVaddr += mv;
-        }
-        if (Info->SymTabVaddr != 0 && Info->SymTabVaddr < mv)
-        {
-            Info->SymTabVaddr += mv;
-        }
-        if (Info->RelaVaddr != 0 && Info->RelaVaddr < mv)
-        {
-            Info->RelaVaddr += mv;
-        }
-        if (Info->JmpRelVaddr != 0 && Info->JmpRelVaddr < mv)
-        {
-            Info->JmpRelVaddr += mv;
-        }
-        if (Info->GnuHashVaddr != 0 && Info->GnuHashVaddr < mv)
-        {
-            Info->GnuHashVaddr += mv;
-        }
-        if (Info->HashVaddr != 0 && Info->HashVaddr < mv)
-        {
-            Info->HashVaddr += mv;
-        }
-        if (Info->PltGotVaddr != 0 && Info->PltGotVaddr < mv)
-        {
-            Info->PltGotVaddr += mv;
-        }
-    }
+
 
     for (index = 0; index < 128; index++)
     {
@@ -5065,6 +5028,45 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
             {
                 Info->SymCountFromHash = nchain;
             }
+        }
+    }
+    g_ParseDbgStrTab = Info->StrTabVaddr;
+    /* PIE 场景：probe 已把段 vaddr 抬高，但 .dynamic 里的 vaddr 仍是相对值，
+       统一补上 MinVaddr（仅当尚未抬高时）。 */
+    g_ParseDbgMinVaddr = Load->MinVaddr;
+    g_ParseDbgImageSize = ImageSize;
+    g_ParseDbgDynOff = Info->DynamicOffset;
+    g_ParseDbgDynOff = Info->StrTabVaddr;
+    if (Load->MinVaddr != 0)
+    {
+        ULONG64 mv = Load->MinVaddr;
+        if (Info->StrTabVaddr != 0 && Info->StrTabVaddr < mv)
+        {
+            Info->StrTabVaddr += mv;
+        }
+        if (Info->SymTabVaddr != 0 && Info->SymTabVaddr < mv)
+        {
+            Info->SymTabVaddr += mv;
+        }
+        if (Info->RelaVaddr != 0 && Info->RelaVaddr < mv)
+        {
+            Info->RelaVaddr += mv;
+        }
+        if (Info->JmpRelVaddr != 0 && Info->JmpRelVaddr < mv)
+        {
+            Info->JmpRelVaddr += mv;
+        }
+        if (Info->GnuHashVaddr != 0 && Info->GnuHashVaddr < mv)
+        {
+            Info->GnuHashVaddr += mv;
+        }
+        if (Info->HashVaddr != 0 && Info->HashVaddr < mv)
+        {
+            Info->HashVaddr += mv;
+        }
+        if (Info->PltGotVaddr != 0 && Info->PltGotVaddr < mv)
+        {
+            Info->PltGotVaddr += mv;
         }
     }
 }
