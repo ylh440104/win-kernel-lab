@@ -8975,6 +8975,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     result->FuseTripped = g_FuseTripped;
     { ULONG tri; for (tri = 0; tri < 16; tri++) { result->TraceRing[tri] = g_TraceRing[tri]; } }
     result->ParseDbgStrTab = g_ParseDbgStrTab;
+    result->ParseTags2[6] = g_TraceTotal;
+    result->ParseTags2[7] = g_WritevFd;
             { ULONG ti; for (ti = 0; ti < 32; ti++) { result->ParseTags[ti] = g_ParseTags[ti]; } for (ti = 0; ti < 8; ti++) { result->ParseTags2[ti] = g_ParseTags2[ti]; } }
             result->DynParseMinVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynStrTabVaddr = g_ElfDynamic.StrTabVaddr;
