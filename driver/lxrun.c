@@ -4862,7 +4862,7 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
     for (index = 0; index < 128; index++)
     {
         ULONG64 entryOffset = Info->DynamicOffset + (ULONG64)index * 16;
-        LONG64 dTag;
+        ULONG64 tagRaw2 = 0;
         ULONG64 dVal;
 
         if (entryOffset + 16 > ImageSize)
@@ -4885,23 +4885,23 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
                 dVal |= ((ULONG64)tagBuf[bi + 8]) << (bi * 8);
                 tagRaw |= ((ULONG64)tagBuf[bi]) << (bi * 8);
             }
-            dTag = (LONG64)tagRaw;
+            tagRaw2 = tagRaw;
         }
         if (index < 8)
         {
             g_ParseTags[index * 2] = entryOffset;
-            g_ParseTags[index * 2 + 1] = (ULONG64)dTag;
+            g_ParseTags[index * 2 + 1] = tagRaw2;
             g_ParseTags2[index] = dVal;
         }
 
         Info->DynamicCount++;
 
-        if (dTag == LX_DT_NULL)
+        if (tagRaw2 == LX_DT_NULL)
         {
             break;
         }
 
-        if (dTag == LX_DT_NEEDED)
+        if (tagRaw2 == LX_DT_NEEDED)
         {
             if (Info->NeededCount < LX_MAX_NEEDED)
             {
@@ -4909,83 +4909,83 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
                 Info->NeededCount++;
             }
         }
-        else if (dTag == LX_DT_STRTAB)
+        else if (tagRaw2 == LX_DT_STRTAB)
         {
             Info->StrTabVaddr = dVal;
         }
-        else if (dTag == LX_DT_SYMTAB)
+        else if (tagRaw2 == LX_DT_SYMTAB)
         {
             Info->SymTabVaddr = dVal;
         }
-        else if (dTag == LX_DT_RELA)
+        else if (tagRaw2 == LX_DT_RELA)
         {
             Info->RelaVaddr = dVal;
         }
-        else if (dTag == LX_DT_RELASZ)
+        else if (tagRaw2 == LX_DT_RELASZ)
         {
             Info->RelaSize = dVal;
         }
-        else if (dTag == LX_DT_JMPREL)
+        else if (tagRaw2 == LX_DT_JMPREL)
         {
             Info->JmpRelVaddr = dVal;
         }
-        else if (dTag == LX_DT_PLTRELSZ)
+        else if (tagRaw2 == LX_DT_PLTRELSZ)
         {
             Info->JmpRelSize = dVal;
         }
-        else if (dTag == LX_DT_PLTGOT)
+        else if (tagRaw2 == LX_DT_PLTGOT)
         {
             Info->PltGotVaddr = dVal;
         }
-        else if (dTag == LX_DT_INIT)
+        else if (tagRaw2 == LX_DT_INIT)
         {
             Info->InitVaddr = dVal;
         }
-        else if (dTag == LX_DT_FINI)
+        else if (tagRaw2 == LX_DT_FINI)
         {
             Info->FiniVaddr = dVal;
         }
-        else if (dTag == LX_DT_SONAME)
+        else if (tagRaw2 == LX_DT_SONAME)
         {
             Info->SonameOffset = dVal;
         }
-        else if (dTag == LX_DT_HASH)
+        else if (tagRaw2 == LX_DT_HASH)
         {
             Info->HashVaddr = dVal;
         }
-        else if (dTag == LX_DT_RELR)
+        else if (tagRaw2 == LX_DT_RELR)
         {
             Info->RelrVaddr = dVal;
         }
-        else if (dTag == LX_DT_RELRSZ)
+        else if (tagRaw2 == LX_DT_RELRSZ)
         {
             Info->RelrSize = dVal;
         }
-        else if (dTag == LX_DT_GNU_HASH)
+        else if (tagRaw2 == LX_DT_GNU_HASH)
         {
             Info->GnuHashVaddr = dVal;
         }
-        else if (dTag == LX_DT_INIT_ARRAY)
+        else if (tagRaw2 == LX_DT_INIT_ARRAY)
         {
             Info->InitArrayVaddr = dVal;
         }
-        else if (dTag == LX_DT_INIT_ARRAYSZ)
+        else if (tagRaw2 == LX_DT_INIT_ARRAYSZ)
         {
             Info->InitArraySize = dVal;
         }
-        else if (dTag == LX_DT_FINI_ARRAY)
+        else if (tagRaw2 == LX_DT_FINI_ARRAY)
         {
             Info->FiniArrayVaddr = dVal;
         }
-        else if (dTag == LX_DT_FINI_ARRAYSZ)
+        else if (tagRaw2 == LX_DT_FINI_ARRAYSZ)
         {
             Info->FiniArraySize = dVal;
         }
-        else if (dTag == LX_DT_FLAGS)
+        else if (tagRaw2 == LX_DT_FLAGS)
         {
             Info->Flags = dVal;
         }
-        else if (dTag == LX_DT_FLAGS_1)
+        else if (tagRaw2 == LX_DT_FLAGS_1)
         {
             Info->Flags1 = dVal;
         }
