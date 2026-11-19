@@ -3348,10 +3348,23 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             if (g_PicoProcessObject != NULL)
             {
                 HANDLE picoProcHandle = NULL;
-                if (NT_SUCCESS(ObOpenObjectByPointer(g_PicoProcessObject, 0, NULL, 0x1F0000, NULL, KernelMode, &picoProcHandle)))
+                NTSTATUS ohStatus;
+                ohStatus = ObOpenObjectByPointer(g_PicoProcessObject, 0, NULL, 0x1F0FFF, NULL, KernelMode, &picoProcHandle);
+                g_MmapDebug[9] = (ULONG64)ohStatus;
+                if (NT_SUCCESS(ohStatus))
                 {
                     g_LastPicoHandle = (ULONG64)picoProcHandle;
-                    g_MmapDebug[9] = 0xA1u;
+                    g_MmapDebug[10] = 0xA1u;
+                }
+                else
+                {
+                    ohStatus = ObOpenObjectByPointer(g_PicoProcessObject, 0, NULL, PROCESS_ALL_ACCESS, NULL, KernelMode, &picoProcHandle);
+                    g_MmapDebug[10] = (ULONG64)ohStatus;
+                    if (NT_SUCCESS(ohStatus))
+                    {
+                        g_LastPicoHandle = (ULONG64)picoProcHandle;
+                        g_MmapDebug[11] = 0xB2u;
+                    }
                 }
             }
             allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
