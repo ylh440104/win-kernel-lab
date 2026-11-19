@@ -610,7 +610,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG MmapCount;
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
-    ULONG64 MmapDebug[8];
+    ULONG64 MmapDebug[12];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
     ULONG64 TlsBlockBase;
