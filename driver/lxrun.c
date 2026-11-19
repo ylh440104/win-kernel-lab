@@ -1021,7 +1021,7 @@ static ULONG64 g_MmapCurrent = 0;
 static ULONG g_MmapCount = 0;
 static ULONG64 g_LastMmapAddress = 0;
 static ULONG64 g_LastMmapStatus = 0;
-static ULONG64 g_MmapDebug[8];
+static ULONG64 g_MmapDebug[12];
 static ULONG64 g_MmapContext[40];
 static UCHAR g_MmapBytes[16];
 static ULONG g_MmapContextDone = 0;
@@ -3343,8 +3343,19 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 allocProt = PAGE_EXECUTE_READWRITE;
             }
             allocBase = 0;
+            /* 按 lxcore 的 LxpMmAllocateMapVm 语义：一次 MEM_COMMIT|MEM_RESERVE，
+               不再分步 RESERVE+逐块 COMMIT（那会丢 PTE） */
+            if (g_PicoProcessObject != NULL)
+            {
+                HANDLE picoProcHandle = NULL;
+                if (NT_SUCCESS(ObOpenObjectByPointer(g_PicoProcessObject, 0, NULL, 0x1F0000, NULL, KernelMode, &picoProcHandle)))
+                {
+                    g_LastPicoHandle = (ULONG64)picoProcHandle;
+                    g_MmapDebug[9] = 0xA1u;
+                }
+            }
             allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
-                                                  (PSIZE_T)&allocSize, MEM_RESERVE, PAGE_NOACCESS);
+                                                  (PSIZE_T)&allocSize, MEM_COMMIT | MEM_RESERVE, allocProt);
             if (NT_SUCCESS(allocStatus))
             {
                 ULONG64 cAddr = allocBase;
