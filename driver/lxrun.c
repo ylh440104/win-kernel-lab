@@ -788,7 +788,7 @@ static ULONG64 g_ElfIarrayValue = 0;
 static ULONG64 g_ElfSecureValue = 0;
 static ULONG g_ProtectEnable = 0;
 static ULONG g_PoolTouchStatus = 0;
-static ULONG64 g_MmapRaw[8] = {0,0,0,0,0,0,0,0};
+static ULONG64 g_MmapRaw[8] = {0xAAAA0001ull,0xAAAA0002ull,0xAAAA0003ull,0xAAAA0004ull,0xAAAA0005ull,0xAAAA0006ull,0xAAAA0007ull,0xAAAA0008ull};
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
 static ULONG64 g_ArchArg0 = 0;
@@ -3083,6 +3083,22 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_MMAP:
     {
+        {
+            ULONG mi;
+            for (mi = 0; mi < 8; mi++)
+            {
+                ULONG64 rv = 0;
+                __try
+                {
+                    RtlCopyMemory(&rv, (PUCHAR)(ULONG_PTR)Context + 0x028 + mi * 8, 8);
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    rv = 0xEEEE0000ull + mi;
+                }
+                g_MmapRaw[mi] = rv;
+            }
+        }
         ULONG64 mapAddress = 0;
         ULONG64 mapLength = 0;
         ULONG64 mapProt = 0;
