@@ -3270,10 +3270,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             {
                 allocProt = PAGE_EXECUTE_READWRITE;
             }
-            if ((mapFlags & 0x10u) != 0 && mapAddress != 0)
-            {
-                allocBase = mapAddress;
-            }
+            allocBase = 0;
             allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
                                                   (PSIZE_T)&allocSize, MEM_COMMIT | MEM_RESERVE, allocProt);
             g_MmapDebug[6] = (ULONG64)allocStatus;
