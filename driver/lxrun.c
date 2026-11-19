@@ -3267,7 +3267,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         if (g_PicoProcessObject != NULL && g_LastPicoHandle != NULL && (mapFlags & 0x20u) != 0 && mapFd > LX_MAX_FD)
         {
             ULONG64 allocBase = 0;
-            ULONG64 allocSize = mapLength;
+            ULONG64 allocSize = (mapLength + 0xFFFull) & ~0xFFFull;
             NTSTATUS allocStatus;
             ULONG allocProt = PAGE_READWRITE;
             if (mapProt & 0x4u)
