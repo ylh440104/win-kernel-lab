@@ -425,6 +425,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TraceTotal;
     ULONG64 FuseTripped;
     ULONG64 TraceRing[16];
+    ULONG64 WritevFd;
+    ULONG64 WritevCnt;
+    ULONG64 WritevBase;
+    ULONG64 WritevStatus;
     ULONG64 ParseTags[32];
     ULONG64 ParseTags2[8];
     ULONG64 DynParseMinVaddr;
@@ -1012,6 +1016,10 @@ static ULONG64 g_BrkDebug[8];
 static ULONG g_BrkDumpCount = 0;
 static ULONG64 g_EntryDump[8][4];
 static ULONG64 g_TraceRing[64];
+static ULONG64 g_WritevFd = 0;
+static ULONG64 g_WritevCnt = 0;
+static ULONG64 g_WritevBase = 0;
+static ULONG64 g_WritevStatus = 0;
 static ULONG64 g_TraceIdx = 0;
 static ULONG64 g_TraceTotal = 0;
 static ULONG64 g_FuseTripped = 0;
@@ -4204,8 +4212,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (vectorBase == 0 || vectorCount == 0 || vectorCount > 64)
         {
+            g_WritevFd = vectorFd;
+            g_WritevCnt = vectorCount;
+            g_WritevBase = vectorBase;
+            g_WritevStatus = 0xE1u;
             return (ULONG64)(-22);
         }
+        g_WritevFd = vectorFd;
+        g_WritevCnt = vectorCount;
+        g_WritevBase = vectorBase;
+        g_WritevStatus = 0xE0u;
 
         if (g_PicoProcessObject != NULL)
         {
@@ -4275,7 +4291,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                         writevAttached = TRUE;
                     }
 
-                    if (g_WriteCount < 64 && vector[vectorIndex].Length <= 256)
+                    if (g_WriteCount < 64 && vector[vectorIndex].Length <= 240)
                     {
                         CHAR writevStaging[256];
                         BOOLEAN writevCopied = FALSE;
@@ -8946,7 +8962,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ParseDbgMinVaddr = g_ParseDbgMinVaddr;
             result->ParseDbgImageSize = g_ParseDbgImageSize;
             result->ParseDbgDynOff = g_ParseDbgDynOff;
-            result->TraceTotal = g_TraceTotal;
+            result->WritevFd = g_WritevFd;
+    result->WritevCnt = g_WritevCnt;
+    result->WritevBase = g_WritevBase;
+    result->WritevStatus = g_WritevStatus;
+    result->TraceTotal = g_TraceTotal;
     result->FuseTripped = g_FuseTripped;
     { ULONG tri; for (tri = 0; tri < 16; tri++) { result->TraceRing[tri] = g_TraceRing[tri]; } }
     result->ParseDbgStrTab = g_ParseDbgStrTab;
