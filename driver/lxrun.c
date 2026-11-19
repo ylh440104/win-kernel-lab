@@ -8765,11 +8765,7 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    if (g_LdsoEntry != 0 && g_LdsoReadProbe == 0)
-    {
-        threadArgs[2] = g_ElfEntry;
-    }
-    else if (g_LdsoEntry != 0)
+    if (g_LdsoEntry != 0)
     {
         threadArgs[2] = g_LdsoEntry;
     }
