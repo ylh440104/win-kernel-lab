@@ -8398,45 +8398,6 @@ static void LxMapPool(void)
     }
     g_MmapDebug[2] = g_PoolBase;
     g_MmapDebug[1] = g_PoolSize;
-    {
-        LX_APC_STATE poolApc;
-        BOOLEAN poolAtt = FALSE;
-        ULONG64 tp = g_PoolBase;
-        ULONG64 tend = g_PoolBase + g_PoolSize;
-        ULONG tpages = 0;
-        __try
-        {
-            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&poolApc);
-            poolAtt = TRUE;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            poolAtt = FALSE;
-        }
-        if (poolAtt)
-        {
-            __try
-            {
-                while (tp < tend && tpages < 512)
-                {
-                    *(volatile UCHAR *)(ULONG_PTR)tp = 0;
-                    tp += 4096;
-                    tpages++;
-                }
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-            }
-            __try
-            {
-                KeUnstackDetachProcess((PVOID)&poolApc);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-            }
-        }
-        g_PoolTouchStatus = tpages;
-    }
 }
 
 #define LX_PROCESS_VM_ACCESS 0x0028ul
