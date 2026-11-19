@@ -60,6 +60,10 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TraceTotal;
     ULONG64 FuseTripped;
     ULONG64 TraceRing[16];
+    ULONG64 WritevFd;
+    ULONG64 WritevCnt;
+    ULONG64 WritevBase;
+    ULONG64 WritevStatus;
     ULONG64 ParseTags[32];
     ULONG64 ParseTags2[8];
     ULONG64 DynParseMinVaddr;
