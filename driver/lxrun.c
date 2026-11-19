@@ -647,6 +647,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ElfIarrayStatus;
     ULONG64 MmapRaw[8];
     ULONG64 PoolTouchPages;
+    ULONG64 BrkRegionBase;
+    ULONG64 BrkRegionSize;
+    ULONG64 BrkRegionStatus;
     ULONG64 BrkCommitStatus;
     ULONG64 BrkCommitBase;
     ULONG64 BrkCommitSize;
@@ -8794,6 +8797,9 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     result->ElfSecureValue = g_ElfSecureValue;
     { ULONG ri; for (ri = 0; ri < 8; ri++) { result->MmapRaw[ri] = g_MmapRaw[ri]; } }
             result->PoolTouchPages = (ULONG64)g_PoolTouchStatus;
+    result->BrkRegionBase = g_BrkRegionBase;
+    result->BrkRegionSize = g_BrkRegionSize;
+    result->BrkRegionStatus = g_BrkRegionStatus;
     result->BrkCommitStatus = g_BrkCommitStatus;
     result->BrkCommitBase = g_BrkCommitBase;
     result->BrkCommitSize = g_BrkCommitSize;
