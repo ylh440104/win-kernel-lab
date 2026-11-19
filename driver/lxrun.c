@@ -1022,6 +1022,7 @@ static ULONG g_MmapCount = 0;
 static ULONG64 g_LastMmapAddress = 0;
 static ULONG64 g_LastMmapStatus = 0;
 static ULONG64 g_MmapDebug[12];
+static ULONG64 g_MmapTouchFault = 0;
 static ULONG64 g_MmapContext[40];
 static UCHAR g_MmapBytes[16];
 static ULONG g_MmapContextDone = 0;
@@ -3398,6 +3399,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     ULONG64 tp = allocBase;
                     ULONG64 tend = allocBase + allocSize;
                     ULONG tpages = 0;
+                    g_MmapDebug[11] = allocSize;
                     __try
                     {
                         while (tp < tend && tpages < 128)
@@ -3409,6 +3411,10 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     }
                     __except (EXCEPTION_EXECUTE_HANDLER)
                     {
+                        g_MmapTouchFault = tp;
+                        g_MmapRaw[3] = tp;
+                        g_MmapRaw[4] = allocBase;
+                        g_MmapRaw[5] = allocSize;
                     }
                     g_MmapTouchPages = tpages;
                 g_MmapDebug[0] = (ULONG64)tpages;
