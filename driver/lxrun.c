@@ -4551,6 +4551,11 @@ static NTSTATUS LxSysDispatch(PVOID Args)
             g_TrapGdtFault = 1;
         }
         ULONG64 syscallNumber = fields[0x30 / 8];
+        g_TraceRing[g_TraceIdx & 63] = syscallNumber;
+        g_TraceRing[(g_TraceIdx + 1) & 63] = fields[LX_PARAM_BASE / 8];
+        g_TraceRing[(g_TraceIdx + 2) & 63] = fields[LX_PARAM_BASE / 8 + 1];
+        g_TraceIdx += 3;
+        g_TraceTotal++;
 
         if (g_SyscallCount == 1)
         {
