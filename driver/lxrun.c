@@ -2689,12 +2689,24 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
         {
             CHAR nfaKernelPath[260];
-            ULONG nfaLen = LxCopyLinuxPath(nfaPath, nfaKernelPath, sizeof(nfaKernelPath));
+            ULONG nfaLen = 0;
+            LX_APC_STATE nfaApc;
+            BOOLEAN nfaAttached = FALSE;
+            if (g_PicoProcessObject != NULL)
+            {
+                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&nfaApc);
+                nfaAttached = TRUE;
+            }
+            nfaLen = LxCopyLinuxPath(nfaPath, nfaKernelPath, sizeof(nfaKernelPath));
             g_StatDebug[5] = nfaLen;
             if (nfaLen > 0 && nfaLen < sizeof(nfaKernelPath))
             {
                 nfaFd = LxOpenFile(nfaKernelPath, 0, 0);
                 g_StatDebug[6] = nfaFd;
+            }
+            if (nfaAttached)
+            {
+                KeUnstackDetachProcess((PVOID)&nfaApc);
             }
         }
         if ((LONG64)nfaFd >= 0 && nfaFd < LX_MAX_FD && g_FdTable[nfaFd].Used)
