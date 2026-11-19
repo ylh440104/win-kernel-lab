@@ -751,6 +751,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  STUBBYTES: s0=0x%llx s8=0x%llx s10=0x%llx s30=0x%llx\n", (unsigned long long)q.StubBytes, (unsigned long long)q.StubBytes0, (unsigned long long)q.StubBytes1, (unsigned long long)q.StubBytes3);
     printf("  POOLTOUCH=%llu\n", (unsigned long long)q.PoolTouchPages);
     printf("  BRKPROBE=%llx %llx %llx %llx %llx\n", (unsigned long long)q.BrkProbe[0],(unsigned long long)q.BrkProbe[1],(unsigned long long)q.BrkProbe[2],(unsigned long long)q.BrkProbe[3],(unsigned long long)q.BrkProbe[4]);
+    printf("  BRKENTRY=0x%llx\n", (unsigned long long)q.BrkProbe[7]);
     printf("  BRKREGION: st=0x%llx base=0x%llx size=%llu\n", (unsigned long long)q.BrkRegionStatus,(unsigned long long)q.BrkRegionBase,(unsigned long long)q.BrkRegionSize);
     printf("  BRKCOMMIT: st=0x%llx base=0x%llx size=%llu\n", (unsigned long long)q.BrkCommitStatus,(unsigned long long)q.BrkCommitBase,(unsigned long long)q.BrkCommitSize);
     printf("  MMAPRAW=%llx %llx %llx %llx %llx %llx %llx %llx\n", (unsigned long long)q.MmapRaw[0],(unsigned long long)q.MmapRaw[1],(unsigned long long)q.MmapRaw[2],(unsigned long long)q.MmapRaw[3],(unsigned long long)q.MmapRaw[4],(unsigned long long)q.MmapRaw[5],(unsigned long long)q.MmapRaw[6],(unsigned long long)q.MmapRaw[7]);
