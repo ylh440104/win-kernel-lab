@@ -970,6 +970,7 @@ static ULONG g_SyscallHistoryCount = 0;
 
 static ULONG g_PoolStatus = 0xFFFFFFFFu;
 static ULONG64 g_PoolBase = 0;
+static ULONG64 g_PoolSize = 0;
 static ULONG64 g_BrkCurrent = 0;
 static ULONG g_BrkOk = 0;
 static ULONG g_BrkReject = 0;
@@ -3066,7 +3067,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 g_BrkOk++;
                 return brkTarget;
             }
-            if (brkTarget >= g_PoolBase && brkTarget <= g_PoolBase + LX_POOL_SIZE)
+            if (brkTarget >= g_PoolBase && brkTarget <= g_PoolBase + g_PoolSize)
             {
                 g_BrkCurrent = brkTarget;
                 g_BrkOk++;
@@ -3162,14 +3163,17 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             mapAddress = mapAddress & ~0xFFFull;
         }
 
-        if (mapAddress == 0)
+        if (mapAddress == 0 && (mapFlags & 0x20u) == 0)
         {
             mapAddress = g_MmapCurrent;
         }
-
-        if (mapAddress + mapLength > g_PoolBase + LX_POOL_SIZE)
+        if (mapAddress != 0 && g_PoolSize != 0 && mapAddress + mapLength > g_PoolBase + g_PoolSize)
         {
-            return (ULONG64)(-12);
+            if ((mapFlags & 0x20u) == 0)
+            {
+                return (ULONG64)(-12);
+            }
+            mapAddress = 0;
         }
 
         if (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used && g_FdTable[mapFd].Handle != NULL &&
@@ -8345,38 +8349,31 @@ static void LxCreatePicoProcess(void)
 
 static void LxMapPool(void)
 {
-    HANDLE sectionHandle = NULL;
-    OBJECT_ATTRIBUTES objectAttributes;
-    LARGE_INTEGER maximumSize;
-    PVOID baseAddress = (PVOID)0x100000000ull;
-    SIZE_T viewSize = 0;
+    PVOID poolBase = NULL;
+    SIZE_T poolSize = (SIZE_T)LX_POOL_SIZE;
     NTSTATUS status;
     g_PoolStatus = 0xFFFFFFFFu;
     g_PoolBase = 0;
-    maximumSize.QuadPart = (LONGLONG)LX_POOL_SIZE;
-    InitializeObjectAttributes(&objectAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-    status = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &objectAttributes, &maximumSize,
-                             PAGE_READWRITE, SEC_COMMIT, NULL);
-    if (!NT_SUCCESS(status))
+    if (g_LastPicoHandle == 0 || g_PicoProcessObject == 0)
     {
-        g_PoolStatus = (ULONG)status;
         return;
     }
-    status = ZwMapViewOfSection(sectionHandle, (HANDLE)g_LastPicoHandle, &baseAddress, 0, 0, NULL, &viewSize,
-                                ViewUnmap, 0, PAGE_READWRITE);
+    status = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &poolBase, 0, &poolSize,
+                                    MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     g_PoolStatus = (ULONG)status;
-    g_PoolBase = (ULONG64)(ULONG_PTR)baseAddress;
-    if (NT_SUCCESS(status))
+    if (!NT_SUCCESS(status))
     {
-        g_MmapCurrent = g_PoolBase + LX_POOL_SIZE / 2;
-        if (g_BrkCurrent == 0)
-        {
-            g_BrkCurrent = g_PoolBase;
-        }
-        g_MmapDebug[2] = (ULONG64)(ULONG_PTR)g_PoolBase;
-        g_MmapDebug[1] = (ULONG64)viewSize;
+        return;
     }
-    ZwClose(sectionHandle);
+    g_PoolBase = (ULONG64)(ULONG_PTR)poolBase;
+    g_PoolSize = (ULONG64)poolSize;
+    g_MmapCurrent = g_PoolBase + g_PoolSize / 2;
+    if (g_BrkCurrent == 0)
+    {
+        g_BrkCurrent = g_PoolBase;
+    }
+    g_MmapDebug[2] = g_PoolBase;
+    g_MmapDebug[1] = g_PoolSize;
 }
 
 #define LX_PROCESS_VM_ACCESS 0x0028ul
