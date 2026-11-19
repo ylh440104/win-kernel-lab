@@ -9212,8 +9212,6 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
             for (i = 0; i < LX_MAX_SYMBOLS; i++)
             {
-                result->SymNameOffsets[i] = g_SymbolInfo.Entries[i].NameOffset;
-                result->SymRelocOffsets[i] = g_SymbolInfo.Entries[i].RelocOffset;
                 RtlCopyMemory(result->SymNames[i], g_SymbolInfo.Entries[i].Name, 32);
             }
 
