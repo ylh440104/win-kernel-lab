@@ -3064,6 +3064,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 brkTarget = arg0;
             }
 
+            g_BrkProbe[7] = 0xBBBB0001ull;
             g_BrkDebug[0] = arg0;
             g_BrkDebug[1] = arg1;
             g_BrkDebug[2] = Parameters[2];
