@@ -282,6 +282,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ElfIarrayStatus;
     ULONG64 MmapRaw[8];
     ULONG64 PoolTouchPages;
+    ULONG64 BrkRegionBase;
+    ULONG64 BrkRegionSize;
+    ULONG64 BrkRegionStatus;
     ULONG64 BrkCommitStatus;
     ULONG64 BrkCommitBase;
     ULONG64 BrkCommitSize;
@@ -746,6 +749,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("  GOTDUMP: arch=0x%llx g0=0x%llx g1=0x%llx g2=0x%llx g7=0x%llx\n", (unsigned long long)q.GotArch, (unsigned long long)q.GotDump[0], (unsigned long long)q.GotDump[1], (unsigned long long)q.GotDump[2], (unsigned long long)q.GotDump[7]);
     printf("  STUBBYTES: s0=0x%llx s8=0x%llx s10=0x%llx s30=0x%llx\n", (unsigned long long)q.StubBytes, (unsigned long long)q.StubBytes0, (unsigned long long)q.StubBytes1, (unsigned long long)q.StubBytes3);
     printf("  POOLTOUCH=%llu\n", (unsigned long long)q.PoolTouchPages);
+    printf("  BRKREGION: st=0x%llx base=0x%llx size=%llu\n", (unsigned long long)q.BrkRegionStatus,(unsigned long long)q.BrkRegionBase,(unsigned long long)q.BrkRegionSize);
     printf("  BRKCOMMIT: st=0x%llx base=0x%llx size=%llu\n", (unsigned long long)q.BrkCommitStatus,(unsigned long long)q.BrkCommitBase,(unsigned long long)q.BrkCommitSize);
     printf("  MMAPRAW=%llx %llx %llx %llx %llx %llx %llx %llx\n", (unsigned long long)q.MmapRaw[0],(unsigned long long)q.MmapRaw[1],(unsigned long long)q.MmapRaw[2],(unsigned long long)q.MmapRaw[3],(unsigned long long)q.MmapRaw[4],(unsigned long long)q.MmapRaw[5],(unsigned long long)q.MmapRaw[6],(unsigned long long)q.MmapRaw[7]);
     printf("  IARRAY: st=0x%llx val=0x%llx secure=%llu\n", (unsigned long long)q.ElfIarrayStatus, (unsigned long long)q.ElfIarrayValue, (unsigned long long)q.ElfSecureValue);
