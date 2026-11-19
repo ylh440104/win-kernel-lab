@@ -3081,32 +3081,38 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_MMAP:
     {
-        ULONG64 mapAddress = Parameters[1];
-        ULONG64 mapLength = Parameters[2];
+        ULONG64 mapAddress = 0;
+        ULONG64 mapLength = 0;
         ULONG64 mapProt = 0;
         ULONG64 mapFlags = 0;
         ULONG64 mapFd = 0;
         ULONG64 mapOffset = 0;
         ULONG desiredProtection;
-
-        if (mapLength == 0)
-        {
-            return (ULONG64)(-22);
-        }
-
         __try
         {
+            RtlCopyMemory(&mapAddress, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
+            RtlCopyMemory(&mapLength, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
             RtlCopyMemory(&mapProt, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
             RtlCopyMemory(&mapFlags, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
-            RtlCopyMemory(&mapFd, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
-            RtlCopyMemory(&mapOffset, (PUCHAR)(ULONG_PTR)Context + 0x050, 8);
+            RtlCopyMemory(&mapFd, (PUCHAR)(ULONG_PTR)Context + 0x050, 8);
+            RtlCopyMemory(&mapOffset, (PUCHAR)(ULONG_PTR)Context + 0x058, 8);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
+            mapAddress = 0;
+            mapLength = 0;
             mapProt = 0;
             mapFlags = 0;
             mapFd = 0;
             mapOffset = 0;
+        }
+        if (mapLength == 0 || mapLength > 0x40000000ull)
+        {
+            mapLength = 4096;
+        }
+        if (mapFd > (ULONG64)LX_MAX_FD)
+        {
+            mapFd = (ULONG64)(-1);
         }
 
         g_MmapDebug[0] = mapAddress;
@@ -3240,7 +3246,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             HANDLE anonSection = NULL;
             OBJECT_ATTRIBUTES anonAttr;
-            PVOID anonBase = (PVOID)(ULONG_PTR)mapAddress;
+            PVOID anonBase = NULL;
+            if ((mapFlags & 0x10u) != 0 && mapAddress != 0)
+            {
+                anonBase = (PVOID)(ULONG_PTR)mapAddress;
+            }
             SIZE_T anonViewSize = 0;
             LARGE_INTEGER anonSize;
             NTSTATUS anonStatus;
