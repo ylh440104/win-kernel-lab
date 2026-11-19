@@ -422,7 +422,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ParseDbgImageSize;
     ULONG64 ParseDbgDynOff;
     ULONG64 ParseDbgStrTab;
-    ULONG64 ParseTags[32];
+    ULONG64 ParseTags[16];
     ULONG64 ParseTags2[8];
     ULONG64 DynParseMinVaddr;
     ULONG64 DynStrTabVaddr;
@@ -610,7 +610,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG MmapCount;
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
-    ULONG64 MmapDebug[12];
+    ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
     ULONG64 TlsBlockBase;
@@ -812,7 +812,7 @@ static ULONG64 g_ParseDbgMinVaddr = 0;
 static ULONG64 g_ParseDbgImageSize = 0;
 static ULONG64 g_ParseDbgDynOff = 0;
 static ULONG64 g_ParseDbgStrTab = 0;
-static ULONG64 g_ParseTags[32] = {0};
+static ULONG64 g_ParseTags[16] = {0};
 static ULONG64 g_ParseTags2[8] = {0};
 static ULONG64 g_BrkProbe[8] = {0,0,0,0,0,0,0,0};
 static ULONG64 g_BrkCommitBase = 0;
@@ -983,7 +983,6 @@ static ULONG g_ThreadStatus = 0xFFFFFFFFu;
 static ULONG g_StackMapStatus = 0xFFFFFFFFu;
 static ULONG64 g_ThreadHandle = 0;
 static ULONG64 g_ResumeThreadFn = 0;
-static ULONG64 g_SuspendThreadFn = 0;
 static ULONG g_ResumeStatus = 0xFFFFFFFFu;
 static ULONG g_PrevSuspendCount = 0xFFFFFFFFu;
 static volatile ULONG64 g_ThreadExitCount = 0;
@@ -1008,21 +1007,12 @@ static ULONG64 g_BrkLastBad = 0;
 static ULONG64 g_BrkDebug[8];
 static ULONG g_BrkDumpCount = 0;
 static ULONG64 g_EntryDump[8][4];
-static ULONG64 g_TraceRing[64];
-static ULONG64 g_WritevFd = 0;
-static ULONG64 g_WritevCnt = 0;
-static ULONG64 g_WritevBase = 0;
-static ULONG64 g_WritevStatus = 0;
-static ULONG64 g_TraceIdx = 0;
-static ULONG64 g_TraceTotal = 0;
-static ULONG64 g_FuseTripped = 0;
 static ULONG g_EntryCount = 0;
 static ULONG64 g_MmapCurrent = 0;
 static ULONG g_MmapCount = 0;
 static ULONG64 g_LastMmapAddress = 0;
 static ULONG64 g_LastMmapStatus = 0;
-static ULONG64 g_MmapDebug[12];
-static ULONG64 g_MmapTouchFault = 0;
+static ULONG64 g_MmapDebug[8];
 static ULONG64 g_MmapContext[40];
 static UCHAR g_MmapBytes[16];
 static ULONG g_MmapContextDone = 0;
@@ -2350,11 +2340,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
     }
 
-    g_TraceRing[g_TraceIdx & 63] = Number;
-    g_TraceRing[(g_TraceIdx + 1) & 63] = Parameters[0];
-    g_TraceRing[(g_TraceIdx + 2) & 63] = Parameters[1];
-    g_TraceIdx += 3;
-    g_TraceTotal++;
     if (g_EntryCount < 8)
     {
         g_EntryDump[g_EntryCount][0] = Number;
@@ -3344,32 +3329,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 allocProt = PAGE_EXECUTE_READWRITE;
             }
             allocBase = 0;
-            /* 按 lxcore 的 LxpMmAllocateMapVm 语义：一次 MEM_COMMIT|MEM_RESERVE，
-               不再分步 RESERVE+逐块 COMMIT（那会丢 PTE） */
-            allocStatus = 0xC0000001u;
-            {
-                LARGE_INTEGER secSize;
-                HANDLE secHandle = NULL;
-                OBJECT_ATTRIBUTES secAttr;
-                secSize.QuadPart = (LONGLONG)allocSize;
-                InitializeObjectAttributes(&secAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-                allocStatus = ZwCreateSection(&secHandle, SECTION_ALL_ACCESS, &secAttr, &secSize,
-                                              PAGE_READWRITE, SEC_COMMIT, NULL);
-                g_MmapDebug[9] = (ULONG64)allocStatus;
-                if (NT_SUCCESS(allocStatus) && g_LastPicoHandle != 0)
-                {
-                    PVOID viewBase = NULL;
-                    SIZE_T viewSize = 0;
-                    allocStatus = ZwMapViewOfSection(secHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0,
-                                                     allocSize, NULL, &viewSize, ViewUnmap, 0, allocProt);
-                    g_MmapDebug[10] = (ULONG64)allocStatus;
-                    if (NT_SUCCESS(allocStatus))
-                    {
-                        allocBase = (ULONG64)(ULONG_PTR)viewBase;
-                    }
-                    ZwClose(secHandle);
-                }
-            }
+            allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
+                                                  (PSIZE_T)&allocSize, MEM_RESERVE, PAGE_NOACCESS);
             if (NT_SUCCESS(allocStatus))
             {
                 ULONG64 cAddr = allocBase;
@@ -3399,7 +3360,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     ULONG64 tp = allocBase;
                     ULONG64 tend = allocBase + allocSize;
                     ULONG tpages = 0;
-                    g_MmapDebug[11] = allocSize;
                     __try
                     {
                         while (tp < tend && tpages < 128)
@@ -3411,10 +3371,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     }
                     __except (EXCEPTION_EXECUTE_HANDLER)
                     {
-                        g_MmapTouchFault = tp;
-                        g_MmapRaw[3] = tp;
-                        g_MmapRaw[4] = allocBase;
-                        g_MmapRaw[5] = allocSize;
                     }
                     g_MmapTouchPages = tpages;
                 g_MmapDebug[0] = (ULONG64)tpages;
@@ -4216,35 +4172,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_READV:
     case LX_SYS_WRITEV:
     {
-        ULONG64 vectorFd = 0;
-        ULONG64 vectorBase = 0;
-        ULONG64 vectorCount = 0;
-        {
-            ULONG64 tfA0 = 0;
-            ULONG64 tfA1 = 0;
-            ULONG64 tfA2 = 0;
-            __try
-            {
-                RtlCopyMemory(&tfA0, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
-                RtlCopyMemory(&tfA1, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
-                RtlCopyMemory(&tfA2, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                tfA0 = 0;
-                tfA1 = 0;
-                tfA2 = 0;
-            }
-            vectorFd = tfA0;
-            vectorBase = tfA1;
-            vectorCount = tfA2;
-            if (vectorFd == 0 && vectorBase == 0 && vectorCount == 0)
-            {
-                vectorFd = Parameters[0];
-                vectorBase = Parameters[1];
-                vectorCount = Parameters[2];
-            }
-        }
+        ULONG64 vectorFd = Parameters[0];
+        ULONG64 vectorBase = Parameters[1];
+        ULONG64 vectorCount = Parameters[2];
         ULONG64 vectorTotal = 0;
         ULONG64 vectorIndex;
         LX_APC_STATE vectorApc;
@@ -4252,7 +4182,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (vectorFd >= 1 && vectorFd <= 2)
         {
-            /* stdout/stderr：不查 fd 表，直接允许 */
         }
         else if (vectorFd >= LX_MAX_FD || !g_FdTable[vectorFd].Used)
         {
@@ -4261,16 +4190,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (vectorBase == 0 || vectorCount == 0 || vectorCount > 64)
         {
-            g_WritevFd = vectorFd;
-            g_WritevCnt = vectorCount;
-            g_WritevBase = vectorBase;
-            g_WritevStatus = 0xE1u;
             return (ULONG64)(-22);
         }
-        g_WritevFd = vectorFd;
-        g_WritevCnt = vectorCount;
-        g_WritevBase = vectorBase;
-        g_WritevStatus = 0xE0u;
 
         if (g_PicoProcessObject != NULL)
         {
@@ -4340,7 +4261,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                         writevAttached = TRUE;
                     }
 
-                    if (g_WriteCount < 64 && vector[vectorIndex].Length <= 240)
+                    if (g_WriteCount < 64 && vector[vectorIndex].Length <= 256)
                     {
                         CHAR writevStaging[256];
                         BOOLEAN writevCopied = FALSE;
@@ -4520,15 +4441,6 @@ static NTSTATUS LxSysDispatch(PVOID Args)
     context = argument[0];
     g_SyscallCount++;
     g_LastContext = context;
-    if (g_SyscallCount > 512)
-    {
-        g_FuseTripped = g_SyscallCount;
-        if (g_SuspendThreadFn != 0)
-        {
-            ULONG prev = 0;
-            ((NTSTATUS (*)(PVOID, PULONG))g_SuspendThreadFn)(g_PicoThreadObject, &prev);
-        }
-    }
     if (g_SyscallCount <= 16)
     {
         g_DispatchStackSeq[g_SyscallCount - 1] = dispatchStackBefore;
@@ -4600,11 +4512,6 @@ static NTSTATUS LxSysDispatch(PVOID Args)
             g_TrapGdtFault = 1;
         }
         ULONG64 syscallNumber = fields[0x30 / 8];
-        g_TraceRing[g_TraceIdx & 63] = syscallNumber;
-        g_TraceRing[(g_TraceIdx + 1) & 63] = fields[LX_PARAM_BASE / 8];
-        g_TraceRing[(g_TraceIdx + 2) & 63] = fields[LX_PARAM_BASE / 8 + 1];
-        g_TraceIdx += 3;
-        g_TraceTotal++;
 
         if (g_SyscallCount == 1)
         {
@@ -4916,12 +4823,49 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
     {
         return;
     }
-
+    /* PIE 场景：probe 已把段 vaddr 抬高，但 .dynamic 里的 vaddr 仍是相对值，
+       统一补上 MinVaddr（仅当尚未抬高时）。 */
+    g_ParseDbgMinVaddr = Load->MinVaddr;
+    g_ParseDbgImageSize = ImageSize;
+    g_ParseDbgDynOff = Info->DynamicOffset;
+    g_ParseDbgStrTab = Info->StrTabVaddr;
+    if (Load->MinVaddr != 0)
+    {
+        ULONG64 mv = Load->MinVaddr;
+        if (Info->StrTabVaddr != 0 && Info->StrTabVaddr < mv)
+        {
+            Info->StrTabVaddr += mv;
+        }
+        if (Info->SymTabVaddr != 0 && Info->SymTabVaddr < mv)
+        {
+            Info->SymTabVaddr += mv;
+        }
+        if (Info->RelaVaddr != 0 && Info->RelaVaddr < mv)
+        {
+            Info->RelaVaddr += mv;
+        }
+        if (Info->JmpRelVaddr != 0 && Info->JmpRelVaddr < mv)
+        {
+            Info->JmpRelVaddr += mv;
+        }
+        if (Info->GnuHashVaddr != 0 && Info->GnuHashVaddr < mv)
+        {
+            Info->GnuHashVaddr += mv;
+        }
+        if (Info->HashVaddr != 0 && Info->HashVaddr < mv)
+        {
+            Info->HashVaddr += mv;
+        }
+        if (Info->PltGotVaddr != 0 && Info->PltGotVaddr < mv)
+        {
+            Info->PltGotVaddr += mv;
+        }
+    }
 
     for (index = 0; index < 128; index++)
     {
         ULONG64 entryOffset = Info->DynamicOffset + (ULONG64)index * 16;
-        ULONG64 tagRaw2 = 0;
+        LONG64 dTag;
         ULONG64 dVal;
 
         if (entryOffset + 16 > ImageSize)
@@ -4944,23 +4888,23 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
                 dVal |= ((ULONG64)tagBuf[bi + 8]) << (bi * 8);
                 tagRaw |= ((ULONG64)tagBuf[bi]) << (bi * 8);
             }
-            tagRaw2 = tagRaw;
+            dTag = (LONG64)tagRaw;
         }
-        if (index < 16)
+        if (index < 8)
         {
             g_ParseTags[index * 2] = entryOffset;
-            g_ParseTags[index * 2 + 1] = tagRaw2;
+            g_ParseTags[index * 2 + 1] = (ULONG64)dTag;
             g_ParseTags2[index] = dVal;
         }
 
         Info->DynamicCount++;
 
-        if (tagRaw2 == LX_DT_NULL)
+        if (dTag == LX_DT_NULL)
         {
             break;
         }
 
-        if (tagRaw2 == LX_DT_NEEDED)
+        if (dTag == LX_DT_NEEDED)
         {
             if (Info->NeededCount < LX_MAX_NEEDED)
             {
@@ -4968,83 +4912,83 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
                 Info->NeededCount++;
             }
         }
-        else if (tagRaw2 == LX_DT_STRTAB)
+        else if (dTag == LX_DT_STRTAB)
         {
             Info->StrTabVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_SYMTAB)
+        else if (dTag == LX_DT_SYMTAB)
         {
             Info->SymTabVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_RELA)
+        else if (dTag == LX_DT_RELA)
         {
             Info->RelaVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_RELASZ)
+        else if (dTag == LX_DT_RELASZ)
         {
             Info->RelaSize = dVal;
         }
-        else if (tagRaw2 == LX_DT_JMPREL)
+        else if (dTag == LX_DT_JMPREL)
         {
             Info->JmpRelVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_PLTRELSZ)
+        else if (dTag == LX_DT_PLTRELSZ)
         {
             Info->JmpRelSize = dVal;
         }
-        else if (tagRaw2 == LX_DT_PLTGOT)
+        else if (dTag == LX_DT_PLTGOT)
         {
             Info->PltGotVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_INIT)
+        else if (dTag == LX_DT_INIT)
         {
             Info->InitVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_FINI)
+        else if (dTag == LX_DT_FINI)
         {
             Info->FiniVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_SONAME)
+        else if (dTag == LX_DT_SONAME)
         {
             Info->SonameOffset = dVal;
         }
-        else if (tagRaw2 == LX_DT_HASH)
+        else if (dTag == LX_DT_HASH)
         {
             Info->HashVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_RELR)
+        else if (dTag == LX_DT_RELR)
         {
             Info->RelrVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_RELRSZ)
+        else if (dTag == LX_DT_RELRSZ)
         {
             Info->RelrSize = dVal;
         }
-        else if (tagRaw2 == LX_DT_GNU_HASH)
+        else if (dTag == LX_DT_GNU_HASH)
         {
             Info->GnuHashVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_INIT_ARRAY)
+        else if (dTag == LX_DT_INIT_ARRAY)
         {
             Info->InitArrayVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_INIT_ARRAYSZ)
+        else if (dTag == LX_DT_INIT_ARRAYSZ)
         {
             Info->InitArraySize = dVal;
         }
-        else if (tagRaw2 == LX_DT_FINI_ARRAY)
+        else if (dTag == LX_DT_FINI_ARRAY)
         {
             Info->FiniArrayVaddr = dVal;
         }
-        else if (tagRaw2 == LX_DT_FINI_ARRAYSZ)
+        else if (dTag == LX_DT_FINI_ARRAYSZ)
         {
             Info->FiniArraySize = dVal;
         }
-        else if (tagRaw2 == LX_DT_FLAGS)
+        else if (dTag == LX_DT_FLAGS)
         {
             Info->Flags = dVal;
         }
-        else if (tagRaw2 == LX_DT_FLAGS_1)
+        else if (dTag == LX_DT_FLAGS_1)
         {
             Info->Flags1 = dVal;
         }
@@ -5124,45 +5068,6 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
             {
                 Info->SymCountFromHash = nchain;
             }
-        }
-    }
-    g_ParseDbgStrTab = Info->StrTabVaddr;
-    /* PIE 场景：probe 已把段 vaddr 抬高，但 .dynamic 里的 vaddr 仍是相对值，
-       统一补上 MinVaddr（仅当尚未抬高时）。 */
-    g_ParseDbgMinVaddr = Load->MinVaddr;
-    g_ParseDbgImageSize = ImageSize;
-    g_ParseDbgDynOff = Info->DynamicOffset;
-    g_ParseDbgDynOff = Info->StrTabVaddr;
-    if (Load->MinVaddr != 0)
-    {
-        ULONG64 mv = Load->MinVaddr;
-        if (Info->StrTabVaddr != 0 && Info->StrTabVaddr < mv)
-        {
-            Info->StrTabVaddr += mv;
-        }
-        if (Info->SymTabVaddr != 0 && Info->SymTabVaddr < mv)
-        {
-            Info->SymTabVaddr += mv;
-        }
-        if (Info->RelaVaddr != 0 && Info->RelaVaddr < mv)
-        {
-            Info->RelaVaddr += mv;
-        }
-        if (Info->JmpRelVaddr != 0 && Info->JmpRelVaddr < mv)
-        {
-            Info->JmpRelVaddr += mv;
-        }
-        if (Info->GnuHashVaddr != 0 && Info->GnuHashVaddr < mv)
-        {
-            Info->GnuHashVaddr += mv;
-        }
-        if (Info->HashVaddr != 0 && Info->HashVaddr < mv)
-        {
-            Info->HashVaddr += mv;
-        }
-        if (Info->PltGotVaddr != 0 && Info->PltGotVaddr < mv)
-        {
-            Info->PltGotVaddr += mv;
         }
     }
 }
@@ -8861,7 +8766,11 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    if (g_LdsoEntry != 0)
+    if (g_LdsoEntry != 0 && g_LdsoReadProbe == 0)
+    {
+        threadArgs[2] = g_ElfEntry;
+    }
+    else if (g_LdsoEntry != 0)
     {
         threadArgs[2] = g_LdsoEntry;
     }
@@ -9016,10 +8925,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ParseDbgMinVaddr = g_ParseDbgMinVaddr;
             result->ParseDbgImageSize = g_ParseDbgImageSize;
             result->ParseDbgDynOff = g_ParseDbgDynOff;
-    result->ParseDbgStrTab = g_ParseDbgStrTab;
-    result->ParseTags2[6] = g_TraceTotal;
-    result->ParseTags2[7] = g_WritevFd;
-            { ULONG ti; for (ti = 0; ti < 32; ti++) { result->ParseTags[ti] = g_ParseTags[ti]; } for (ti = 0; ti < 8; ti++) { result->ParseTags2[ti] = g_ParseTags2[ti]; } }
+            result->ParseDbgStrTab = g_ParseDbgStrTab;
+            { ULONG ti; for (ti = 0; ti < 16; ti++) { result->ParseTags[ti] = g_ParseTags[ti]; } for (ti = 0; ti < 8; ti++) { result->ParseTags2[ti] = g_ParseTags2[ti]; } }
             result->DynParseMinVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynStrTabVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynSymTabVaddr = g_ElfDynamic.SymTabVaddr;
@@ -9212,6 +9119,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
             for (i = 0; i < LX_MAX_SYMBOLS; i++)
             {
+                result->SymNameOffsets[i] = g_SymbolInfo.Entries[i].NameOffset;
+                result->SymRelocOffsets[i] = g_SymbolInfo.Entries[i].RelocOffset;
                 RtlCopyMemory(result->SymNames[i], g_SymbolInfo.Entries[i].Name, 32);
             }
 
@@ -9488,7 +9397,6 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                         g_CreatePicoFn = createFn;
                         g_CreatePicoThreadFn = *(ULONG64 *)&routines[0x10];
                         g_ResumeThreadFn = *(ULONG64 *)&routines[0x40];
-                        g_SuspendThreadFn = *(ULONG64 *)&routines[0x38];
                         g_SetDescriptorBaseFn = *(ULONG64 *)&routines[0x48];
                         g_GetContextFn = *(ULONG64 *)&routines[0x28];
                         if (createFn != 0)
