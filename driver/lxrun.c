@@ -422,6 +422,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ParseDbgImageSize;
     ULONG64 ParseDbgDynOff;
     ULONG64 ParseDbgStrTab;
+    ULONG64 TraceTotal;
+    ULONG64 FuseTripped;
+    ULONG64 TraceRing[16];
     ULONG64 ParseTags[32];
     ULONG64 ParseTags2[8];
     ULONG64 DynParseMinVaddr;
@@ -983,6 +986,7 @@ static ULONG g_ThreadStatus = 0xFFFFFFFFu;
 static ULONG g_StackMapStatus = 0xFFFFFFFFu;
 static ULONG64 g_ThreadHandle = 0;
 static ULONG64 g_ResumeThreadFn = 0;
+static ULONG64 g_SuspendThreadFn = 0;
 static ULONG g_ResumeStatus = 0xFFFFFFFFu;
 static ULONG g_PrevSuspendCount = 0xFFFFFFFFu;
 static volatile ULONG64 g_ThreadExitCount = 0;
@@ -1007,6 +1011,10 @@ static ULONG64 g_BrkLastBad = 0;
 static ULONG64 g_BrkDebug[8];
 static ULONG g_BrkDumpCount = 0;
 static ULONG64 g_EntryDump[8][4];
+static ULONG64 g_TraceRing[64];
+static ULONG64 g_TraceIdx = 0;
+static ULONG64 g_TraceTotal = 0;
+static ULONG64 g_FuseTripped = 0;
 static ULONG g_EntryCount = 0;
 static ULONG64 g_MmapCurrent = 0;
 static ULONG g_MmapCount = 0;
@@ -2340,6 +2348,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
     }
 
+    g_TraceRing[g_TraceIdx & 63] = Number;
+    g_TraceRing[(g_TraceIdx + 1) & 63] = Parameters[0];
+    g_TraceRing[(g_TraceIdx + 2) & 63] = Parameters[1];
+    g_TraceIdx += 3;
+    g_TraceTotal++;
     if (g_EntryCount < 8)
     {
         g_EntryDump[g_EntryCount][0] = Number;
@@ -4438,6 +4451,15 @@ static NTSTATUS LxSysDispatch(PVOID Args)
     context = argument[0];
     g_SyscallCount++;
     g_LastContext = context;
+    if (g_SyscallCount > 512)
+    {
+        g_FuseTripped = g_SyscallCount;
+        if (g_SuspendThreadFn != 0)
+        {
+            ULONG prev = 0;
+            ((NTSTATUS (*)(PVOID, PULONG))g_SuspendThreadFn)(g_PicoThreadObject, &prev);
+        }
+    }
     if (g_SyscallCount <= 16)
     {
         g_DispatchStackSeq[g_SyscallCount - 1] = dispatchStackBefore;
@@ -8920,7 +8942,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ParseDbgMinVaddr = g_ParseDbgMinVaddr;
             result->ParseDbgImageSize = g_ParseDbgImageSize;
             result->ParseDbgDynOff = g_ParseDbgDynOff;
-            result->ParseDbgStrTab = g_ParseDbgStrTab;
+            result->TraceTotal = g_TraceTotal;
+    result->FuseTripped = g_FuseTripped;
+    { ULONG tri; for (tri = 0; tri < 16; tri++) { result->TraceRing[tri] = g_TraceRing[tri]; } }
+    result->ParseDbgStrTab = g_ParseDbgStrTab;
             { ULONG ti; for (ti = 0; ti < 32; ti++) { result->ParseTags[ti] = g_ParseTags[ti]; } for (ti = 0; ti < 8; ti++) { result->ParseTags2[ti] = g_ParseTags2[ti]; } }
             result->DynParseMinVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynStrTabVaddr = g_ElfDynamic.StrTabVaddr;
@@ -9392,6 +9417,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                         g_CreatePicoFn = createFn;
                         g_CreatePicoThreadFn = *(ULONG64 *)&routines[0x10];
                         g_ResumeThreadFn = *(ULONG64 *)&routines[0x40];
+                        g_SuspendThreadFn = *(ULONG64 *)&routines[0x38];
                         g_SetDescriptorBaseFn = *(ULONG64 *)&routines[0x48];
                         g_GetContextFn = *(ULONG64 *)&routines[0x28];
                         if (createFn != 0)
