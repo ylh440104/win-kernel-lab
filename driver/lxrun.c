@@ -2655,6 +2655,73 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return 0;
     }
 
+    case LX_SYS_NEWFSTATAT:
+    {
+        ULONG64 nfaDirFd = 0;
+        ULONG64 nfaPath = 0;
+        ULONG64 nfaStat = 0;
+        ULONG64 nfaFlags = 0;
+        ULONG64 nfaFd = 0;
+        LX_LINUX_STAT nfaLinux;
+        g_StatCount++;
+        __try
+        {
+            RtlCopyMemory(&nfaDirFd, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
+            RtlCopyMemory(&nfaPath, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
+            RtlCopyMemory(&nfaStat, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+            RtlCopyMemory(&nfaFlags, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            nfaDirFd = 0;
+            nfaPath = 0;
+            nfaStat = 0;
+            nfaFlags = 0;
+        }
+        g_StatDebug[0] = nfaDirFd;
+        g_StatDebug[1] = nfaPath;
+        g_StatDebug[2] = nfaStat;
+        g_StatDebug[3] = nfaFlags;
+        if (nfaPath == 0 || nfaStat == 0)
+        {
+            g_LastStatStatus = 0xC000000Du;
+            return (ULONG64)(-14);
+        }
+        {
+            CHAR nfaKernelPath[260];
+            ULONG nfaLen = LxCopyLinuxPath(nfaPath, nfaKernelPath, sizeof(nfaKernelPath));
+            g_StatDebug[5] = nfaLen;
+            if (nfaLen > 0 && nfaLen < sizeof(nfaKernelPath))
+            {
+                nfaFd = LxOpenFile(nfaKernelPath, 0, 0);
+                g_StatDebug[6] = nfaFd;
+            }
+        }
+        if ((LONG64)nfaFd >= 0 && nfaFd < LX_MAX_FD && g_FdTable[nfaFd].Used)
+        {
+            ULONG realFd = (ULONG)nfaFd;
+            ULONG64 st = LxFillStat(g_FdTable[realFd].Handle, &nfaLinux);
+            g_StatDebug[4] = st;
+            if (st == 0)
+            {
+                g_LastStatStatus = 0;
+                g_LastStatSize = nfaLinux.Size;
+                g_LastStatMode = nfaLinux.Mode;
+                __try
+                {
+                    ProbeForWrite((PVOID)(ULONG_PTR)nfaStat, sizeof(nfaLinux), 4);
+                    RtlCopyMemory((PVOID)(ULONG_PTR)nfaStat, &nfaLinux, sizeof(nfaLinux));
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    return (ULONG64)(-14);
+                }
+                return 0;
+            }
+        }
+        g_LastStatStatus = 0xFFFFFFFFu;
+        return (ULONG64)(-2);
+    }
     case LX_SYS_GETDENTS64:
     {
         ULONG fd = (ULONG)Parameters[1];
