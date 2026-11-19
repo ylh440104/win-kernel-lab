@@ -282,6 +282,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ElfIarrayStatus;
     ULONG64 ElfIarrayValue;
     ULONG64 ElfSecureValue;
+    ULONG64 MmapRaw[8];
     ULONG64 ElfBackVaddr;
     ULONG ElfBackStatus;
     ULONG ElfBackSize;
@@ -740,6 +741,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     printf("LOAD_ELF: ok=%d ret=%lu\n", ok ? 1 : 0, ret);
     printf("  GOTDUMP: arch=0x%llx g0=0x%llx g1=0x%llx g2=0x%llx g7=0x%llx\n", (unsigned long long)q.GotArch, (unsigned long long)q.GotDump[0], (unsigned long long)q.GotDump[1], (unsigned long long)q.GotDump[2], (unsigned long long)q.GotDump[7]);
     printf("  STUBBYTES: s0=0x%llx s8=0x%llx s10=0x%llx s30=0x%llx\n", (unsigned long long)q.StubBytes, (unsigned long long)q.StubBytes0, (unsigned long long)q.StubBytes1, (unsigned long long)q.StubBytes3);
+    printf("  MMAPRAW=%llx %llx %llx %llx %llx %llx %llx %llx\n", (unsigned long long)q.MmapRaw[0],(unsigned long long)q.MmapRaw[1],(unsigned long long)q.MmapRaw[2],(unsigned long long)q.MmapRaw[3],(unsigned long long)q.MmapRaw[4],(unsigned long long)q.MmapRaw[5],(unsigned long long)q.MmapRaw[6],(unsigned long long)q.MmapRaw[7]);
     printf("  IARRAY: st=0x%llx val=0x%llx secure=%llu\n", (unsigned long long)q.ElfIarrayStatus, (unsigned long long)q.ElfIarrayValue, (unsigned long long)q.ElfSecureValue);
     printf("  SELFTEST: elfmagic=0x%llx entry=0x%llx got=0x%llx stub=0x%llx\n",
            (unsigned long long)q.StubBytes0, (unsigned long long)q.StubBytes1,
