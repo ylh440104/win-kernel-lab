@@ -789,6 +789,9 @@ static ULONG64 g_ElfSecureValue = 0;
 static ULONG g_ProtectEnable = 0;
 static ULONG g_PoolTouchStatus = 0;
 static ULONG g_MmapTouchPages = 0;
+static ULONG64 g_BrkCommitStatus = 0;
+static ULONG64 g_BrkCommitBase = 0;
+static ULONG64 g_BrkCommitSize = 0;
 static ULONG64 g_MmapRaw[8] = {0xAAAA0001ull,0xAAAA0002ull,0xAAAA0003ull,0xAAAA0004ull,0xAAAA0005ull,0xAAAA0006ull,0xAAAA0007ull,0xAAAA0008ull};
 static ULONG64 g_ElfBackMagic = 0;
 static ULONG64 g_ElfBackVaddr = 0;
@@ -3070,6 +3073,19 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
             if (brkTarget >= g_PoolBase && brkTarget <= g_PoolBase + g_PoolSize)
             {
+                if (brkTarget > g_BrkCurrent && g_LastPicoHandle != 0)
+                {
+                    ULONG64 needBase = g_BrkCurrent & ~0xFFFull;
+                    ULONG64 needSize = ((brkTarget - needBase) + 0xFFFull) & ~0xFFFull;
+                    PVOID commitBase = (PVOID)(ULONG_PTR)needBase;
+                    SIZE_T commitSize = (SIZE_T)needSize;
+                    NTSTATUS commitStatus;
+                    commitStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &commitBase, 0, &commitSize,
+                                                           MEM_COMMIT, PAGE_READWRITE);
+                    g_BrkCommitStatus = (ULONG64)commitStatus;
+                    g_BrkCommitBase = (ULONG64)(ULONG_PTR)commitBase;
+                    g_BrkCommitSize = (ULONG64)commitSize;
+                }
                 g_BrkCurrent = brkTarget;
                 g_BrkOk++;
                 return brkTarget;
