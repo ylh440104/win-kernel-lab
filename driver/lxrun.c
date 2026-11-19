@@ -422,7 +422,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ParseDbgImageSize;
     ULONG64 ParseDbgDynOff;
     ULONG64 ParseDbgStrTab;
-    ULONG64 ParseTags[16];
+    ULONG64 ParseTags[32];
     ULONG64 ParseTags2[8];
     ULONG64 DynParseMinVaddr;
     ULONG64 DynStrTabVaddr;
@@ -812,7 +812,7 @@ static ULONG64 g_ParseDbgMinVaddr = 0;
 static ULONG64 g_ParseDbgImageSize = 0;
 static ULONG64 g_ParseDbgDynOff = 0;
 static ULONG64 g_ParseDbgStrTab = 0;
-static ULONG64 g_ParseTags[16] = {0};
+static ULONG64 g_ParseTags[32] = {0};
 static ULONG64 g_ParseTags2[8] = {0};
 static ULONG64 g_BrkProbe[8] = {0,0,0,0,0,0,0,0};
 static ULONG64 g_BrkCommitBase = 0;
@@ -4887,7 +4887,7 @@ static void LxParseElfDynamic(const UCHAR *ImageData, ULONG ImageSize, const LX_
             }
             tagRaw2 = tagRaw;
         }
-        if (index < 8)
+        if (index < 16)
         {
             g_ParseTags[index * 2] = entryOffset;
             g_ParseTags[index * 2 + 1] = tagRaw2;
@@ -8923,7 +8923,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ParseDbgImageSize = g_ParseDbgImageSize;
             result->ParseDbgDynOff = g_ParseDbgDynOff;
             result->ParseDbgStrTab = g_ParseDbgStrTab;
-            { ULONG ti; for (ti = 0; ti < 16; ti++) { result->ParseTags[ti] = g_ParseTags[ti]; } for (ti = 0; ti < 8; ti++) { result->ParseTags2[ti] = g_ParseTags2[ti]; } }
+            { ULONG ti; for (ti = 0; ti < 32; ti++) { result->ParseTags[ti] = g_ParseTags[ti]; } for (ti = 0; ti < 8; ti++) { result->ParseTags2[ti] = g_ParseTags2[ti]; } }
             result->DynParseMinVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynStrTabVaddr = g_ElfDynamic.StrTabVaddr;
             result->DynSymTabVaddr = g_ElfDynamic.SymTabVaddr;
