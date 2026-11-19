@@ -3345,30 +3345,30 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             allocBase = 0;
             /* 按 lxcore 的 LxpMmAllocateMapVm 语义：一次 MEM_COMMIT|MEM_RESERVE，
                不再分步 RESERVE+逐块 COMMIT（那会丢 PTE） */
-            if (g_PicoProcessObject != NULL)
+            allocStatus = 0xC0000001u;
             {
-                HANDLE picoProcHandle = NULL;
-                NTSTATUS ohStatus;
-                ohStatus = ObOpenObjectByPointer(g_PicoProcessObject, 0, NULL, 0x1F0FFF, NULL, KernelMode, &picoProcHandle);
-                g_MmapDebug[9] = (ULONG64)ohStatus;
-                if (NT_SUCCESS(ohStatus))
+                LARGE_INTEGER secSize;
+                HANDLE secHandle = NULL;
+                OBJECT_ATTRIBUTES secAttr;
+                secSize.QuadPart = (LONGLONG)allocSize;
+                InitializeObjectAttributes(&secAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+                allocStatus = ZwCreateSection(&secHandle, SECTION_ALL_ACCESS, &secAttr, &secSize,
+                                              PAGE_READWRITE, SEC_COMMIT, NULL);
+                g_MmapDebug[9] = (ULONG64)allocStatus;
+                if (NT_SUCCESS(allocStatus) && g_LastPicoHandle != 0)
                 {
-                    g_LastPicoHandle = (ULONG64)picoProcHandle;
-                    g_MmapDebug[10] = 0xA1u;
-                }
-                else
-                {
-                    ohStatus = ObOpenObjectByPointer(g_PicoProcessObject, 0, NULL, PROCESS_ALL_ACCESS, NULL, KernelMode, &picoProcHandle);
-                    g_MmapDebug[10] = (ULONG64)ohStatus;
-                    if (NT_SUCCESS(ohStatus))
+                    PVOID viewBase = NULL;
+                    SIZE_T viewSize = 0;
+                    allocStatus = ZwMapViewOfSection(secHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0,
+                                                     allocSize, NULL, &viewSize, ViewUnmap, 0, allocProt);
+                    g_MmapDebug[10] = (ULONG64)allocStatus;
+                    if (NT_SUCCESS(allocStatus))
                     {
-                        g_LastPicoHandle = (ULONG64)picoProcHandle;
-                        g_MmapDebug[11] = 0xB2u;
+                        allocBase = (ULONG64)(ULONG_PTR)viewBase;
                     }
+                    ZwClose(secHandle);
                 }
             }
-            allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
-                                                  (PSIZE_T)&allocSize, MEM_COMMIT | MEM_RESERVE, allocProt);
             if (NT_SUCCESS(allocStatus))
             {
                 ULONG64 cAddr = allocBase;
