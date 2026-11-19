@@ -57,7 +57,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 ParseDbgImageSize;
     ULONG64 ParseDbgDynOff;
     ULONG64 ParseDbgStrTab;
-    ULONG64 ParseTags[32];
+    ULONG64 ParseTags[16];
     ULONG64 ParseTags2[8];
     ULONG64 DynParseMinVaddr;
     ULONG64 DynStrTabVaddr;
@@ -95,6 +95,8 @@ typedef struct _LX_QUERY_RESULT
     ULONG SymNameByte1;
     ULONG64 SymSymTabVaddr;
     ULONG64 SymStrTabVaddr;
+    ULONG SymNameOffsets[512];
+    ULONG SymRelocOffsets[512];
     CHAR SymNames[512][32];
     ULONG StubCount;
     ULONG StubFound;
@@ -243,7 +245,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG MmapCount;
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
-    ULONG64 MmapDebug[12];
+    ULONG64 MmapDebug[8];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
     ULONG64 TlsBlockBase;
@@ -795,11 +797,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
            (unsigned long long)q.DynDynamicVaddr, (unsigned long long)q.DynDynamicSize,
            q.DynDynamicCount);
     printf("  PARSEDBG: minVaddr=0x%llx imageSize=0x%llx dynOff=0x%llx strtab=0x%llx\n", (unsigned long long)q.ParseDbgMinVaddr,(unsigned long long)q.ParseDbgImageSize,(unsigned long long)q.ParseDbgDynOff,(unsigned long long)q.ParseDbgStrTab);
-
-
-    printf("  TRC2: total=%llu wvfd=%llu\n", (unsigned long long)q.ParseTags2[6],(unsigned long long)q.ParseTags2[7]);
     printf("  TAGVALS=%llx %llx %llx %llx %llx %llx %llx %llx\n", (unsigned long long)q.ParseTags2[0],(unsigned long long)q.ParseTags2[1],(unsigned long long)q.ParseTags2[2],(unsigned long long)q.ParseTags2[3],(unsigned long long)q.ParseTags2[4],(unsigned long long)q.ParseTags2[5],(unsigned long long)q.ParseTags2[6],(unsigned long long)q.ParseTags2[7]);
-    printf("  TMID: %llx=%llx %llx=%llx %llx=%llx %llx=%llx\n", (unsigned long long)q.ParseTags[16],(unsigned long long)q.ParseTags[17],(unsigned long long)q.ParseTags[18],(unsigned long long)q.ParseTags[19],(unsigned long long)q.ParseTags[20],(unsigned long long)q.ParseTags[21],(unsigned long long)q.ParseTags[22],(unsigned long long)q.ParseTags[23]);
+    printf("  TAGS: %llx=%llx %llx=%llx %llx=%llx %llx=%llx %llx=%llx\n", (unsigned long long)q.ParseTags[0],(unsigned long long)q.ParseTags[1],(unsigned long long)q.ParseTags[2],(unsigned long long)q.ParseTags[3],(unsigned long long)q.ParseTags[4],(unsigned long long)q.ParseTags[5],(unsigned long long)q.ParseTags[6],(unsigned long long)q.ParseTags[7],(unsigned long long)q.ParseTags[8]);
     printf("  DRVDYN: strtab=0x%llx symtab=0x%llx needed=%lu minVaddr=0x%llx\n", (unsigned long long)q.DynStrTabVaddr, (unsigned long long)q.DynSymTabVaddr, q.DynNeededCount, (unsigned long long)q.DynParseMinVaddr);
     printf("  DYNAMIC: strtab=0x%llx symtab=0x%llx sonameOff=%llu needed=%lu\n",
            (unsigned long long)q.DynStrTabVaddr, (unsigned long long)q.DynSymTabVaddr,
@@ -932,7 +931,8 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
 
         for (si = 0; si < q.SymDumped && si < 16; si++)
         {
-            printf("  SYMS: [%lu] name=%.32s\n", si, q.SymNames[si]);
+            printf("  SYMS: [%lu] off=0x%lx nameOff=%lu name=%.32s\n", si,
+                   q.SymRelocOffsets[si], q.SymNameOffsets[si], q.SymNames[si]);
         }
     }
     printf("  DYNAMIC: init=0x%llx fini=0x%llx\n", (unsigned long long)q.DynInitVaddr,
@@ -987,7 +987,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\bigmem_x64.exe");
+        SendLoadElf(device, L"C:\\Windows\\dyn_x64.exe");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
@@ -1248,12 +1248,11 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  mmapCount=%lu lastMmap=0x%llx mmapStatus=0x%llx\n", q.MmapCount,
                    (unsigned long long)q.LastMmapAddress,
                    (unsigned long long)q.LastMmapStatus);
-            printf("  mmapDebug=%llx %llx %llx %llx %llx %llx fdok=%llx handle=%llx st9=%llx st10=%llx sz=%llx\n",
+            printf("  mmapDebug=%llx %llx %llx %llx %llx %llx fdok=%llx handle=%llx\n",
                    (unsigned long long)q.MmapDebug[0], (unsigned long long)q.MmapDebug[1],
                    (unsigned long long)q.MmapDebug[2], (unsigned long long)q.MmapDebug[3],
                    (unsigned long long)q.MmapDebug[4], (unsigned long long)q.MmapDebug[5],
-                   (unsigned long long)q.MmapDebug[6], (unsigned long long)q.MmapDebug[7],
-                   (unsigned long long)q.MmapDebug[9], (unsigned long long)q.MmapDebug[10], (unsigned long long)q.MmapDebug[11]);
+                   (unsigned long long)q.MmapDebug[6], (unsigned long long)q.MmapDebug[7]);
             printf("  mmapBytes:");
             {
                 int bi;
