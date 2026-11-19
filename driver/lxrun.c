@@ -3133,22 +3133,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             mapFd = (ULONG64)(-1);
         }
 
-        {
-            ULONG di;
-            for (di = 0; di < 8; di++)
-            {
-                ULONG64 raw = 0;
-                __try
-                {
-                    RtlCopyMemory(&raw, (PUCHAR)(ULONG_PTR)Context + 0x028 + di * 8, 8);
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    raw = 0;
-                }
-                g_MmapRaw[di] = raw;
-            }
-        }
         g_MmapDebug[0] = mapAddress;
         g_MmapDebug[1] = mapLength;
         g_MmapDebug[2] = mapProt;
