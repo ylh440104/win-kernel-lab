@@ -4193,9 +4193,35 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_READV:
     case LX_SYS_WRITEV:
     {
-        ULONG64 vectorFd = Parameters[1];
-        ULONG64 vectorBase = Parameters[2];
-        ULONG64 vectorCount = Parameters[3];
+        ULONG64 vectorFd = 0;
+        ULONG64 vectorBase = 0;
+        ULONG64 vectorCount = 0;
+        {
+            ULONG64 tfA0 = 0;
+            ULONG64 tfA1 = 0;
+            ULONG64 tfA2 = 0;
+            __try
+            {
+                RtlCopyMemory(&tfA0, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
+                RtlCopyMemory(&tfA1, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
+                RtlCopyMemory(&tfA2, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                tfA0 = 0;
+                tfA1 = 0;
+                tfA2 = 0;
+            }
+            vectorFd = tfA0;
+            vectorBase = tfA1;
+            vectorCount = tfA2;
+            if (vectorFd == 0 && vectorBase == 0 && vectorCount == 0)
+            {
+                vectorFd = Parameters[0];
+                vectorBase = Parameters[1];
+                vectorCount = Parameters[2];
+            }
+        }
         ULONG64 vectorTotal = 0;
         ULONG64 vectorIndex;
         LX_APC_STATE vectorApc;
