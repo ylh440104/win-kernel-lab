@@ -966,7 +966,7 @@ int main(void)
     printf("\n");
     if (q.PicoStatus == 0)
     {
-        SendLoadElf(device, L"C:\\Windows\\bigmem_x64.exe");
+        SendLoadElf(device, L"C:\\Windows\\dyn_x64.exe");
 
         printf("\n");
         memset(&q, 0, sizeof(q));
