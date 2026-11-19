@@ -3085,22 +3085,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_MMAP:
     {
-        {
-            ULONG mi;
-            for (mi = 0; mi < 8; mi++)
-            {
-                ULONG64 rv = 0;
-                __try
-                {
-                    RtlCopyMemory(&rv, (PUCHAR)(ULONG_PTR)Context + 0x028 + mi * 8, 8);
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    rv = 0xEEEE0000ull + mi;
-                }
-                g_MmapRaw[mi] = rv;
-            }
-        }
         ULONG64 mapAddress = 0;
         ULONG64 mapLength = 0;
         ULONG64 mapProt = 0;
@@ -3280,46 +3264,26 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                                                   (PSIZE_T)&allocSize, MEM_COMMIT | MEM_RESERVE, allocProt);
             g_MmapDebug[6] = (ULONG64)allocStatus;
             g_MmapDebug[7] = allocBase;
+            g_MmapRaw[1] = (ULONG64)g_MmapTouchPages;
             if (NT_SUCCESS(allocStatus))
             {
                 {
-                    LX_APC_STATE tApc;
-                    BOOLEAN tAtt = FALSE;
+                    ULONG64 tp = allocBase;
+                    ULONG64 tend = allocBase + allocSize;
+                    ULONG tpages = 0;
                     __try
                     {
-                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&tApc);
-                        tAtt = TRUE;
+                        while (tp < tend && tpages < 128)
+                        {
+                            *(volatile UCHAR *)(ULONG_PTR)tp = 0;
+                            tp += 4096;
+                            tpages++;
+                        }
                     }
                     __except (EXCEPTION_EXECUTE_HANDLER)
                     {
-                        tAtt = FALSE;
                     }
-                    if (tAtt)
-                    {
-                        ULONG64 tp = allocBase;
-                        ULONG64 tend = allocBase + allocSize;
-                        ULONG tpages = 0;
-                        __try
-                        {
-                            while (tp < tend && tpages < 96)
-                            {
-                                *(volatile UCHAR *)(ULONG_PTR)tp = 0;
-                                tp += 4096;
-                                tpages++;
-                            }
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER)
-                        {
-                        }
-                        g_MmapTouchPages = tpages;
-                        __try
-                        {
-                            KeUnstackDetachProcess((PVOID)&tApc);
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER)
-                        {
-                        }
-                    }
+                    g_MmapTouchPages = tpages;
                 }
                 g_MmapCurrent = allocBase + allocSize;
                 g_MmapCount++;
