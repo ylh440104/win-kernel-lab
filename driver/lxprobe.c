@@ -613,6 +613,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     ULONG i;
     ULONG segCount = 0;
     ULONG64 minVaddr = 0xFFFFFFFFFFFFFFFFull;
+    ULONG64 pieShift = 0;
     ULONG64 maxEnd = 0;
     LX_QUERY_RESULT q;
     DWORD ret = 0;
@@ -687,9 +688,18 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
     memset(buffer, 0, bufferSize);
 
     load = (LX_ELF_LOAD *)buffer;
+    if (minVaddr == 0)
+    {
+        ULONG64 sh;
+        sh = 0x400000ull;
+        pieShift = sh;
+        minVaddr = sh;
+        maxEnd += sh;
+        printf("  PIE: rebased by 0x%llx\n", (unsigned long long)sh);
+    }
     load->ImageSize = maxEnd - minVaddr;
     load->MinVaddr = minVaddr;
-    load->EntryPoint = ehdr->e_entry;
+    load->EntryPoint = ehdr->e_entry + pieShift;
     load->SegmentCount = segCount;
     load->DataSize = fileSize;
     load->PhdrCount = ehdr->e_phnum;
@@ -725,7 +735,7 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             continue;
         }
 
-        segs[segCount].Vaddr = p->p_vaddr;
+        segs[segCount].Vaddr = p->p_vaddr + pieShift;
         segs[segCount].FileOffset = p->p_offset;
         segs[segCount].FileSize = p->p_filesz;
         segs[segCount].MemSize = p->p_memsz;
