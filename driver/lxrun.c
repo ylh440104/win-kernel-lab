@@ -3317,7 +3317,27 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
             allocBase = 0;
             allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
-                                                  (PSIZE_T)&allocSize, MEM_COMMIT | MEM_RESERVE, allocProt);
+                                                  (PSIZE_T)&allocSize, MEM_RESERVE, PAGE_NOACCESS);
+            if (NT_SUCCESS(allocStatus))
+            {
+                ULONG64 cAddr = allocBase;
+                ULONG64 cRemain = allocSize;
+                while (cRemain > 0)
+                {
+                    ULONG64 cSize = (cRemain > 0x10000ull) ? 0x10000ull : cRemain;
+                    PVOID cBase = (PVOID)(ULONG_PTR)cAddr;
+                    SIZE_T cLen = (SIZE_T)cSize;
+                    NTSTATUS cStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &cBase, 0, &cLen,
+                                                               MEM_COMMIT, allocProt);
+                    if (!NT_SUCCESS(cStatus))
+                    {
+                        g_MmapDebug[6] = (ULONG64)cStatus;
+                        break;
+                    }
+                    cAddr += cSize;
+                    cRemain -= cSize;
+                }
+            }
             g_MmapDebug[6] = (ULONG64)allocStatus;
             g_MmapDebug[7] = allocBase;
             g_MmapRaw[1] = (ULONG64)g_MmapTouchPages;
