@@ -3260,6 +3260,33 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
         }
 
+        if (g_PicoProcessObject != NULL && g_LastPicoHandle != NULL && (mapFlags & 0x20u) != 0 && mapFd > LX_MAX_FD)
+        {
+            ULONG64 allocBase = 0;
+            ULONG64 allocSize = mapLength;
+            NTSTATUS allocStatus;
+            ULONG allocProt = PAGE_READWRITE;
+            if (mapProt & 0x4u)
+            {
+                allocProt = PAGE_EXECUTE_READWRITE;
+            }
+            if ((mapFlags & 0x10u) != 0 && mapAddress != 0)
+            {
+                allocBase = mapAddress;
+            }
+            allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
+                                                  (PSIZE_T)&allocSize, MEM_COMMIT | MEM_RESERVE, allocProt);
+            g_MmapDebug[6] = (ULONG64)allocStatus;
+            g_MmapDebug[7] = allocBase;
+            if (NT_SUCCESS(allocStatus))
+            {
+                g_MmapCurrent = allocBase + allocSize;
+                g_MmapCount++;
+                g_LastMmapAddress = allocBase;
+                g_LastMmapStatus = 0;
+                return allocBase;
+            }
+        }
         if (g_PicoProcessObject != NULL && g_LastPicoHandle != NULL)
         {
             HANDLE anonSection = NULL;
