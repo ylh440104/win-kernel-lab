@@ -917,7 +917,7 @@ static ULONG g_LibStage = 0;
 static ULONG g_LibStopAfterMap = 0;
 static ULONG g_LibStopBeforeOpen = 0;
 static ULONG64 g_LdsoEntry = 0;
-static ULONG g_LdsoExecEnable = 0;
+static ULONG g_LdsoExecEnable = 1;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 0;
 static LX_ELF_LOAD g_ElfLoad;
