@@ -920,6 +920,7 @@ static ULONG64 g_LdsoEntry = 0;
 static ULONG g_LdsoExecEnable = 1;
 static ULONG g_StackTouchPages = 0;
 static ULONG64 g_StackTouchFault = 0;
+static ULONG g_ExitSuspended = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 0;
 static LX_ELF_LOAD g_ElfLoad;
@@ -3625,6 +3626,19 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 g_ExitTlsLive = exitPulled ? liveValue : 0xDEAD0004ull;
             }
             g_ExitTermStatus = 0;
+        }
+        if (g_SuspendThreadFn != 0 && g_PicoThreadObject != 0)
+        {
+            ULONG prevSuspend = 0;
+            __try
+            {
+                ((NTSTATUS (*)(PVOID, PULONG))g_SuspendThreadFn)(g_PicoThreadObject, &prevSuspend);
+                g_ExitSuspended = 1;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_ExitSuspended = 0xDEAD;
+            }
         }
         return 0;
 
@@ -9932,6 +9946,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StatDebug[11] = g_ExcRecInfo1;
             result->ReadDebug[0] = g_ExcRecNParam;
             result->ReadDebug[1] = g_ExcRecInfo0;
+            result->ReadDebug[6] = g_ExitSuspended;
+            result->ReadDebug[7] = g_PicoThreadObject ? 1 : 0;
             result->ReadDebug[2] = g_StackTouchPages;
             result->ReadDebug[3] = g_StackTouchFault;
             result->ReadDebug[4] = g_ExcRecProbe0;
