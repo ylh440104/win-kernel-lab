@@ -2346,10 +2346,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             PETHREAD tlsThread = PsGetCurrentThread();
             ULONG64 tlsUserBase = g_TlsBlockBase - 0x2000;
-            ULONG64 zero = 0;
 
-            RtlCopyMemory((UCHAR *)tlsThread + 0x678, &zero, sizeof(zero));
-            RtlCopyMemory((UCHAR *)tlsThread + 0x680, &zero, sizeof(zero));
             ((ULONG64(*)(ULONG, ULONG64))g_SetDescriptorBaseFn)(0, g_TlsBlockBase);
             RtlCopyMemory((UCHAR *)tlsThread + 0xF0, &tlsUserBase, sizeof(tlsUserBase));
             g_FsSyscallRefreshes++;
