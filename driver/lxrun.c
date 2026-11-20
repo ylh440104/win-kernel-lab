@@ -4263,6 +4263,81 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 vectorFd = Parameters[1];
         ULONG64 vectorBase = Parameters[2];
         ULONG64 vectorCount = Parameters[3];
+        if (Number == LX_SYS_WRITEV)
+        {
+            ULONG64 wvRdi = 0;
+            ULONG64 wvRsi = 0;
+            ULONG64 wvRdx = 0;
+            __try
+            {
+                RtlCopyMemory(&wvRdi, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
+                RtlCopyMemory(&wvRsi, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
+                RtlCopyMemory(&wvRdx, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                wvRdi = 0;
+                wvRsi = 0;
+                wvRdx = 0;
+            }
+            g_WritevFd = wvRdi;
+            g_WritevBase = wvRsi;
+            g_WritevCnt = wvRdx;
+            g_WritevParams0 = Parameters[1];
+            g_WritevParams1 = Parameters[2];
+            g_WritevParams2 = Parameters[3];
+            g_WritevStatus = 0xABu;
+            {
+                ULONG64 useIov = (wvRsi != 0) ? wvRsi : Parameters[2];
+                ULONG64 useCnt = (wvRdx != 0 && wvRdx < 64) ? wvRdx : Parameters[3];
+                if (useIov != 0 && useCnt > 0 && useCnt < 64)
+                {
+                    LX_APC_STATE wvApc;
+                    BOOLEAN wvAtt = FALSE;
+                    if (g_PicoProcessObject != NULL)
+                    {
+                        __try
+                        {
+                            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&wvApc);
+                            wvAtt = TRUE;
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                            wvAtt = FALSE;
+                        }
+                    }
+                    __try
+                    {
+                        LX_IOVEC firstIov;
+                        RtlZeroMemory(&firstIov, sizeof(firstIov));
+                        RtlCopyMemory(&firstIov, (PVOID)(ULONG_PTR)useIov, sizeof(firstIov));
+                        g_WritevIovBase = firstIov.Base;
+                        g_WritevIovLen = firstIov.Length;
+                        if (firstIov.Base != 0 && firstIov.Length > 0 && firstIov.Length <= 200)
+                        {
+                            RtlZeroMemory(g_WriteBuffer, sizeof(g_WriteBuffer));
+                            RtlCopyMemory(g_WriteBuffer, (PVOID)(ULONG_PTR)firstIov.Base, (ULONG)firstIov.Length);
+                            g_WriteLength = (ULONG)firstIov.Length;
+                            g_WriteCount++;
+                            g_WriteFd = (ULONG)wvRdi;
+                            g_WritevStatus = 0xACu;
+                        }
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        g_WritevStatus = 0xADu;
+                        if (wvAtt)
+                        {
+                            KeUnstackDetachProcess((PVOID)&wvApc);
+                        }
+                    }
+                    if (wvAtt)
+                    {
+                        KeUnstackDetachProcess((PVOID)&wvApc);
+                    }
+                }
+            }
+        }
         ULONG64 vectorTotal = 0;
         ULONG64 vectorIndex;
         LX_APC_STATE vectorApc;
@@ -9946,6 +10021,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StatDebug[11] = g_ExcRecInfo1;
             result->ReadDebug[0] = g_ExcRecNParam;
             result->ReadDebug[1] = g_ExcRecInfo0;
+            result->StatDebug[0] = g_WritevFd;
+            result->StatDebug[1] = g_WritevIovBase;
+            result->StatDebug[2] = g_WritevIovLen;
+            result->StatDebug[3] = g_WritevCnt;
+            result->StatDebug[4] = g_WritevStatus;
             result->ReadDebug[6] = g_ExitSuspended;
             result->ReadDebug[7] = g_PicoThreadObject ? 1 : 0;
             result->ReadDebug[2] = g_StackTouchPages;
