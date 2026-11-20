@@ -5,6 +5,9 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 1
 
       - name: compile driver
         shell: cmd
@@ -171,7 +174,9 @@ jobs:
           cl /nologo /W3 /Fe:lxprobe.exe driver\lxprobe.c
           if errorlevel 1 exit /b 1
           echo ===== PROBE OUTPUT =====
-          lxprobe.exe
+          powershell -Command "$ErrorActionPreference='Continue'; $p = Start-Process -FilePath lxprobe.exe -NoNewWindow -RedirectStandardOutput probe.out -RedirectStandardError probe.err -PassThru; if (-not $p.WaitForExit(240000)) { Write-Host 'PROBE TIMEOUT'; $p.Kill() } else { Write-Host ('PROBE EXIT ' + $p.ExitCode) }"
+          type probe.out
+          type probe.err
           echo ===== END PROBE =====
 
       - name: dump driver log
@@ -181,3 +186,12 @@ jobs:
           Write-Host "--- driver status ---"
           sc.exe query lxrun 2>&1 | Out-String | Write-Host
           exit 0
+      - name: upload probe output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-output
+          path: |
+            probe.out
+            probe.err
+          if-no-files-found: warn
