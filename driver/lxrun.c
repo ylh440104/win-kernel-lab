@@ -2681,9 +2681,19 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_NfaStat = nfaStat;
         g_NfaFlags = nfaFlags;
         nfaLen = LxCopyLinuxPath(nfaPathUser, nfaPathBuf, sizeof(nfaPathBuf));
+        if (nfaLen == 0 || nfaPathBuf[0] != '/')
+        {
+            ULONG altLen = LxCopyLinuxPath(Parameters[1], nfaPathBuf, sizeof(nfaPathBuf));
+            if (altLen > 0 && nfaPathBuf[0] == '/')
+            {
+                nfaLen = altLen;
+                nfaPathUser = Parameters[1];
+                nfaStat = Parameters[2];
+                nfaFlags = Parameters[3];
+            }
+        }
         g_NfaLen = nfaLen;
         g_NfaPath = nfaPathUser;
-        if (nfaLen > 0)
         {
             ULONG pi;
             RtlZeroMemory(g_SlotText[1], 48);
@@ -2692,6 +2702,20 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 g_SlotText[1][pi] = nfaPathBuf[pi];
             }
             g_SlotText[1][47] = 0;
+            for (nfaSlot = 0; nfaSlot < 3; nfaSlot++)
+            {
+                ULONG k2;
+                RtlZeroMemory(g_SlotText[2 + nfaSlot], 48);
+                for (k2 = 0; k2 < 47; k2++)
+                {
+                    g_SlotText[2 + nfaSlot][k2] = g_FdTable[3 + nfaSlot].LinuxPath[k2];
+                    if (g_FdTable[3 + nfaSlot].LinuxPath[k2] == 0)
+                    {
+                        break;
+                    }
+                }
+                g_SlotText[2 + nfaSlot][47] = 0;
+            }
         }
         if (nfaLen == 0 || nfaLen >= sizeof(nfaPathBuf))
         {
