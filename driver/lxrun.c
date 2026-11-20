@@ -1201,6 +1201,14 @@ static ULONG64 g_StatDebug[12];
 static ULONG64 g_NfaCount = 0;
 static ULONG64 g_NfaDirFd = 0;
 static ULONG64 g_NfaPath = 0;
+static ULONG64 g_NfaRaw0 = 0;
+static ULONG64 g_NfaRaw1 = 0;
+static ULONG64 g_NfaRaw2 = 0;
+static ULONG64 g_NfaRaw3 = 0;
+static ULONG64 g_NfaRaw4 = 0;
+static ULONG64 g_NfaRaw5 = 0;
+static ULONG64 g_NfaRaw6 = 0;
+static ULONG64 g_NfaRaw7 = 0;
 static ULONG64 g_NfaStat = 0;
 static ULONG64 g_NfaFlags = 0;
 static ULONG64 g_NfaMvStatus = 0;
@@ -2679,18 +2687,51 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG nfaSlot;
         LX_LINUX_STAT nfaLinux;
         g_NfaCount++;
+        g_NfaRaw0 = Parameters[0];
+        g_NfaRaw1 = Parameters[1];
+        g_NfaRaw2 = Parameters[2];
+        g_NfaRaw3 = Parameters[3];
+        g_NfaRaw4 = Parameters[4];
+        g_NfaRaw5 = Parameters[5];
+        g_NfaRaw6 = Parameters[6];
+        g_NfaRaw7 = Parameters[7];
         g_NfaStat = nfaStat;
         g_NfaFlags = nfaFlags;
-        nfaLen = LxCopyLinuxPath(nfaPathUser, nfaPathBuf, sizeof(nfaPathBuf));
-        if (nfaLen == 0 || nfaPathBuf[0] != '/')
+        nfaLen = 0;
         {
-            ULONG altLen = LxCopyLinuxPath(Parameters[1], nfaPathBuf, sizeof(nfaPathBuf));
-            if (altLen > 0 && nfaPathBuf[0] == '/')
+            ULONG ci;
+            for (ci = 0; ci < 6; ci++)
             {
-                nfaLen = altLen;
-                nfaPathUser = Parameters[1];
-                nfaStat = Parameters[2];
-                nfaFlags = Parameters[3];
+                ULONG64 cand = Parameters[ci];
+                ULONG got;
+                if (cand < 0x10000 || cand >= 0x800000000000ull)
+                {
+                    continue;
+                }
+                got = LxCopyLinuxPath(cand, nfaPathBuf, sizeof(nfaPathBuf));
+                if (got > 0 && got < sizeof(nfaPathBuf) && nfaPathBuf[0] == '/')
+                {
+                    nfaLen = got;
+                    nfaPathUser = cand;
+                    g_NfaPath = cand;
+                    break;
+                }
+            }
+        }
+        if (nfaLen == 0)
+        {
+            nfaPathBuf[0] = 0;
+            g_NfaPath = 0;
+        }
+        {
+            ULONG ci;
+            for (ci = 1; ci < 6; ci++)
+            {
+                ULONG64 cand = Parameters[ci];
+                if (cand >= 0x10000 && cand < 0x800000000000ull && cand != nfaPathUser)
+                {
+                    nfaStat = cand;
+                }
             }
         }
         g_NfaLen = nfaLen;
@@ -2770,7 +2811,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
         {
             ULONG64 st = LxFillStat(nfaHandle, &nfaLinux);
-            g_NfaMvStatus = st;
+            g_NfaCopyStr = st;
             if (st != 0)
             {
                 g_LastStatStatus = (ULONG)st;
@@ -2780,15 +2821,49 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         if (nfaStat >= 0x10000)
         {
             SIZE_T nfaWritten = 0;
-            NTSTATUS ws;
-            ws = MmCopyVirtualMemory(PsGetCurrentProcess(), &nfaLinux,
-                                     g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaStat,
-                                     sizeof(nfaLinux), KernelMode, &nfaWritten);
+            NTSTATUS ws = 0xC0000001u;
+            if (g_PicoProcessObject != NULL)
+            {
+                ws = MmCopyVirtualMemory(PsGetCurrentProcess(), &nfaLinux,
+                                         g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaStat,
+                                         sizeof(nfaLinux), KernelMode, &nfaWritten);
+            }
             g_NfaCopyW0 = (ULONG64)ws;
             if (!NT_SUCCESS(ws))
             {
-                g_LastStatStatus = (ULONG)ws;
-                return (ULONG64)(-14);
+                LX_APC_STATE wrApc;
+                BOOLEAN wrAtt = FALSE;
+                if (g_PicoProcessObject != NULL)
+                {
+                    __try
+                    {
+                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&wrApc);
+                        wrAtt = TRUE;
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        wrAtt = FALSE;
+                    }
+                }
+                __try
+                {
+                    RtlCopyMemory((PVOID)(ULONG_PTR)nfaStat, &nfaLinux, sizeof(nfaLinux));
+                    g_NfaCopyW0 = 0;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    if (wrAtt)
+                    {
+                        KeUnstackDetachProcess((PVOID)&wrApc);
+                        wrAtt = FALSE;
+                    }
+                    g_LastStatStatus = 0xC000000Du;
+                    return (ULONG64)(-14);
+                }
+                if (wrAtt)
+                {
+                    KeUnstackDetachProcess((PVOID)&wrApc);
+                }
             }
         }
         g_StatCount++;
@@ -10076,6 +10151,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StatDebug[5] = g_NfaMvStatus;
             result->StatDebug[6] = g_NfaCopyW0;
             result->StatDebug[7] = g_NfaCopyStr;
+            result->MmapDebug[0] = g_NfaRaw0;
+            result->MmapDebug[1] = g_NfaRaw1;
+            result->MmapDebug[2] = g_NfaRaw2;
+            result->MmapDebug[3] = g_NfaRaw3;
+            result->MmapDebug[4] = g_NfaRaw4;
+            result->MmapDebug[5] = g_NfaRaw5;
+            result->MmapDebug[6] = g_NfaRaw6;
+            result->MmapDebug[7] = g_NfaRaw7;
             result->StatDebug[8] = g_ExcRecordIdx;
             result->StatDebug[9] = g_ExcRecCode;
             result->StatDebug[10] = g_ExcRecAddr;
@@ -10090,6 +10173,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StatDebug[5] = g_WritevParams7;
             result->StatDebug[6] = g_WritevParams0;
             result->StatDebug[7] = g_WritevParams1;
+            result->ReadDebug[0] = g_NfaLen;
+            result->ReadDebug[1] = g_NfaOpenFd;
+            result->ReadDebug[2] = g_NfaCopyStr;
+            result->ReadDebug[3] = g_NfaMvStatus;
             result->ReadDebug[6] = g_ExitSuspended;
             result->ReadDebug[7] = g_PicoThreadObject ? 1 : 0;
             result->ReadDebug[2] = g_StackTouchPages;
