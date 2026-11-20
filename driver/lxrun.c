@@ -917,6 +917,7 @@ static ULONG g_LibStage = 0;
 static ULONG g_LibStopAfterMap = 0;
 static ULONG g_LibStopBeforeOpen = 0;
 static ULONG64 g_LdsoEntry = 0;
+static ULONG g_LdsoExecEnable = 0;
 static ULONG64 g_LdsoBase = 0;
 static ULONG g_LdsoReadProbe = 0;
 static LX_ELF_LOAD g_ElfLoad;
@@ -8997,7 +8998,7 @@ static void LxCreatePicoThread(void)
     RtlZeroMemory(threadArgs, sizeof(threadArgs));
     threadArgs[0] = g_LastPicoHandle;
     threadArgs[1] = stackTop;
-    if (g_LdsoEntry != 0)
+    if (g_LdsoEntry != 0 && g_LdsoExecEnable != 0)
     {
         threadArgs[2] = g_LdsoEntry;
     }
