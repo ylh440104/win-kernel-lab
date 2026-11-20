@@ -2395,18 +2395,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             ULONG64 pathCand[4];
             ULONG ci;
             BOOLEAN got = FALSE;
-            __try
-            {
-                RtlCopyMemory(&tfRsi, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
-                RtlCopyMemory(&tfRdx, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
-                RtlCopyMemory(&tfR10, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                tfRsi = 0;
-                tfRdx = 0;
-                tfR10 = 0;
-            }
+            tfRsi = Parameters[2];
+            tfRdx = (Number == LX_SYS_OPENAT) ? Parameters[3] : Parameters[2];
+            tfR10 = (Number == LX_SYS_OPENAT) ? Parameters[4] : Parameters[3];
             pathCand[0] = (Number == LX_SYS_OPENAT) ? Parameters[2] : Parameters[1];
             pathCand[1] = tfRsi;
             pathCand[2] = (Number == LX_SYS_OPENAT) ? tfRsi : Parameters[1];
@@ -2680,8 +2671,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_NfaCount++;
         __try
         {
-            RtlCopyMemory(&tfRdx, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
-            RtlCopyMemory(&tfR10, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
+            tfRdx = Parameters[3];
+            tfR10 = Parameters[4];
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -2721,9 +2712,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             ULONG64 tfR10 = 0;
             __try
             {
-                RtlCopyMemory(&tfRsi, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
-                RtlCopyMemory(&tfRdx, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
-                RtlCopyMemory(&tfR10, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
+                tfRsi = Parameters[2];
+                tfRdx = Parameters[3];
+                tfR10 = Parameters[4];
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
@@ -2899,7 +2890,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             ULONG64 writeCount = 0;
 
-            RtlCopyMemory(&writeCount, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+            writeCount = Parameters[3];
 
             g_WriteDebug[7] = writeCount;
 
@@ -2950,7 +2941,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
             __try
             {
-                RtlCopyMemory(&contextCount, (PUCHAR)(ULONG_PTR)Context + 0x40, 8);
+                contextCount = Parameters[3];
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
@@ -3230,24 +3221,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 mapFd = 0;
         ULONG64 mapOffset = 0;
         ULONG desiredProtection;
-        __try
-        {
-            RtlCopyMemory(&mapAddress, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
-            RtlCopyMemory(&mapLength, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
-            RtlCopyMemory(&mapProt, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
-            RtlCopyMemory(&mapFlags, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
-            RtlCopyMemory(&mapFd, (PUCHAR)(ULONG_PTR)Context + 0x050, 8);
-            RtlCopyMemory(&mapOffset, (PUCHAR)(ULONG_PTR)Context + 0x058, 8);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            mapAddress = 0;
-            mapLength = 0;
-            mapProt = 0;
-            mapFlags = 0;
-            mapFd = 0;
-            mapOffset = 0;
-        }
+        mapAddress = Parameters[1];
+        mapLength = Parameters[2];
+        mapProt = Parameters[3];
+        mapFlags = Parameters[4];
+        mapFd = Parameters[5];
+        mapOffset = Parameters[6];
         if (mapLength == 0 || mapLength > 0x40000000ull)
         {
             mapLength = 4096;
@@ -4270,21 +4249,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 vectorCount = Parameters[3];
         if (Number == LX_SYS_WRITEV)
         {
-            ULONG64 wvRdi = 0;
-            ULONG64 wvRsi = 0;
-            ULONG64 wvRdx = 0;
-            __try
-            {
-                RtlCopyMemory(&wvRdi, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
-                RtlCopyMemory(&wvRsi, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
-                RtlCopyMemory(&wvRdx, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                wvRdi = 0;
-                wvRsi = 0;
-                wvRdx = 0;
-            }
+            ULONG64 wvRdi = Parameters[1];
+            ULONG64 wvRsi = Parameters[2];
+            ULONG64 wvRdx = Parameters[3];
             g_WritevFd = Parameters[1];
             g_WritevBase = Parameters[2];
             g_WritevCnt = Parameters[3];
@@ -4347,35 +4314,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 vectorIndex;
         LX_APC_STATE vectorApc;
         BOOLEAN vectorAttached = FALSE;
-        {
-            ULONG64 tfA0 = 0;
-            ULONG64 tfA1 = 0;
-            ULONG64 tfA2 = 0;
-            __try
-            {
-                RtlCopyMemory(&tfA0, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
-                RtlCopyMemory(&tfA1, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
-                RtlCopyMemory(&tfA2, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                tfA0 = 0;
-                tfA1 = 0;
-                tfA2 = 0;
-            }
-            if ((vectorFd > 2 || vectorBase == 0 || vectorCount == 0 || vectorCount > 64) && tfA0 <= 2 && tfA1 != 0)
-            {
-                vectorFd = tfA0;
-                vectorBase = tfA1;
-                vectorCount = tfA2;
-            }
-            if ((vectorFd > 2 || vectorBase == 0) && tfA1 != 0 && tfA2 != 0)
-            {
-                vectorFd = tfA0;
-                vectorBase = tfA1;
-                vectorCount = tfA2;
-            }
-        }
         if (vectorFd >= 1 && vectorFd <= 2)
         {
             /* stdout/stderr：不查 fd 表，直接允许 */
