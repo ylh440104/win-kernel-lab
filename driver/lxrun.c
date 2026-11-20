@@ -8926,6 +8926,25 @@ static ULONG64 LxSetupStack(ULONG64 StackTop, const LX_ELF_LOAD *Load)
         {
             RtlZeroMemory((PVOID)(ULONG_PTR)(stackPointer - 0x100000ull), 0x100000ull);
         }
+        {
+            ULONG64 tp = stackPointer & ~0xFFFull;
+            ULONG64 tend = (StackTop + 0x1000ull) & ~0xFFFull;
+            ULONG tpages = 0;
+            __try
+            {
+                while (tp < tend && tpages < 64)
+                {
+                    *(volatile UCHAR *)(ULONG_PTR)tp = 0;
+                    tp += 0x1000ull;
+                    tpages++;
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_StackTouchFault = tp;
+            }
+            g_StackTouchPages = tpages;
+        }
         RtlCopyMemory((PVOID)(ULONG_PTR)stackPointer, buffer, totalBytes);
         RtlCopyMemory((PVOID)(ULONG_PTR)nameAddress, name, sizeof(name));
         RtlCopyMemory((PVOID)(ULONG_PTR)platformAddress, platform, sizeof(platform));
@@ -10002,8 +10021,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StatDebug[11] = g_ExcRecInfo1;
             result->ReadDebug[0] = g_ExcRecNParam;
             result->ReadDebug[1] = g_ExcRecInfo0;
-            result->ReadDebug[2] = g_ExcRecProbe0;
-            result->ReadDebug[3] = g_ExcRecProbe1;
+            result->ReadDebug[2] = g_StackTouchPages;
+            result->ReadDebug[3] = g_StackTouchFault;
+            result->ReadDebug[4] = g_ExcRecProbe0;
+            result->ReadDebug[5] = g_ExcRecProbe1;
 
             result->GetDentsCount = g_GetDentsCount;
             result->GetDentsStatus = g_GetDentsStatus;
