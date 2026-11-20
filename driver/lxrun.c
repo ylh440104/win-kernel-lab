@@ -1183,6 +1183,16 @@ static ULONG g_SelfTestGlobal = 0xFFFFFFFFu;
 static ULONG g_SelfTestDosDevices = 0xFFFFFFFFu;
 static ULONG64 g_ReadDebug[8];
 static ULONG64 g_StatDebug[12];
+static ULONG64 g_NfaCount = 0;
+static ULONG64 g_NfaDirFd = 0;
+static ULONG64 g_NfaPath = 0;
+static ULONG64 g_NfaStat = 0;
+static ULONG64 g_NfaFlags = 0;
+static ULONG64 g_NfaMvStatus = 0;
+static ULONG64 g_NfaCopyW0 = 0;
+static ULONG64 g_NfaCopyStr = 0;
+static ULONG64 g_NfaLen = 0;
+static ULONG64 g_NfaOpenFd = 0;
 static ULONG64 g_SeekCount = 0;
 static ULONG64 g_LastSeekResult = 0;
 static ULONG g_GetDentsCount = 0;
@@ -2670,13 +2680,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             RtlCopyMemory(&nfaPath, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
             RtlCopyMemory(&nfaStat, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
             RtlCopyMemory(&nfaFlags, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
-            /* 若 path 高位显然不像指针而 stat 像，则交换 */
-            if (nfaPath != 0 && nfaPath < 0x10000 && nfaStat > 0x10000)
-            {
-                ULONG64 nfaTmp = nfaPath;
-                nfaPath = nfaStat;
-                nfaStat = nfaTmp;
-            }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
@@ -2685,10 +2688,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             nfaStat = 0;
             nfaFlags = 0;
         }
-        g_StatDebug[0] = nfaDirFd;
-        g_StatDebug[1] = nfaPath;
-        g_StatDebug[2] = nfaStat;
-        g_StatDebug[3] = nfaFlags;
+        g_NfaCount++;
+        g_NfaDirFd = nfaDirFd;
+        g_NfaPath = nfaPath;
+        g_NfaStat = nfaStat;
+        g_NfaFlags = nfaFlags;
         if (g_PicoProcessObject != NULL)
         {
             CHAR nfaProbe[32];
@@ -2698,12 +2702,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             nfaMvStatus = MmCopyVirtualMemory(g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaPath,
                                              PsGetCurrentProcess(), nfaProbe, 24,
                                              KernelMode, &nfaCopied);
-            g_StatDebug[8] = (ULONG64)nfaMvStatus;
-            g_StatDebug[9] = (ULONG64)nfaCopied;
+            g_NfaMvStatus = (ULONG64)nfaMvStatus;
+            g_NfaCopyStr = (ULONG64)nfaCopied;
             {
                 ULONG64 w0 = 0;
                 RtlCopyMemory(&w0, nfaProbe, 8);
-                g_StatDebug[10] = w0;
+                g_NfaCopyW0 = w0;
             }
         }
         if (nfaPath == 0 || nfaStat == 0)
@@ -2715,18 +2719,18 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             CHAR nfaKernelPath[260];
             ULONG nfaLen = 0;
             nfaLen = LxCopyLinuxPath(nfaPath, nfaKernelPath, sizeof(nfaKernelPath));
-            g_StatDebug[5] = nfaLen;
+            g_NfaLen = nfaLen;
             if (nfaLen > 0 && nfaLen < sizeof(nfaKernelPath))
             {
                 nfaFd = LxOpenFile(nfaKernelPath, 0, 0);
-                g_StatDebug[6] = nfaFd;
+                g_NfaOpenFd = nfaFd;
             }
         }
         if ((LONG64)nfaFd >= 0 && nfaFd < LX_MAX_FD && g_FdTable[nfaFd].Used)
         {
             ULONG realFd = (ULONG)nfaFd;
             ULONG64 st = LxFillStat(g_FdTable[realFd].Handle, &nfaLinux);
-            g_StatDebug[4] = st;
+            g_NfaMvStatus = st;
             if (st == 0)
             {
                 g_LastStatStatus = 0;
@@ -9884,6 +9888,16 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             {
                 result->StatDebug[i] = g_StatDebug[i];
             }
+            result->StatDebug[0] = g_NfaCount;
+            result->StatDebug[1] = g_NfaDirFd;
+            result->StatDebug[2] = g_NfaPath;
+            result->StatDebug[3] = g_NfaStat;
+            result->StatDebug[4] = g_NfaFlags;
+            result->StatDebug[5] = g_NfaMvStatus;
+            result->StatDebug[6] = g_NfaCopyW0;
+            result->StatDebug[7] = g_NfaCopyStr;
+            result->StatDebug[8] = g_NfaLen;
+            result->StatDebug[9] = g_NfaOpenFd;
 
             result->GetDentsCount = g_GetDentsCount;
             result->GetDentsStatus = g_GetDentsStatus;
