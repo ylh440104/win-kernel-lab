@@ -9871,8 +9871,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             for (i = 0; i < 8; i++)
             {
                 result->ReadDebug[i] = g_ReadDebug[i];
-                result->StatDebug[i] = g_StatDebug[i];
                 RtlCopyMemory(result->SlotText[i], g_SlotText[i], 48);
+            }
+            for (i = 0; i < 12; i++)
+            {
+                result->StatDebug[i] = g_StatDebug[i];
             }
 
             result->GetDentsCount = g_GetDentsCount;
