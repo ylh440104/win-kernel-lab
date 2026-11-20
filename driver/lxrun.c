@@ -1022,6 +1022,7 @@ static ULONG64 g_WritevParams1 = 0;
 static ULONG64 g_WritevParams2 = 0;
 static ULONG64 g_WritevIovBase = 0;
 static ULONG64 g_WritevIovLen = 0;
+static ULONG64 g_WritevProbe[8];
 static ULONG64 g_WritevParams7 = 0;
 static ULONG64 g_WritevParams6 = 0;
 static ULONG64 g_WritevParams5 = 0;
@@ -2717,7 +2718,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 g_SlotText[2 + nfaSlot][47] = 0;
             }
         }
-        if (nfaLen == 0 || nfaLen >= sizeof(nfaPathBuf))
+        if (nfaLen >= sizeof(nfaPathBuf))
         {
             g_NfaMvStatus = 0xE0u;
             g_LastStatStatus = 0xC000000Du;
@@ -2746,6 +2747,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 g_NfaOpenFd = nfaSlot;
                 break;
             }
+        }
+        if (nfaHandle == NULL && g_LastOpenFd < LX_MAX_FD && g_FdTable[g_LastOpenFd].Used)
+        {
+            nfaHandle = g_FdTable[g_LastOpenFd].Handle;
+            g_NfaOpenFd = 0x1000u + g_LastOpenFd;
         }
         if (nfaHandle == NULL)
         {
@@ -4357,6 +4363,51 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_WritevBase = Parameters[1];
             g_WritevCnt = Parameters[2];
             g_WritevStatus = 0xABu;
+            {
+                ULONG pi2;
+                for (pi2 = 0; pi2 < 8; pi2++)
+                {
+                    ULONG64 cand = Parameters[pi2];
+                    ULONG64 probeVal = 0;
+                    CHAR sbuf[8];
+                    if (cand < 0x400000 || cand >= 0x800000)
+                    {
+                        g_WritevProbe[pi2] = 0;
+                        continue;
+                    }
+                    RtlZeroMemory(sbuf, sizeof(sbuf));
+                    {
+                        LX_APC_STATE pApc;
+                        BOOLEAN pAtt = FALSE;
+                        if (g_PicoProcessObject != NULL)
+                        {
+                            __try
+                            {
+                                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&pApc);
+                                pAtt = TRUE;
+                            }
+                            __except (EXCEPTION_EXECUTE_HANDLER)
+                            {
+                                pAtt = FALSE;
+                            }
+                        }
+                        __try
+                        {
+                            RtlCopyMemory(sbuf, (PVOID)(ULONG_PTR)cand, 8);
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                            sbuf[0] = 0xEE;
+                        }
+                        if (pAtt)
+                        {
+                            KeUnstackDetachProcess((PVOID)&pApc);
+                        }
+                    }
+                    RtlCopyMemory(&probeVal, sbuf, 8);
+                    g_WritevProbe[pi2] = probeVal;
+                }
+            }
             {
                 ULONG64 useIov = Parameters[2];
                 ULONG64 useCnt = Parameters[3];
