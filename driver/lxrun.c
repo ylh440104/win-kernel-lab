@@ -2670,6 +2670,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             RtlCopyMemory(&nfaPath, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
             RtlCopyMemory(&nfaStat, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
             RtlCopyMemory(&nfaFlags, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
+            /* 若 path 高位显然不像指针而 stat 像，则交换 */
+            if (nfaPath != 0 && nfaPath < 0x10000 && nfaStat > 0x10000)
+            {
+                ULONG64 nfaTmp = nfaPath;
+                nfaPath = nfaStat;
+                nfaStat = nfaTmp;
+            }
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
