@@ -599,7 +599,7 @@ typedef struct _LX_QUERY_RESULT
     LONG64 LastStatSize;
     ULONG LastStatMode;
     CHAR LastStatPath[128];
-    ULONG64 StatDebug[8];
+    ULONG64 StatDebug[12];
     CHAR SlotText[8][48];
     ULONG64 SeekCount;
     ULONG64 LastSeekResult;
@@ -1182,7 +1182,7 @@ static ULONG g_SelfTestSystemRoot = 0xFFFFFFFFu;
 static ULONG g_SelfTestGlobal = 0xFFFFFFFFu;
 static ULONG g_SelfTestDosDevices = 0xFFFFFFFFu;
 static ULONG64 g_ReadDebug[8];
-static ULONG64 g_StatDebug[8];
+static ULONG64 g_StatDebug[12];
 static ULONG64 g_SeekCount = 0;
 static ULONG64 g_LastSeekResult = 0;
 static ULONG g_GetDentsCount = 0;
@@ -2682,6 +2682,28 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_StatDebug[1] = nfaPath;
         g_StatDebug[2] = nfaStat;
         g_StatDebug[3] = nfaFlags;
+        if (g_PicoProcessObject != NULL)
+        {
+            LX_APC_STATE nfaDumpApc;
+            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&nfaDumpApc);
+            __try
+            {
+                ULONG64 w0 = 0;
+                ULONG64 w1 = 0;
+                ULONG64 w2 = 0;
+                RtlCopyMemory(&w0, (PVOID)(ULONG_PTR)nfaPath, 8);
+                RtlCopyMemory(&w1, (PVOID)(ULONG_PTR)(nfaPath + 8), 8);
+                RtlCopyMemory(&w2, (PVOID)(ULONG_PTR)(nfaPath + 16), 8);
+                g_StatDebug[8] = w0;
+                g_StatDebug[9] = w1;
+                g_StatDebug[10] = w2;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_StatDebug[8] = 0xDEAD;
+            }
+            KeUnstackDetachProcess((PVOID)&nfaDumpApc);
+        }
         if (nfaPath == 0 || nfaStat == 0)
         {
             g_LastStatStatus = 0xC000000Du;
@@ -2690,23 +2712,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             CHAR nfaKernelPath[260];
             ULONG nfaLen = 0;
-            LX_APC_STATE nfaApc;
-            BOOLEAN nfaAttached = FALSE;
-            if (g_PicoProcessObject != NULL)
-            {
-                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&nfaApc);
-                nfaAttached = TRUE;
-            }
             nfaLen = LxCopyLinuxPath(nfaPath, nfaKernelPath, sizeof(nfaKernelPath));
             g_StatDebug[5] = nfaLen;
             if (nfaLen > 0 && nfaLen < sizeof(nfaKernelPath))
             {
                 nfaFd = LxOpenFile(nfaKernelPath, 0, 0);
                 g_StatDebug[6] = nfaFd;
-            }
-            if (nfaAttached)
-            {
-                KeUnstackDetachProcess((PVOID)&nfaApc);
             }
         }
         if ((LONG64)nfaFd >= 0 && nfaFd < LX_MAX_FD && g_FdTable[nfaFd].Used)
