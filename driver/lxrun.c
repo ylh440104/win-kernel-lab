@@ -4364,51 +4364,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_WritevCnt = Parameters[2];
             g_WritevStatus = 0xABu;
             {
-                ULONG pi2;
-                for (pi2 = 0; pi2 < 8; pi2++)
-                {
-                    ULONG64 cand = Parameters[pi2];
-                    ULONG64 probeVal = 0;
-                    CHAR sbuf[8];
-                    if (cand < 0x400000 || cand >= 0x800000)
-                    {
-                        g_WritevProbe[pi2] = 0;
-                        continue;
-                    }
-                    RtlZeroMemory(sbuf, sizeof(sbuf));
-                    {
-                        LX_APC_STATE pApc;
-                        BOOLEAN pAtt = FALSE;
-                        if (g_PicoProcessObject != NULL)
-                        {
-                            __try
-                            {
-                                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&pApc);
-                                pAtt = TRUE;
-                            }
-                            __except (EXCEPTION_EXECUTE_HANDLER)
-                            {
-                                pAtt = FALSE;
-                            }
-                        }
-                        __try
-                        {
-                            RtlCopyMemory(sbuf, (PVOID)(ULONG_PTR)cand, 8);
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER)
-                        {
-                            sbuf[0] = 0xEE;
-                        }
-                        if (pAtt)
-                        {
-                            KeUnstackDetachProcess((PVOID)&pApc);
-                        }
-                    }
-                    RtlCopyMemory(&probeVal, sbuf, 8);
-                    g_WritevProbe[pi2] = probeVal;
-                }
-            }
-            {
                 ULONG64 useIov = Parameters[2];
                 ULONG64 useCnt = Parameters[3];
                 if (useIov != 0 && useCnt > 0 && useCnt < 64)
