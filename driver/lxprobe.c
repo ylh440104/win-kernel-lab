@@ -234,7 +234,7 @@ typedef struct _LX_QUERY_RESULT
     LONG64 LastStatSize;
     ULONG LastStatMode;
     CHAR LastStatPath[128];
-    ULONG64 StatDebug[8];
+    ULONG64 StatDebug[12];
     CHAR SlotText[8][48];
     ULONG64 SeekCount;
     ULONG64 LastSeekResult;
@@ -1274,11 +1274,13 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
                    (unsigned long long)q.StatCount, (unsigned long long)q.LastStatStatus,
                    (long long)q.LastStatSize, q.LastStatMode, (int)sizeof(q.LastStatPath), q.LastStatPath);
-            printf("  statDebug=%llx %llx %llx %llx %llx %llx %llx %llx\n",
+            printf("  statDebug=%llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
                    (unsigned long long)q.StatDebug[0], (unsigned long long)q.StatDebug[1],
                    (unsigned long long)q.StatDebug[2], (unsigned long long)q.StatDebug[3],
                    (unsigned long long)q.StatDebug[4], (unsigned long long)q.StatDebug[5],
-                   (unsigned long long)q.StatDebug[6], (unsigned long long)q.StatDebug[7]);
+                   (unsigned long long)q.StatDebug[6], (unsigned long long)q.StatDebug[7],
+                   (unsigned long long)q.StatDebug[8], (unsigned long long)q.StatDebug[9],
+                   (unsigned long long)q.StatDebug[10]);
             {
                 int si;
                 for (si = 0; si < 8; si++)
