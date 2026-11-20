@@ -2669,42 +2669,103 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_NEWFSTATAT:
     {
-        ULONG64 tfRdx = 0;
-        ULONG64 tfR10 = 0;
-        CHAR pathBuf[260];
-        ULONG pathLen = 0;
+        ULONG64 nfaPathUser = Parameters[2];
+        ULONG64 nfaStat = Parameters[3];
+        ULONG64 nfaFlags = Parameters[4];
+        CHAR nfaPathBuf[260];
+        ULONG nfaLen = 0;
+        HANDLE nfaHandle = NULL;
+        ULONG nfaSlot;
+        LX_LINUX_STAT nfaLinux;
         g_NfaCount++;
-        __try
-        {
-            tfRdx = Parameters[3];
-            tfR10 = Parameters[4];
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            tfRdx = 0;
-            tfR10 = 0;
-        }
-        pathLen = LxCopyLinuxPath(Parameters[1], pathBuf, sizeof(pathBuf));
-        if (pathLen == 0)
-        {
-            pathLen = LxCopyLinuxPath(Parameters[2], pathBuf, sizeof(pathBuf));
-        }
-        g_NfaLen = pathLen;
-        if (pathLen > 0 && pathLen < 48)
+        g_NfaStat = nfaStat;
+        g_NfaFlags = nfaFlags;
+        nfaLen = LxCopyLinuxPath(nfaPathUser, nfaPathBuf, sizeof(nfaPathBuf));
+        g_NfaLen = nfaLen;
+        g_NfaPath = nfaPathUser;
+        if (nfaLen > 0)
         {
             ULONG pi;
             RtlZeroMemory(g_SlotText[1], 48);
-            for (pi = 0; pi < 47 && pi < pathLen; pi++)
+            for (pi = 0; pi < 47 && pi < nfaLen; pi++)
             {
-                g_SlotText[1][pi] = pathBuf[pi];
+                g_SlotText[1][pi] = nfaPathBuf[pi];
             }
             g_SlotText[1][47] = 0;
         }
-        g_NfaStat = tfRdx;
-        g_NfaFlags = tfR10;
+        if (nfaLen == 0 || nfaLen >= sizeof(nfaPathBuf))
+        {
+            g_NfaMvStatus = 0xE0u;
+            g_LastStatStatus = 0xC000000Du;
+            return (ULONG64)(-2);
+        }
+        for (nfaSlot = 3; nfaSlot < LX_MAX_FD; nfaSlot++)
+        {
+            ULONG k = 0;
+            BOOLEAN same = TRUE;
+            if (!g_FdTable[nfaSlot].Used || g_FdTable[nfaSlot].Handle == NULL)
+            {
+                continue;
+            }
+            while (k < nfaLen)
+            {
+                if (g_FdTable[nfaSlot].LinuxPath[k] != nfaPathBuf[k])
+                {
+                    same = FALSE;
+                    break;
+                }
+                k++;
+            }
+            if (same && g_FdTable[nfaSlot].LinuxPath[k] == 0)
+            {
+                nfaHandle = g_FdTable[nfaSlot].Handle;
+                g_NfaOpenFd = nfaSlot;
+                break;
+            }
+        }
+        if (nfaHandle == NULL)
+        {
+            ULONG64 opened = LxOpenFile(nfaPathBuf, 0, 0);
+            g_NfaOpenFd = opened;
+            if ((LONG64)opened >= 0 && opened < LX_MAX_FD && g_FdTable[opened].Used)
+            {
+                nfaHandle = g_FdTable[opened].Handle;
+            }
+        }
+        if (nfaHandle == NULL)
+        {
+            g_NfaMvStatus = 0xE1u;
+            g_LastStatStatus = 0xC0000034u;
+            return (ULONG64)(-2);
+        }
+        {
+            ULONG64 st = LxFillStat(nfaHandle, &nfaLinux);
+            g_NfaMvStatus = st;
+            if (st != 0)
+            {
+                g_LastStatStatus = (ULONG)st;
+                return (ULONG64)(-5);
+            }
+        }
+        if (nfaStat >= 0x10000)
+        {
+            SIZE_T nfaWritten = 0;
+            NTSTATUS ws;
+            ws = MmCopyVirtualMemory(PsGetCurrentProcess(), &nfaLinux,
+                                     g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaStat,
+                                     sizeof(nfaLinux), KernelMode, &nfaWritten);
+            g_NfaCopyW0 = (ULONG64)ws;
+            if (!NT_SUCCESS(ws))
+            {
+                g_LastStatStatus = (ULONG)ws;
+                return (ULONG64)(-14);
+            }
+        }
         g_StatCount++;
-        g_LastStatStatus = 0xC0000034u;
-        return (ULONG64)(-2);
+        g_LastStatStatus = 0;
+        g_LastStatSize = nfaLinux.Size;
+        g_LastStatMode = nfaLinux.Mode;
+        return 0;
     }
     case LX_SYS_GETDENTS64:
     {
