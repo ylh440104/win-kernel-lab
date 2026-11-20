@@ -1274,13 +1274,12 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
                    (unsigned long long)q.StatCount, (unsigned long long)q.LastStatStatus,
                    (long long)q.LastStatSize, q.LastStatMode, (int)sizeof(q.LastStatPath), q.LastStatPath);
-            printf("  statDebug=%llx %llx %llx %llx %llx %llx %llx %llx %llx %llx %llx\n",
+            printf("  NFA: cnt=%llu dirfd=%llx path=%llx stat=%llx flags=%llx mvst=%llx w0=%llx copied=%llu len=%llu openfd=%llu\n",
                    (unsigned long long)q.StatDebug[0], (unsigned long long)q.StatDebug[1],
                    (unsigned long long)q.StatDebug[2], (unsigned long long)q.StatDebug[3],
                    (unsigned long long)q.StatDebug[4], (unsigned long long)q.StatDebug[5],
                    (unsigned long long)q.StatDebug[6], (unsigned long long)q.StatDebug[7],
-                   (unsigned long long)q.StatDebug[8], (unsigned long long)q.StatDebug[9],
-                   (unsigned long long)q.StatDebug[10]);
+                   (unsigned long long)q.StatDebug[8], (unsigned long long)q.StatDebug[9]);
             {
                 int si;
                 for (si = 0; si < 8; si++)
