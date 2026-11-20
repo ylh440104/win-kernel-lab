@@ -8985,7 +8985,16 @@ static void LxCreatePicoThread(void)
     stackTop = (g_StackBase + 0x20000 - 0x100) & ~0xFull;
     if (g_ElfBase != 0)
     {
-        stackTop = (g_ElfBase + g_ElfViewSize - 0x100) & ~0xFull;
+        ULONG64 elfStackTop = (g_ElfBase + 0x8000) & ~0xFull;
+        if (g_ElfViewSize >= 0x8000)
+        {
+            elfStackTop = (g_ElfBase + 0x8000) & ~0xFull;
+        }
+        else
+        {
+            elfStackTop = (g_ElfBase + g_ElfViewSize - 0x100) & ~0xFull;
+        }
+        stackTop = elfStackTop;
         g_StackInElf = 1;
     }
 
