@@ -4357,6 +4357,10 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 vectorFd = Parameters[1];
         ULONG64 vectorBase = Parameters[2];
         ULONG64 vectorCount = Parameters[3];
+        ULONG64 vectorTotal = 0;
+        ULONG64 vectorIndex;
+        LX_APC_STATE vectorApc;
+        BOOLEAN vectorAttached = FALSE;
         {
             ULONG64 tfA0 = 0;
             ULONG64 tfA1 = 0;
