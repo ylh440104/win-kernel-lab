@@ -2684,25 +2684,20 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_StatDebug[3] = nfaFlags;
         if (g_PicoProcessObject != NULL)
         {
-            LX_APC_STATE nfaDumpApc;
-            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&nfaDumpApc);
-            __try
+            CHAR nfaProbe[32];
+            SIZE_T nfaCopied = 0;
+            NTSTATUS nfaMvStatus;
+            RtlZeroMemory(nfaProbe, sizeof(nfaProbe));
+            nfaMvStatus = MmCopyVirtualMemory(g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaPath,
+                                             PsGetCurrentProcess(), nfaProbe, 24,
+                                             KernelMode, &nfaCopied);
+            g_StatDebug[8] = (ULONG64)nfaMvStatus;
+            g_StatDebug[9] = (ULONG64)nfaCopied;
             {
                 ULONG64 w0 = 0;
-                ULONG64 w1 = 0;
-                ULONG64 w2 = 0;
-                RtlCopyMemory(&w0, (PVOID)(ULONG_PTR)nfaPath, 8);
-                RtlCopyMemory(&w1, (PVOID)(ULONG_PTR)(nfaPath + 8), 8);
-                RtlCopyMemory(&w2, (PVOID)(ULONG_PTR)(nfaPath + 16), 8);
-                g_StatDebug[8] = w0;
-                g_StatDebug[9] = w1;
-                g_StatDebug[10] = w2;
+                RtlCopyMemory(&w0, nfaProbe, 8);
+                g_StatDebug[10] = w0;
             }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                g_StatDebug[8] = 0xDEAD;
-            }
-            KeUnstackDetachProcess((PVOID)&nfaDumpApc);
         }
         if (nfaPath == 0 || nfaStat == 0)
         {
