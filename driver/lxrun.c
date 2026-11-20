@@ -2805,8 +2805,21 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
         if (nfaHandle == NULL)
         {
+            ULONG di;
             g_NfaMvStatus = 0xE1u;
             g_LastStatStatus = 0xC0000034u;
+            RtlZeroMemory(g_SlotText[6], 48);
+            for (di = 0; di < 47 && nfaPathBuf[di] != 0; di++)
+            {
+                g_SlotText[6][di] = nfaPathBuf[di];
+            }
+            g_SlotText[6][47] = 0;
+            RtlZeroMemory(g_SlotText[7], 48);
+            for (di = 0; di < 47 && g_FdTable[3].LinuxPath[di] != 0; di++)
+            {
+                g_SlotText[7][di] = g_FdTable[3].LinuxPath[di];
+            }
+            g_SlotText[7][47] = 0;
             return (ULONG64)(-2);
         }
         {
