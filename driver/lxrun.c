@@ -4298,6 +4298,20 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                         RtlCopyMemory(&firstIov, (PVOID)(ULONG_PTR)useIov, sizeof(firstIov));
                         g_WritevIovBase = firstIov.Base;
                         g_WritevIovLen = firstIov.Length;
+                        {
+                            LX_IOVEC altIov;
+                            RtlZeroMemory(&altIov, sizeof(altIov));
+                            __try
+                            {
+                                RtlCopyMemory(&altIov, (PVOID)(ULONG_PTR)Parameters[3], sizeof(altIov));
+                                g_WritevParams6 = altIov.Base;
+                                g_WritevParams7 = altIov.Length;
+                            }
+                            __except (EXCEPTION_EXECUTE_HANDLER)
+                            {
+                                g_WritevParams6 = 0xDEAD0001ull;
+                            }
+                        }
                         if (firstIov.Base != 0 && firstIov.Length > 0 && firstIov.Length <= 200)
                         {
                             RtlZeroMemory(g_WriteBuffer, sizeof(g_WriteBuffer));
