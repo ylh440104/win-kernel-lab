@@ -4354,9 +4354,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_READV:
     case LX_SYS_WRITEV:
     {
-        ULONG64 vectorFd = 0;
-        ULONG64 vectorBase = 0;
-        ULONG64 vectorCount = 0;
+        ULONG64 vectorFd = Parameters[1];
+        ULONG64 vectorBase = Parameters[2];
+        ULONG64 vectorCount = Parameters[3];
         {
             ULONG64 tfA0 = 0;
             ULONG64 tfA1 = 0;
@@ -4373,21 +4373,19 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 tfA1 = 0;
                 tfA2 = 0;
             }
-            vectorFd = tfA0;
-            vectorBase = tfA1;
-            vectorCount = tfA2;
-            if (vectorFd == 0 && vectorBase == 0 && vectorCount == 0)
+            if ((vectorFd > 2 || vectorBase == 0 || vectorCount == 0 || vectorCount > 64) && tfA0 <= 2 && tfA1 != 0)
             {
-                vectorFd = Parameters[0];
-                vectorBase = Parameters[1];
-                vectorCount = Parameters[2];
+                vectorFd = tfA0;
+                vectorBase = tfA1;
+                vectorCount = tfA2;
+            }
+            if ((vectorFd > 2 || vectorBase == 0) && tfA1 != 0 && tfA2 != 0)
+            {
+                vectorFd = tfA0;
+                vectorBase = tfA1;
+                vectorCount = tfA2;
             }
         }
-        ULONG64 vectorTotal = 0;
-        ULONG64 vectorIndex;
-        LX_APC_STATE vectorApc;
-        BOOLEAN vectorAttached = FALSE;
-
         if (vectorFd >= 1 && vectorFd <= 2)
         {
             /* stdout/stderr：不查 fd 表，直接允许 */
