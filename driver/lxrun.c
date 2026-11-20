@@ -2667,88 +2667,124 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_NEWFSTATAT:
     {
-        ULONG64 nfaDirFd = 0;
+        ULONG64 nfaCand[6];
+        ULONG64 tfRdi = 0, tfRsi = 0, tfRdx = 0, tfR10 = 0;
+        ULONG ci;
         ULONG64 nfaPath = 0;
         ULONG64 nfaStat = 0;
         ULONG64 nfaFlags = 0;
-        ULONG64 nfaFd = 0;
+        CHAR nfaPathBuf[260];
+        ULONG nfaLen = 0;
+        HANDLE nfaHandle = NULL;
         LX_LINUX_STAT nfaLinux;
-        g_StatCount++;
+        g_NfaCount++;
         __try
         {
-            RtlCopyMemory(&nfaDirFd, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
-            RtlCopyMemory(&nfaPath, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
-            RtlCopyMemory(&nfaStat, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
-            RtlCopyMemory(&nfaFlags, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
+            RtlCopyMemory(&tfRdi, (PUCHAR)(ULONG_PTR)Context + 0x030, 8);
+            RtlCopyMemory(&tfRsi, (PUCHAR)(ULONG_PTR)Context + 0x038, 8);
+            RtlCopyMemory(&tfRdx, (PUCHAR)(ULONG_PTR)Context + 0x040, 8);
+            RtlCopyMemory(&tfR10, (PUCHAR)(ULONG_PTR)Context + 0x048, 8);
         }
         __except (EXCEPTION_EXECUTE_HANDLER)
         {
-            nfaDirFd = 0;
-            nfaPath = 0;
-            nfaStat = 0;
-            nfaFlags = 0;
+            tfRdi = tfRsi = tfRdx = tfR10 = 0;
         }
-        g_NfaCount++;
-        g_NfaDirFd = nfaDirFd;
-        g_NfaPath = nfaPath;
-        g_NfaStat = nfaStat;
-        g_NfaFlags = nfaFlags;
-        if (g_PicoProcessObject != NULL)
+        nfaCand[0] = Parameters[1];
+        nfaCand[1] = Parameters[2];
+        nfaCand[2] = tfRsi;
+        nfaCand[3] = tfRdx;
+        nfaCand[4] = tfR10;
+        nfaCand[5] = 0;
+        g_NfaDirFd = tfRdi;
+        g_NfaFlags = tfR10;
+        for (ci = 0; ci < 5; ci++)
         {
-            CHAR nfaProbe[32];
-            SIZE_T nfaCopied = 0;
-            NTSTATUS nfaMvStatus;
-            RtlZeroMemory(nfaProbe, sizeof(nfaProbe));
-            nfaMvStatus = MmCopyVirtualMemory(g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaPath,
-                                             PsGetCurrentProcess(), nfaProbe, 24,
-                                             KernelMode, &nfaCopied);
-            g_NfaMvStatus = (ULONG64)nfaMvStatus;
-            g_NfaCopyStr = (ULONG64)nfaCopied;
+            ULONG pl;
+            if (nfaCand[ci] == 0)
             {
-                ULONG64 w0 = 0;
-                RtlCopyMemory(&w0, nfaProbe, 8);
-                g_NfaCopyW0 = w0;
+                continue;
+            }
+            pl = LxCopyLinuxPath(nfaCand[ci], nfaPathBuf, sizeof(nfaPathBuf));
+            if (pl > 0 && pl < sizeof(nfaPathBuf) && nfaPathBuf[0] == '/')
+            {
+                nfaPath = nfaCand[ci];
+                nfaLen = pl;
+                g_NfaPath = nfaPath;
+                g_NfaLen = pl;
+                break;
             }
         }
-        if (nfaPath == 0 || nfaStat == 0)
+        if (nfaLen == 0)
         {
+            g_NfaMvStatus = 0xE0u;
             g_LastStatStatus = 0xC000000Du;
             return (ULONG64)(-14);
         }
+        nfaStat = (nfaPath == Parameters[1]) ? Parameters[2] : ((nfaPath == Parameters[2]) ? Parameters[1] : tfRdx);
+        if (nfaStat == nfaPath || nfaStat == 0)
         {
-            CHAR nfaKernelPath[260];
-            ULONG nfaLen = 0;
-            nfaLen = LxCopyLinuxPath(nfaPath, nfaKernelPath, sizeof(nfaKernelPath));
-            g_NfaLen = nfaLen;
-            if (nfaLen > 0 && nfaLen < sizeof(nfaKernelPath))
+            nfaStat = (nfaPath == tfRsi) ? tfRdx : tfRsi;
+        }
+        g_NfaStat = nfaStat;
+        {
+            ULONG64 nfaFdRet = LxOpenFile(nfaPathBuf, 0, 0);
+            g_NfaOpenFd = nfaFdRet;
+            if ((LONG64)nfaFdRet >= 0 && nfaFdRet < LX_MAX_FD && g_FdTable[nfaFdRet].Used)
             {
-                nfaFd = LxOpenFile(nfaKernelPath, 0, 0);
-                g_NfaOpenFd = nfaFd;
+                nfaHandle = g_FdTable[nfaFdRet].Handle;
             }
         }
-        if ((LONG64)nfaFd >= 0 && nfaFd < LX_MAX_FD && g_FdTable[nfaFd].Used)
+        if (nfaHandle == NULL)
         {
-            ULONG realFd = (ULONG)nfaFd;
-            ULONG64 st = LxFillStat(g_FdTable[realFd].Handle, &nfaLinux);
+            g_NfaMvStatus = 0xE1u;
+            g_LastStatStatus = 0xC000000Du;
+            return (ULONG64)(-2);
+        }
+        {
+            ULONG64 st = LxFillStat(nfaHandle, &nfaLinux);
             g_NfaMvStatus = st;
             if (st == 0)
             {
-                g_LastStatStatus = 0;
-                g_LastStatSize = nfaLinux.Size;
-                g_LastStatMode = nfaLinux.Mode;
+                LX_APC_STATE nfaApc;
+                BOOLEAN nfaAtt = FALSE;
+                if (g_PicoProcessObject != NULL)
+                {
+                    __try
+                    {
+                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&nfaApc);
+                        nfaAtt = TRUE;
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        nfaAtt = FALSE;
+                    }
+                }
                 __try
                 {
-                    ProbeForWrite((PVOID)(ULONG_PTR)nfaStat, sizeof(nfaLinux), 4);
                     RtlCopyMemory((PVOID)(ULONG_PTR)nfaStat, &nfaLinux, sizeof(nfaLinux));
+                    g_NfaCopyW0 = sizeof(nfaLinux);
                 }
                 __except (EXCEPTION_EXECUTE_HANDLER)
                 {
+                    g_NfaCopyW0 = 0xDEADu;
+                    if (nfaAtt)
+                    {
+                        KeUnstackDetachProcess((PVOID)&nfaApc);
+                    }
+                    g_LastStatStatus = 0xC000000Du;
                     return (ULONG64)(-14);
                 }
+                if (nfaAtt)
+                {
+                    KeUnstackDetachProcess((PVOID)&nfaApc);
+                }
+                g_LastStatStatus = 0;
+                g_LastStatSize = nfaLinux.Size;
+                g_LastStatMode = nfaLinux.Mode;
                 return 0;
             }
         }
-        g_LastStatStatus = 0xFFFFFFFFu;
+        g_LastStatStatus = 0xC000000Du;
         return (ULONG64)(-2);
     }
     case LX_SYS_GETDENTS64:
