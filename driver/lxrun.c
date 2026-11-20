@@ -2711,6 +2711,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 nfaLen = pl;
                 g_NfaPath = nfaPath;
                 g_NfaLen = pl;
+                {
+                    ULONG pi;
+                    ULONG64 pk = 0;
+                    for (pi = 0; pi < 7 && pi < pl; pi++)
+                    {
+                        pk = (pk << 8) | (ULONG64)(UCHAR)nfaPathBuf[pi];
+                    }
+                    g_NfaCopyStr = pk;
+                }
                 break;
             }
         }
@@ -2720,12 +2729,14 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_LastStatStatus = 0xC000000Du;
             return (ULONG64)(-14);
         }
-        nfaStat = (nfaPath == Parameters[1]) ? Parameters[2] : ((nfaPath == Parameters[2]) ? Parameters[1] : tfRdx);
+        nfaStat = tfRdx;
+        nfaFlags = tfR10;
         if (nfaStat == nfaPath || nfaStat == 0)
         {
-            nfaStat = (nfaPath == tfRsi) ? tfRdx : tfRsi;
+            nfaStat = tfRsi;
         }
         g_NfaStat = nfaStat;
+        g_NfaFlags = nfaFlags;
         {
             ULONG64 nfaFdRet = LxOpenFile(nfaPathBuf, 0, 0);
             g_NfaOpenFd = nfaFdRet;
