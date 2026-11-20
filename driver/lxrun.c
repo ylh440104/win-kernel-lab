@@ -2774,37 +2774,20 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             }
         }
         {
-            LX_APC_STATE nfaApc;
-            BOOLEAN nfaAtt = FALSE;
-            if (g_PicoProcessObject != NULL)
+            SIZE_T nfaWritten = 0;
+            NTSTATUS nfaWriteStatus;
+            if (nfaStat < 0x10000)
             {
-                __try
-                {
-                    KeStackAttachProcess(g_PicoProcessObject, (PVOID)&nfaApc);
-                    nfaAtt = TRUE;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    nfaAtt = FALSE;
-                }
-            }
-            __try
-            {
-                RtlCopyMemory((PVOID)(ULONG_PTR)nfaStat, &nfaLinux, sizeof(nfaLinux));
-                g_NfaCopyW0 = sizeof(nfaLinux);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                g_NfaCopyW0 = 0xDEADu;
-                if (nfaAtt)
-                {
-                    KeUnstackDetachProcess((PVOID)&nfaApc);
-                }
+                g_NfaCopyW0 = 0xBAD1u;
                 return (ULONG64)(-14);
             }
-            if (nfaAtt)
+            nfaWriteStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), &nfaLinux,
+                                                 g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaStat,
+                                                 sizeof(nfaLinux), KernelMode, &nfaWritten);
+            g_NfaCopyW0 = (ULONG64)nfaWriteStatus;
+            if (!NT_SUCCESS(nfaWriteStatus))
             {
-                KeUnstackDetachProcess((PVOID)&nfaApc);
+                return (ULONG64)(-14);
             }
         }
         g_LastStatStatus = 0;
@@ -4879,6 +4862,10 @@ static NTSTATUS LxDispatchException(PVOID Args)
         g_ExcAddrSeq[g_ExceptionCount - 1] = (Args != NULL) ? argument[2] : 0;
     }
 
+    if (g_ExceptionCount > 5000)
+    {
+        return (NTSTATUS)0xC0000001u;
+    }
     return (NTSTATUS)g_ExcReturnValue;
 }
 
