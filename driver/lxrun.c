@@ -2713,12 +2713,12 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 g_NfaLen = pl;
                 {
                     ULONG pi;
-                    ULONG64 pk = 0;
-                    for (pi = 0; pi < 7 && pi < pl; pi++)
+                    RtlZeroMemory(g_SlotText[0], 48);
+                    for (pi = 0; pi < 47 && pi < pl; pi++)
                     {
-                        pk = (pk << 8) | (ULONG64)(UCHAR)nfaPathBuf[pi];
+                        g_SlotText[0][pi] = nfaPathBuf[pi];
                     }
-                    g_NfaCopyStr = pk;
+                    g_SlotText[0][47] = 0;
                 }
                 break;
             }
