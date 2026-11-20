@@ -4285,16 +4285,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 wvRsi = 0;
                 wvRdx = 0;
             }
-            g_WritevFd = wvRdi;
-            g_WritevBase = wvRsi;
-            g_WritevCnt = wvRdx;
+            g_WritevFd = Parameters[1];
+            g_WritevBase = Parameters[2];
+            g_WritevCnt = Parameters[3];
             g_WritevParams0 = Parameters[1];
             g_WritevParams1 = Parameters[2];
             g_WritevParams2 = Parameters[3];
             g_WritevStatus = 0xABu;
             {
-                ULONG64 useIov = (wvRsi != 0) ? wvRsi : Parameters[2];
-                ULONG64 useCnt = (wvRdx != 0 && wvRdx < 64) ? wvRdx : Parameters[3];
+                ULONG64 useIov = Parameters[2];
+                ULONG64 useCnt = Parameters[3];
                 if (useIov != 0 && useCnt > 0 && useCnt < 64)
                 {
                     LX_APC_STATE wvApc;
@@ -4324,7 +4324,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                             RtlCopyMemory(g_WriteBuffer, (PVOID)(ULONG_PTR)firstIov.Base, (ULONG)firstIov.Length);
                             g_WriteLength = (ULONG)firstIov.Length;
                             g_WriteCount++;
-                            g_WriteFd = (ULONG)wvRdi;
+                            g_WriteFd = (ULONG)Parameters[1];
                             g_WritevStatus = 0xACu;
                         }
                     }
