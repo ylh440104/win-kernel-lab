@@ -4771,6 +4771,14 @@ static ULONG64 g_ExcCode = 0;
 static ULONG64 g_ExcAddress = 0;
 static ULONG64 g_ExcMsr = 0;
 static ULONG64 g_ExcArg0 = 0;
+static ULONG g_ExcRecordIdx = 0xFFFFFFFFu;
+static ULONG64 g_ExcRecCode = 0;
+static ULONG64 g_ExcRecAddr = 0;
+static ULONG64 g_ExcRecNParam = 0;
+static ULONG64 g_ExcRecInfo0 = 0;
+static ULONG64 g_ExcRecInfo1 = 0;
+static ULONG64 g_ExcRecProbe0 = 0;
+static ULONG64 g_ExcRecProbe1 = 0;
 static ULONG64 g_ExcArg1 = 0;
 static ULONG64 g_ExcArg2 = 0;
 static ULONG g_ExcContextStatus = 0xFFFFFFFFu;
@@ -4825,6 +4833,41 @@ static NTSTATUS LxDispatchException(PVOID Args)
         g_ExcArg0 = argument[0];
         g_ExcArg1 = argument[1];
         g_ExcArg2 = argument[2];
+        {
+            ULONG ei;
+            for (ei = 0; ei < 8; ei++)
+            {
+                ULONG64 cand = argument[ei];
+                if (cand < 0xffff000000000000ull)
+                {
+                    continue;
+                }
+                __try
+                {
+                    ULONG recCode = *(volatile ULONG *)(ULONG_PTR)cand;
+                    ULONG64 probe1 = 0;
+                    RtlCopyMemory(&probe1, (PVOID)(ULONG_PTR)(cand + 0x18), 8);
+                    if (g_ExcRecProbe0 == 0)
+                    {
+                        g_ExcRecProbe0 = cand;
+                        g_ExcRecProbe1 = probe1;
+                    }
+                    if (recCode == 0xC0000005u && g_ExcRecordIdx == 0xFFFFFFFFu)
+                    {
+                        UCHAR *rec = (UCHAR *)(ULONG_PTR)cand;
+                        g_ExcRecordIdx = ei;
+                        g_ExcRecCode = recCode;
+                        RtlCopyMemory(&g_ExcRecAddr, rec + 0x18, 8);
+                        RtlCopyMemory(&g_ExcRecNParam, rec + 0x20, 8);
+                        RtlCopyMemory(&g_ExcRecInfo0, rec + 0x28, 8);
+                        RtlCopyMemory(&g_ExcRecInfo1, rec + 0x30, 8);
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                }
+            }
+        }
         {
             UCHAR *kthread = (UCHAR *)PsGetCurrentThread();
             ULONG64 trapFrame = 0;
@@ -9953,8 +9996,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StatDebug[5] = g_NfaMvStatus;
             result->StatDebug[6] = g_NfaCopyW0;
             result->StatDebug[7] = g_NfaCopyStr;
-            result->StatDebug[8] = g_NfaLen;
-            result->StatDebug[9] = g_NfaOpenFd;
+            result->StatDebug[8] = g_ExcRecordIdx;
+            result->StatDebug[9] = g_ExcRecCode;
+            result->StatDebug[10] = g_ExcRecAddr;
+            result->StatDebug[11] = g_ExcRecInfo1;
+            result->ReadDebug[0] = g_ExcRecNParam;
+            result->ReadDebug[1] = g_ExcRecInfo0;
+            result->ReadDebug[2] = g_ExcRecProbe0;
+            result->ReadDebug[3] = g_ExcRecProbe1;
 
             result->GetDentsCount = g_GetDentsCount;
             result->GetDentsStatus = g_GetDentsStatus;
