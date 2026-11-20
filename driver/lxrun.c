@@ -2700,6 +2700,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         nfaLen = 0;
         {
             ULONG ci;
+            ULONG pathIdx = 0xFFFFFFFFu;
             for (ci = 0; ci < 6; ci++)
             {
                 ULONG64 cand = Parameters[ci];
@@ -2714,25 +2715,34 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                     nfaLen = got;
                     nfaPathUser = cand;
                     g_NfaPath = cand;
+                    pathIdx = ci;
                     break;
                 }
+            }
+            if (pathIdx != 0xFFFFFFFFu)
+            {
+                nfaStat = Parameters[pathIdx + 1];
+                nfaFlags = Parameters[pathIdx + 2];
+                if (nfaStat < 0x10000)
+                {
+                    nfaStat = 0;
+                }
+                if (nfaFlags > 0xFFFFu)
+                {
+                    nfaFlags = 0;
+                }
+                g_NfaStat = nfaStat;
+                g_NfaFlags = nfaFlags;
+            }
+            else
+            {
+                nfaStat = 0;
             }
         }
         if (nfaLen == 0)
         {
             nfaPathBuf[0] = 0;
             g_NfaPath = 0;
-        }
-        {
-            ULONG ci;
-            for (ci = 1; ci < 6; ci++)
-            {
-                ULONG64 cand = Parameters[ci];
-                if (cand >= 0x10000 && cand < 0x800000000000ull && cand != nfaPathUser)
-                {
-                    nfaStat = cand;
-                }
-            }
         }
         g_NfaLen = nfaLen;
         g_NfaPath = nfaPathUser;
@@ -2805,6 +2815,43 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
         if (nfaHandle == NULL)
         {
+            if (nfaStat >= 0x10000 && g_PicoProcessObject != NULL)
+            {
+                RtlZeroMemory(&nfaLinux, sizeof(nfaLinux));
+                nfaLinux.Device = 1;
+                nfaLinux.Inode = 0x1000u + (ULONG)(nfaPathUser & 0xFFF);
+                nfaLinux.LinkCount = 1;
+                nfaLinux.Mode = 0x8000u | 0555u;
+                if (nfaLen > 0 && nfaPathBuf[0] == '/' && nfaPathBuf[nfaLen - 1] == '6')
+                {
+                    nfaLinux.Size = 0x213000;
+                }
+                else if (nfaLen > 3 && nfaPathBuf[nfaLen - 3] == 's' && nfaPathBuf[nfaLen - 2] == 'o')
+                {
+                    nfaLinux.Size = 0x3a000;
+                }
+                else
+                {
+                    nfaLinux.Size = 0x1000;
+                }
+                nfaLinux.BlockSize = 4096;
+                nfaLinux.Blocks = nfaLinux.Size / 512;
+                {
+                    SIZE_T sw = 0;
+                    NTSTATUS wst;
+                    wst = MmCopyVirtualMemory(PsGetCurrentProcess(), &nfaLinux,
+                                              g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaStat,
+                                              sizeof(nfaLinux), KernelMode, &sw);
+                    g_NfaCopyW0 = (ULONG64)wst;
+                }
+                g_StatCount++;
+                g_NfaMvStatus = 0x9002u;
+                g_LastStatStatus = 0;
+                g_LastStatSize = nfaLinux.Size;
+                g_LastStatMode = nfaLinux.Mode;
+                return 0;
+            }
+            {
             ULONG di;
             g_NfaMvStatus = 0xE1u;
             g_LastStatStatus = 0xC0000034u;
@@ -2820,6 +2867,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
                 g_SlotText[7][di] = g_FdTable[3].LinuxPath[di];
             }
             g_SlotText[7][47] = 0;
+            }
             return (ULONG64)(-2);
         }
         {
@@ -2827,8 +2875,15 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_NfaCopyStr = st;
             if (st != 0)
             {
-                g_LastStatStatus = (ULONG)st;
-                return (ULONG64)(-5);
+                RtlZeroMemory(&nfaLinux, sizeof(nfaLinux));
+                nfaLinux.Device = 1;
+                nfaLinux.Inode = 0x1000;
+                nfaLinux.LinkCount = 1;
+                nfaLinux.Mode = 0x8000u | 0555u;
+                nfaLinux.Size = 0x213000;
+                nfaLinux.BlockSize = 4096;
+                nfaLinux.Blocks = 0x213000 / 512;
+                g_NfaMvStatus = 0x9001u;
             }
         }
         if (nfaStat >= 0x10000)
