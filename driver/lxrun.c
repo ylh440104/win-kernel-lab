@@ -988,6 +988,7 @@ static ULONG g_StackMapStatus = 0xFFFFFFFFu;
 static ULONG64 g_ThreadHandle = 0;
 static ULONG64 g_ResumeThreadFn = 0;
 static ULONG64 g_SuspendThreadFn = 0;
+static ULONG64 g_TerminateThreadFn = 0;
 static ULONG g_ResumeStatus = 0xFFFFFFFFu;
 static ULONG g_PrevSuspendCount = 0xFFFFFFFFu;
 static volatile ULONG64 g_ThreadExitCount = 0;
@@ -2577,6 +2578,8 @@ vectorDone:
     return total != 0 ? total : error;
 }
 
+#include "lxio_runtime.h"
+
 static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Context)
 {
     ULONG64 arg0 = Parameters[0];
@@ -2617,550 +2620,42 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     switch (Number)
     {
     case LX_SYS_OPEN:
+        return LxSysOpenDecoded(Context, FALSE);
     case LX_SYS_OPENAT:
+        return LxSysOpenDecoded(Context, TRUE);
+    case LX_SYS_STAT:
+    case LX_SYS_FSTAT:
+    case LX_SYS_NEWFSTATAT:
+        return LxSysStatDecoded(Context, (ULONG)Number);
+    case LX_SYS_READ:
+        return LxSysReadDecoded(Context, FALSE);
+    case 17:
+        return LxSysReadDecoded(Context, TRUE);
+    case LX_SYS_EXIT:
+    case LX_SYS_EXIT_GROUP:
     {
-        CHAR kernelPath[260];
-        ULONG pathLength;
-        ULONG64 openFlags;
-        ULONG64 modeBits;
+        LX_SYSCALL_REGISTERS registers;
+        NTSTATUS status = LxDecodeSyscallRegisters(Context, &registers);
+        if (!NT_SUCCESS(status))
         {
-            ULONG64 tfRsi = 0;
-            ULONG64 tfRdx = 0;
-            ULONG64 tfR10 = 0;
-            ULONG64 pathCand[4];
-            ULONG ci;
-            BOOLEAN got = FALSE;
-            tfRsi = Parameters[2];
-            tfRdx = (Number == LX_SYS_OPENAT) ? Parameters[3] : Parameters[2];
-            tfR10 = (Number == LX_SYS_OPENAT) ? Parameters[4] : Parameters[3];
-            pathCand[0] = (Number == LX_SYS_OPENAT) ? Parameters[2] : Parameters[1];
-            pathCand[1] = tfRsi;
-            pathCand[2] = (Number == LX_SYS_OPENAT) ? tfRsi : Parameters[1];
-            pathCand[3] = 0;
-            pathLength = 0;
-            for (ci = 0; ci < 4; ci++)
-            {
-                ULONG pl;
-                if (pathCand[ci] == 0)
-                {
-                    continue;
-                }
-                pl = LxCopyLinuxPath(pathCand[ci], kernelPath, sizeof(kernelPath));
-                if (pl > 0 && kernelPath[0] == '/')
-                {
-                    pathLength = pl;
-                    got = TRUE;
-                    break;
-                }
-            }
-            if (!got)
-            {
-                pathLength = LxCopyLinuxPath(pathCand[0], kernelPath, sizeof(kernelPath));
-            }
-            if (Number == LX_SYS_OPENAT)
-            {
-                openFlags = tfRdx;
-                modeBits = tfR10;
-            }
-            else
-            {
-                openFlags = Parameters[2];
-                modeBits = Parameters[3];
-            }
-            if (openFlags > 0xFFFFu)
-            {
-                openFlags = 0;
-            }
+            return (ULONG64)(-14);
         }
-        g_StatDebug[3] = (Number == LX_SYS_OPENAT) ? Parameters[2] : Parameters[1];
-        g_StatDebug[4] = pathLength;
-        g_StatDebug[5] = g_PicoProcessObject ? 1 : 0;
+        g_ExitCode = (ULONG)registers.Args[0];
+        g_ExitCalled = 1;
+        g_ExitThreadPtr = (ULONG64)(ULONG_PTR)PsGetCurrentThread();
+        g_ExitTermStatus = STATUS_NOT_SUPPORTED;
+        if (g_TerminateThreadFn != 0)
         {
-            ULONG64 rawPath = (Number == LX_SYS_OPENAT) ? Parameters[2] : Parameters[1];
-            ULONG64 raw8 = 0;
-            LX_APC_STATE dbgApc;
-            BOOLEAN dbgAtt = FALSE;
-            if (g_PicoProcessObject != NULL)
-            {
-                __try { KeStackAttachProcess(g_PicoProcessObject, (PVOID)&dbgApc); dbgAtt = TRUE; } __except (EXCEPTION_EXECUTE_HANDLER) { dbgAtt = FALSE; }
-            }
-            __try { RtlCopyMemory(&raw8, (PVOID)(ULONG_PTR)rawPath, 8); } __except (EXCEPTION_EXECUTE_HANDLER) { raw8 = 0xDEAD0001ull; }
-            if (dbgAtt)
-            {
-                __try { KeUnstackDetachProcess((PVOID)&dbgApc); } __except (EXCEPTION_EXECUTE_HANDLER) { }
-            }
-            g_StatDebug[6] = raw8;
-            g_StatDebug[7] = rawPath;
+            g_ExitTermStatus = STATUS_SUCCESS;
+            status = ((NTSTATUS (*)(PETHREAD, NTSTATUS, BOOLEAN))g_TerminateThreadFn)(
+                PsGetCurrentThread(), (NTSTATUS)(ULONG)g_ExitCode, TRUE);
+            g_ExitTermStatus = (ULONG)status;
         }
-
-        g_OpenCount++;
-
-        g_StatDebug[0] = Parameters[1];
-        g_StatDebug[1] = Parameters[2];
-        g_StatDebug[2] = Parameters[3];
-        LxProbeSlots(Parameters);
-        g_SlotProbe[6] = (ULONG64)LxCopyLinuxPath(0x400078ull, g_SlotText[6], 48);
-
-        if (pathLength == 0)
-        {
-            g_LastOpenStatus = 0xC000000Du;
-            g_LastOpenFd = 0xFFFFFFFFu;
-            g_LastOpenPath[0] = 0;
-            return (ULONG64)(-2);
-        }
-
-        return LxOpenFile(kernelPath, (ULONG)openFlags, (ULONG)modeBits);
+        return (ULONG64)(-5);
     }
-
     case LX_SYS_CLOSE:
         return LxCloseFile((ULONG)Parameters[1]);
 
-    case LX_SYS_STAT:
-    {
-        CHAR kernelPath[260];
-        ULONG64 length = LxCopyLinuxPath(Parameters[2], kernelPath, sizeof(kernelPath));
-        ULONG64 status;
-        LX_LINUX_STAT linuxStat;
-        HANDLE fileHandle = NULL;
-        WCHAR ntPathBuffer[260];
-        UNICODE_STRING ntPath;
-        OBJECT_ATTRIBUTES attributes;
-        IO_STATUS_BLOCK statusBlock;
-        NTSTATUS ntStatus;
-        ULONG pathLength;
-
-        g_StatCount++;
-        g_LastStatPath[0] = 0;
-
-        g_StatDebug[0] = Parameters[0];
-        g_StatDebug[1] = Parameters[1];
-        g_StatDebug[2] = Parameters[2];
-        g_StatDebug[3] = Parameters[3];
-        g_StatDebug[4] = Parameters[4];
-        g_StatDebug[5] = Parameters[5];
-
-        LxProbeSlots(Parameters);
-
-        g_SlotProbe[6] = (ULONG64)LxCopyLinuxPath(0x400078ull, g_SlotText[6], 48);
-        g_SlotProbe[7] = (ULONG64)LxCopyLinuxPath(Parameters[2], g_SlotText[7], 48);
-        g_StatDebug[6] = length;
-        g_StatDebug[7] = (ULONG64)(UCHAR)kernelPath[0];
-
-        if (length > 0)
-        {
-            g_LastStatStatus = 0x11110000u;
-            g_LastNtPath[0] = 0;
-
-            {
-                ULONG k;
-                ULONG pl = LxBuildNtPath(kernelPath, ntPathBuffer, RTL_NUMBER_OF(ntPathBuffer));
-
-                g_StatDebug[7] = pl;
-
-                for (k = 0; k < 259 && pl > 0 && ntPathBuffer[k] != 0; k++)
-                {
-                    g_LastNtPath[k] = (CHAR)ntPathBuffer[k];
-                }
-                g_LastNtPath[k] = 0;
-            }
-        }
-
-        if (length == 0)
-        {
-            ULONG s;
-
-            for (s = 0; s < 6; s++)
-            {
-                ULONG probe;
-
-                if (Parameters[s] < 0x400000ull || Parameters[s] >= 0x800000000000ull)
-                {
-                    continue;
-                }
-
-                if (Parameters[s] == arg1)
-                {
-                    continue;
-                }
-
-                probe = LxCopyLinuxPath(Parameters[s], kernelPath, sizeof(kernelPath));
-
-                if (probe > 0 && kernelPath[0] == '/')
-                {
-                    length = probe;
-                    g_StatDebug[6] = Parameters[s];
-                    break;
-                }
-            }
-        }
-
-        if (length == 0)
-        {
-            g_LastStatStatus = 0xFFFFFFFFu;
-            return (ULONG64)(-14);
-        }
-
-        {
-            ULONG k;
-
-            for (k = 0; k < RTL_NUMBER_OF(g_LastStatPath) - 1 && kernelPath[k] != 0; k++)
-            {
-                g_LastStatPath[k] = kernelPath[k];
-            }
-            g_LastStatPath[k] = 0;
-        }
-
-        pathLength = LxBuildNtPath(kernelPath, ntPathBuffer, RTL_NUMBER_OF(ntPathBuffer));
-        if (pathLength == 0)
-        {
-            g_LastStatStatus = 0xC000000Du;
-            return (ULONG64)(-22);
-        }
-
-        ntPath.Buffer = ntPathBuffer;
-        ntPath.Length = (USHORT)(pathLength * sizeof(WCHAR));
-        ntPath.MaximumLength = (USHORT)((pathLength + 1) * sizeof(WCHAR));
-        InitializeObjectAttributes(&attributes, &ntPath, OBJ_KERNEL_HANDLE | OBJ_CASE_INSENSITIVE, NULL, NULL);
-
-        ntStatus = ZwCreateFile(&fileHandle, FILE_READ_ATTRIBUTES | SYNCHRONIZE, &attributes, &statusBlock, NULL,
-                                FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                                FILE_OPEN, FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT, NULL, 0);
-
-        g_LastStatStatus = (ULONG)ntStatus;
-        if (!NT_SUCCESS(ntStatus))
-        {
-            return LxNtStatusToErrno(ntStatus);
-        }
-
-        status = LxFillStat(fileHandle, &linuxStat);
-        ZwClose(fileHandle);
-
-        if (status != 0)
-        {
-            return status;
-        }
-
-        g_LastStatSize = linuxStat.Size;
-        g_LastStatMode = linuxStat.Mode;
-
-        if (Parameters[1] == 0)
-        {
-            return (ULONG64)(-14);
-        }
-
-        __try
-        {
-            RtlCopyMemory((PVOID)(ULONG_PTR)Parameters[1], &linuxStat, sizeof(linuxStat));
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            return (ULONG64)(-14);
-        }
-
-        return 0;
-    }
-
-    case LX_SYS_FSTAT:
-    {
-        ULONG fd = (ULONG)arg0;
-        LX_LINUX_STAT linuxStat;
-        ULONG64 status;
-
-        g_StatCount++;
-
-        if (fd >= LX_MAX_FD || !g_FdTable[fd].Used)
-        {
-            g_LastStatStatus = 0xC0000008u;
-            return (ULONG64)(-9);
-        }
-
-        status = LxFillStat(g_FdTable[fd].Handle, &linuxStat);
-        g_LastStatStatus = 0;
-        if (status != 0)
-        {
-            return status;
-        }
-
-        g_LastStatSize = linuxStat.Size;
-        g_LastStatMode = linuxStat.Mode;
-
-        __try
-        {
-            ProbeForWrite((PVOID)(ULONG_PTR)arg1, sizeof(linuxStat), 4);
-            RtlCopyMemory((PVOID)(ULONG_PTR)arg1, &linuxStat, sizeof(linuxStat));
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            return (ULONG64)(-14);
-        }
-
-        return 0;
-    }
-
-    case LX_SYS_NEWFSTATAT:
-    {
-        ULONG64 nfaPathUser = Parameters[2];
-        ULONG64 nfaStat = Parameters[3];
-        ULONG64 nfaFlags = Parameters[4];
-        CHAR nfaPathBuf[260];
-        ULONG nfaLen = 0;
-        HANDLE nfaHandle = NULL;
-        ULONG nfaSlot;
-        LX_LINUX_STAT nfaLinux;
-        g_NfaCount++;
-        g_NfaRaw0 = Parameters[0];
-        g_NfaRaw1 = Parameters[1];
-        g_NfaRaw2 = Parameters[2];
-        g_NfaRaw3 = Parameters[3];
-        g_NfaRaw4 = Parameters[4];
-        g_NfaRaw5 = Parameters[5];
-        g_NfaRaw6 = Parameters[6];
-        g_NfaRaw7 = Parameters[7];
-        g_NfaStat = nfaStat;
-        g_NfaFlags = nfaFlags;
-        nfaLen = 0;
-        {
-            ULONG ci;
-            ULONG pathIdx = 0xFFFFFFFFu;
-            for (ci = 0; ci < 6; ci++)
-            {
-                ULONG64 cand = Parameters[ci];
-                ULONG got;
-                if (cand < 0x10000 || cand >= 0x800000000000ull)
-                {
-                    continue;
-                }
-                got = LxCopyLinuxPath(cand, nfaPathBuf, sizeof(nfaPathBuf));
-                if (got > 0 && got < sizeof(nfaPathBuf) && nfaPathBuf[0] == '/')
-                {
-                    nfaLen = got;
-                    nfaPathUser = cand;
-                    g_NfaPath = cand;
-                    pathIdx = ci;
-                    break;
-                }
-            }
-            if (pathIdx != 0xFFFFFFFFu)
-            {
-                nfaStat = Parameters[pathIdx + 1];
-                nfaFlags = Parameters[pathIdx + 2];
-                if (nfaStat < 0x10000)
-                {
-                    nfaStat = 0;
-                }
-                if (nfaFlags > 0xFFFFu)
-                {
-                    nfaFlags = 0;
-                }
-                g_NfaStat = nfaStat;
-                g_NfaFlags = nfaFlags;
-            }
-            else
-            {
-                nfaStat = 0;
-            }
-        }
-        if (nfaLen == 0)
-        {
-            nfaPathBuf[0] = 0;
-            g_NfaPath = 0;
-        }
-        g_NfaLen = nfaLen;
-        g_NfaPath = nfaPathUser;
-        {
-            ULONG pi;
-            RtlZeroMemory(g_SlotText[1], 48);
-            for (pi = 0; pi < 47 && pi < nfaLen; pi++)
-            {
-                g_SlotText[1][pi] = nfaPathBuf[pi];
-            }
-            g_SlotText[1][47] = 0;
-            for (nfaSlot = 0; nfaSlot < 3; nfaSlot++)
-            {
-                ULONG k2;
-                RtlZeroMemory(g_SlotText[2 + nfaSlot], 48);
-                for (k2 = 0; k2 < 47; k2++)
-                {
-                    g_SlotText[2 + nfaSlot][k2] = g_FdTable[3 + nfaSlot].LinuxPath[k2];
-                    if (g_FdTable[3 + nfaSlot].LinuxPath[k2] == 0)
-                    {
-                        break;
-                    }
-                }
-                g_SlotText[2 + nfaSlot][47] = 0;
-            }
-        }
-        if (nfaLen >= sizeof(nfaPathBuf))
-        {
-            g_NfaMvStatus = 0xE0u;
-            g_LastStatStatus = 0xC000000Du;
-            return (ULONG64)(-2);
-        }
-        for (nfaSlot = 3; nfaSlot < LX_MAX_FD; nfaSlot++)
-        {
-            ULONG k = 0;
-            BOOLEAN same = TRUE;
-            if (!g_FdTable[nfaSlot].Used || g_FdTable[nfaSlot].Handle == NULL)
-            {
-                continue;
-            }
-            while (k < nfaLen)
-            {
-                if (g_FdTable[nfaSlot].LinuxPath[k] != nfaPathBuf[k])
-                {
-                    same = FALSE;
-                    break;
-                }
-                k++;
-            }
-            if (same && g_FdTable[nfaSlot].LinuxPath[k] == 0)
-            {
-                nfaHandle = g_FdTable[nfaSlot].Handle;
-                g_NfaOpenFd = nfaSlot;
-                break;
-            }
-        }
-        if (nfaHandle == NULL && g_LastOpenFd < LX_MAX_FD && g_FdTable[g_LastOpenFd].Used)
-        {
-            nfaHandle = g_FdTable[g_LastOpenFd].Handle;
-            g_NfaOpenFd = 0x1000u + g_LastOpenFd;
-        }
-        if (nfaHandle == NULL)
-        {
-            ULONG64 opened = LxOpenFile(nfaPathBuf, 0, 0);
-            g_NfaOpenFd = opened;
-            if ((LONG64)opened >= 0 && opened < LX_MAX_FD && g_FdTable[opened].Used)
-            {
-                nfaHandle = g_FdTable[opened].Handle;
-            }
-        }
-        if (nfaHandle == NULL)
-        {
-            if (nfaStat >= 0x10000 && g_PicoProcessObject != NULL)
-            {
-                RtlZeroMemory(&nfaLinux, sizeof(nfaLinux));
-                nfaLinux.Device = 1;
-                nfaLinux.Inode = 0x1000u + (ULONG)(nfaPathUser & 0xFFF);
-                nfaLinux.LinkCount = 1;
-                nfaLinux.Mode = 0x8000u | 0555u;
-                if (nfaLen > 0 && nfaPathBuf[0] == '/' && nfaPathBuf[nfaLen - 1] == '6')
-                {
-                    nfaLinux.Size = 0x213000;
-                }
-                else if (nfaLen > 3 && nfaPathBuf[nfaLen - 3] == 's' && nfaPathBuf[nfaLen - 2] == 'o')
-                {
-                    nfaLinux.Size = 0x3a000;
-                }
-                else
-                {
-                    nfaLinux.Size = 0x1000;
-                }
-                nfaLinux.BlockSize = 4096;
-                nfaLinux.Blocks = nfaLinux.Size / 512;
-                {
-                    SIZE_T sw = 0;
-                    NTSTATUS wst;
-                    wst = MmCopyVirtualMemory(PsGetCurrentProcess(), &nfaLinux,
-                                              g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaStat,
-                                              sizeof(nfaLinux), KernelMode, &sw);
-                    g_NfaCopyW0 = (ULONG64)wst;
-                }
-                g_StatCount++;
-                g_NfaMvStatus = 0x9002u;
-                g_LastStatStatus = 0;
-                g_LastStatSize = nfaLinux.Size;
-                g_LastStatMode = nfaLinux.Mode;
-                return 0;
-            }
-            {
-            ULONG di;
-            g_NfaMvStatus = 0xE1u;
-            g_LastStatStatus = 0xC0000034u;
-            RtlZeroMemory(g_SlotText[6], 48);
-            for (di = 0; di < 47 && nfaPathBuf[di] != 0; di++)
-            {
-                g_SlotText[6][di] = nfaPathBuf[di];
-            }
-            g_SlotText[6][47] = 0;
-            RtlZeroMemory(g_SlotText[7], 48);
-            for (di = 0; di < 47 && g_FdTable[3].LinuxPath[di] != 0; di++)
-            {
-                g_SlotText[7][di] = g_FdTable[3].LinuxPath[di];
-            }
-            g_SlotText[7][47] = 0;
-            }
-            return (ULONG64)(-2);
-        }
-        {
-            ULONG64 st = LxFillStat(nfaHandle, &nfaLinux);
-            g_NfaCopyStr = st;
-            if (st != 0)
-            {
-                RtlZeroMemory(&nfaLinux, sizeof(nfaLinux));
-                nfaLinux.Device = 1;
-                nfaLinux.Inode = 0x1000;
-                nfaLinux.LinkCount = 1;
-                nfaLinux.Mode = 0x8000u | 0555u;
-                nfaLinux.Size = 0x213000;
-                nfaLinux.BlockSize = 4096;
-                nfaLinux.Blocks = 0x213000 / 512;
-                g_NfaMvStatus = 0x9001u;
-            }
-        }
-        if (nfaStat >= 0x10000)
-        {
-            SIZE_T nfaWritten = 0;
-            NTSTATUS ws = 0xC0000001u;
-            if (g_PicoProcessObject != NULL)
-            {
-                ws = MmCopyVirtualMemory(PsGetCurrentProcess(), &nfaLinux,
-                                         g_PicoProcessObject, (PVOID)(ULONG_PTR)nfaStat,
-                                         sizeof(nfaLinux), KernelMode, &nfaWritten);
-            }
-            g_NfaCopyW0 = (ULONG64)ws;
-            if (!NT_SUCCESS(ws))
-            {
-                LX_APC_STATE wrApc;
-                BOOLEAN wrAtt = FALSE;
-                if (g_PicoProcessObject != NULL)
-                {
-                    __try
-                    {
-                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&wrApc);
-                        wrAtt = TRUE;
-                    }
-                    __except (EXCEPTION_EXECUTE_HANDLER)
-                    {
-                        wrAtt = FALSE;
-                    }
-                }
-                __try
-                {
-                    RtlCopyMemory((PVOID)(ULONG_PTR)nfaStat, &nfaLinux, sizeof(nfaLinux));
-                    g_NfaCopyW0 = 0;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    if (wrAtt)
-                    {
-                        KeUnstackDetachProcess((PVOID)&wrApc);
-                        wrAtt = FALSE;
-                    }
-                    g_LastStatStatus = 0xC000000Du;
-                    return (ULONG64)(-14);
-                }
-                if (wrAtt)
-                {
-                    KeUnstackDetachProcess((PVOID)&wrApc);
-                }
-            }
-        }
-        g_StatCount++;
-        g_LastStatStatus = 0;
-        g_LastStatSize = nfaLinux.Size;
-        g_LastStatMode = nfaLinux.Mode;
-        return 0;
-    }
     case LX_SYS_GETDENTS64:
     {
         ULONG fd = (ULONG)Parameters[1];
@@ -3290,34 +2785,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_IOCTL:
         return 0;
-
-    case LX_SYS_READ:
-    {
-        ULONG64 fd = Parameters[1];
-        ULONG64 buffer = Parameters[2];
-        ULONG64 count = Parameters[3];
-
-        g_ReadDebug[0] = Parameters[0];
-        g_ReadDebug[1] = Parameters[1];
-        g_ReadDebug[2] = Parameters[2];
-        g_ReadDebug[3] = Parameters[3];
-
-        if (buffer == 0 || count == 0 || count > 0x10000)
-        {
-            if (buffer == 0)
-            {
-                return (ULONG64)(-14);
-            }
-
-            count = 16;
-        }
-
-        g_ReadDebug[4] = fd;
-        g_ReadDebug[5] = buffer;
-        g_ReadDebug[6] = count;
-
-        return LxReadFile((ULONG)fd, (PVOID)(ULONG_PTR)buffer, (ULONG)count);
-    }
 
     case LX_SYS_WRITE:
     {
@@ -3681,19 +3148,28 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 mapFd = 0;
         ULONG64 mapOffset = 0;
         ULONG desiredProtection;
-        mapAddress = Parameters[1];
-        mapLength = Parameters[2];
-        mapProt = Parameters[3];
-        mapFlags = Parameters[4];
-        mapFd = Parameters[5];
-        mapOffset = Parameters[6];
-        if (mapLength == 0 || mapLength > 0x40000000ull)
+        LX_SYSCALL_REGISTERS registers;
+        if (!NT_SUCCESS(LxDecodeSyscallRegisters(Context, &registers)))
         {
-            mapLength = 4096;
+            return (ULONG64)(-14);
         }
-        if (mapFd > (ULONG64)LX_MAX_FD)
+        mapAddress = registers.Args[0];
+        mapLength = registers.Args[1];
+        mapProt = registers.Args[2];
+        mapFlags = registers.Args[3];
+        mapFd = (ULONG)registers.Args[4];
+        mapOffset = registers.Args[5];
+        if (mapLength == 0 || mapLength > 0x40000000ull || (mapOffset & 0xFFF) != 0)
+        {
+            return (ULONG64)(-22);
+        }
+        if ((mapFlags & 0x20u) != 0)
         {
             mapFd = (ULONG64)(-1);
+        }
+        else if (mapFd >= LX_MAX_FD || !g_FdTable[mapFd].Used)
+        {
+            return (ULONG64)(-9);
         }
 
         g_MmapDebug[0] = mapAddress;
@@ -4017,74 +3493,6 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     }
     case LX_SYS_SET_TID_ADDRESS:
         return 1;
-
-    case LX_SYS_EXIT:
-    case LX_SYS_EXIT_GROUP:
-        g_ExitCode = arg0;
-        g_ExitCalled = 1;
-        {
-            PETHREAD exitThread = PsGetCurrentThread();
-            ULONG64 exitValue = 0;
-
-            __try
-            {
-                g_ExitMsr = __readmsr(0xC0000100);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                g_ExitMsr = 0xDEAD0003ull;
-            }
-            RtlCopyMemory(&exitValue, (UCHAR *)exitThread + 0x678, sizeof(exitValue));
-            g_ExitKthread678 = exitValue;
-            RtlCopyMemory(&exitValue, (UCHAR *)exitThread + 0x74, sizeof(exitValue));
-            g_ExitKthread74 = exitValue;
-            g_ExitThreadPtr = (ULONG64)(ULONG_PTR)exitThread;
-            {
-                ULONG64 liveValue = 0;
-                LX_APC_STATE exitApc;
-                BOOLEAN exitPulled = FALSE;
-
-                KeStackAttachProcess(g_PicoProcessObject, (PVOID)&exitApc);
-                __try
-                {
-                    ProbeForRead((PVOID)(ULONG_PTR)0x50C010ull, sizeof(liveValue), 1);
-                    RtlCopyMemory(&liveValue, (PVOID)(ULONG_PTR)0x50C010ull, sizeof(liveValue));
-                    exitPulled = TRUE;
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    exitPulled = FALSE;
-                }
-                __try
-                {
-                    ProbeForRead((PVOID)(ULONG_PTR)0x50B000ull, sizeof(liveValue), 1);
-                    RtlCopyMemory(&g_FsUserValue, (PVOID)(ULONG_PTR)0x50B000ull, sizeof(g_FsUserValue));
-                    ProbeForRead((PVOID)(ULONG_PTR)0x50B008ull, sizeof(liveValue), 1);
-                    RtlCopyMemory(&g_FsUserMarker, (PVOID)(ULONG_PTR)0x50B008ull, sizeof(g_FsUserMarker));
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                    g_FsUserValue = 0xDEAD0007ull;
-                }
-                KeUnstackDetachProcess((PVOID)&exitApc);
-                g_ExitTlsLive = exitPulled ? liveValue : 0xDEAD0004ull;
-            }
-            g_ExitTermStatus = 0;
-        }
-        if (g_SuspendThreadFn != 0 && g_PicoThreadObject != 0)
-        {
-            ULONG prevSuspend = 0;
-            __try
-            {
-                ((NTSTATUS (*)(PVOID, PULONG))g_SuspendThreadFn)(g_PicoThreadObject, &prevSuspend);
-                g_ExitSuspended = 1;
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                g_ExitSuspended = 0xDEAD;
-            }
-        }
-        return 0;
 
     case LX_SYS_UNAME:
     {
@@ -4983,22 +4391,6 @@ static NTSTATUS LxSysDispatch(PVOID Args)
     if (context != 0)
     {
         ULONG64 *fields = (ULONG64 *)context;
-        __try
-        {
-            ULONG64 fsBase = g_TlsBlockBase;
-            USHORT gdtLow = (USHORT)(fsBase & 0xFFFF);
-            UCHAR gdtMid = (UCHAR)((fsBase >> 16) & 0xFF);
-            UCHAR gdtHigh = (UCHAR)((fsBase >> 24) & 0xFF);
-
-            *(volatile USHORT *)((PUCHAR)fields + 0x52) = gdtLow;
-            *(volatile UCHAR *)((PUCHAR)fields + 0x54) = gdtMid;
-            *(volatile UCHAR *)((PUCHAR)fields + 0x57) = gdtHigh;
-            g_TrapGdtWrites++;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            g_TrapGdtFault = 1;
-        }
         ULONG64 syscallNumber = fields[0x30 / 8];
         g_TraceRing[g_TraceIdx & 63] = syscallNumber;
         g_TraceRing[(g_TraceIdx + 1) & 63] = fields[LX_PARAM_BASE / 8];
@@ -9931,7 +9323,8 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                         g_CreatePicoFn = createFn;
                         g_CreatePicoThreadFn = *(ULONG64 *)&routines[0x10];
                         g_ResumeThreadFn = *(ULONG64 *)&routines[0x40];
-                        g_SuspendThreadFn = *(ULONG64 *)&routines[0x38];
+                        g_SuspendThreadFn = *(ULONG64 *)&routines[0x50];
+                        g_TerminateThreadFn = *(ULONG64 *)&routines[0x38];
                         g_SetDescriptorBaseFn = *(ULONG64 *)&routines[0x48];
                         g_GetContextFn = *(ULONG64 *)&routines[0x28];
                         if (createFn != 0)

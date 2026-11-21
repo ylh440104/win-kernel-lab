@@ -9,7 +9,19 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import urllib.parse
 import zipfile
+
+
+class DownloadRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and urllib.parse.urlsplit(req.full_url).netloc != urllib.parse.urlsplit(newurl).netloc:
+            redirected.remove_header('Authorization')
+        return redirected
+
+
+HTTP = urllib.request.build_opener(DownloadRedirect())
 
 ROOT = pathlib.Path('/tmp/wkl')
 OUT = pathlib.Path('/sdcard/Download/lxcore/winkernel/sec1717-abi')
@@ -26,7 +38,7 @@ def request(path, method='GET', data=None, binary=False):
     for attempt in range(3 if method == 'GET' else 1):
         try:
             req = urllib.request.Request(url, data=body, headers=headers, method=method)
-            with urllib.request.urlopen(req, timeout=25) as response:
+            with HTTP.open(req, timeout=25) as response:
                 raw = response.read()
                 expected = response.headers.get('Content-Length')
                 if expected is not None and len(raw) != int(expected):
@@ -66,7 +78,7 @@ def preflight():
 
 def publish():
     preflight()
-    paths = ['driver/lxrun.c', 'driver/lxprobe.c', '.github/workflows/build-driver.yml', 'tools/ci_abi.py']
+    paths = ['driver/lxrun.c', 'driver/lxprobe.c', 'driver/lxio_runtime.h', '.github/workflows/build-driver.yml', 'tools/ci_abi.py']
     head = request('git/ref/heads/main')['object']['sha']
     commit = request('git/commits/' + head)
     tree = []
