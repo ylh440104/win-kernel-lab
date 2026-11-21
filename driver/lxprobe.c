@@ -1274,17 +1274,20 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
                    (unsigned long long)q.StatCount, (unsigned long long)q.LastStatStatus,
                    (long long)q.LastStatSize, q.LastStatMode, (int)sizeof(q.LastStatPath), q.LastStatPath);
-            printf("  WV3: st=%llx cnt=%llu iov=%llx base=%llx len=%llu cci=%llx\n", (unsigned long long)q.StatDebug[8],(unsigned long long)q.StatDebug[9],(unsigned long long)q.StatDebug[10],(unsigned long long)q.StatDebug[11],(unsigned long long)q.WriteLength,(unsigned long long)q.StatDebug[7]);
-    printf("  NFARAW: %llx %llx %llx %llx %llx %llx %llx %llx\n", (unsigned long long)q.MmapDebug[0],(unsigned long long)q.MmapDebug[1],(unsigned long long)q.MmapDebug[2],(unsigned long long)q.MmapDebug[3],(unsigned long long)q.MmapDebug[4],(unsigned long long)q.MmapDebug[5],(unsigned long long)q.MmapDebug[6],(unsigned long long)q.MmapDebug[7]);
-    printf("  NFA2: len=%llu openfd=%llx fillst=%llx mvst=%llx\n", (unsigned long long)q.ReadDebug[0],(unsigned long long)q.ReadDebug[1],(unsigned long long)q.ReadDebug[2],(unsigned long long)q.ReadDebug[3]);
-    printf("  WVD: P0=%llx P1=%llx P2=%llx P3=%llx P4=%llx P5=%llx Pm2=%llx Pm1=%llx\n", (unsigned long long)q.StatDebug[0],(unsigned long long)q.StatDebug[1],(unsigned long long)q.StatDebug[2],(unsigned long long)q.StatDebug[3],(unsigned long long)q.StatDebug[4],(unsigned long long)q.StatDebug[5],(unsigned long long)q.StatDebug[6],(unsigned long long)q.StatDebug[7]);
-    printf("  EXCREC: idx=%llx code=%llx addr=%llx info1=%llx nparam=%llx info0=%llx probe0=%llx probe1=%llx stk=%llu stkf=%llx\n", (unsigned long long)q.StatDebug[8],(unsigned long long)q.StatDebug[9],(unsigned long long)q.StatDebug[10],(unsigned long long)q.StatDebug[11],(unsigned long long)q.ReadDebug[0],(unsigned long long)q.ReadDebug[1],(unsigned long long)q.ReadDebug[4],(unsigned long long)q.ReadDebug[5],(unsigned long long)q.ReadDebug[2],(unsigned long long)q.ReadDebug[3]);
-    printf("  NFA: cnt=%llu dirfd=%llx path=%llx stat=%llx flags=%llx mvst=%llx w0=%llx copied=%llu len=%llu openfd=%llu\n",
-                   (unsigned long long)q.StatDebug[0], (unsigned long long)q.StatDebug[1],
-                   (unsigned long long)q.StatDebug[2], (unsigned long long)q.StatDebug[3],
-                   (unsigned long long)q.StatDebug[4], (unsigned long long)q.StatDebug[5],
-                   (unsigned long long)q.StatDebug[6], (unsigned long long)q.StatDebug[7],
-                   (unsigned long long)q.StatDebug[8], (unsigned long long)q.StatDebug[9]);
+            printf("  WRITEV_ABI: fd=%llu iov=0x%llx count=%llu first=0x%llx captured=%lu status=0x%08llx\n",
+                   (unsigned long long)q.StatDebug[0], (unsigned long long)q.StatDebug[10],
+                   (unsigned long long)q.StatDebug[9], (unsigned long long)q.StatDebug[11],
+                   q.WriteLength, (unsigned long long)q.StatDebug[8]);
+            printf("  EXCEPTION_RECORD: code=0x%08llx ip=0x%llx parameters=%llu access=%llu fault=0x%llx cr2_sample=0x%llx exit=%llu suspended=%llu\n",
+                   (unsigned long long)q.ReadDebug[2], (unsigned long long)q.ReadDebug[3],
+                   (unsigned long long)q.ReadDebug[0], (unsigned long long)q.ReadDebug[1],
+                   (unsigned long long)q.ReadDebug[4], (unsigned long long)q.ReadDebug[5],
+                   (unsigned long long)q.ReadDebug[7], (unsigned long long)q.ReadDebug[6]);
+            printf("  NFARAW_LEGACY: %llx %llx %llx %llx %llx %llx %llx %llx\n",
+                   (unsigned long long)q.MmapDebug[0], (unsigned long long)q.MmapDebug[1],
+                   (unsigned long long)q.MmapDebug[2], (unsigned long long)q.MmapDebug[3],
+                   (unsigned long long)q.MmapDebug[4], (unsigned long long)q.MmapDebug[5],
+                   (unsigned long long)q.MmapDebug[6], (unsigned long long)q.MmapDebug[7]);
             {
                 int si;
                 for (si = 0; si < 8; si++)

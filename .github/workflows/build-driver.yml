@@ -3,6 +3,7 @@ on: workflow_dispatch
 jobs:
   build:
     runs-on: windows-2022
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -14,13 +15,13 @@ jobs:
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
           set WDK=C:\Program Files (x86)\Windows Kits\10
-          cl /nologo /kernel /GS- /Gs9999999 /W4 /c driver\lxrun.c ^
+          cl /nologo /kernel /GS- /Gs9999999 /W4 /Zi /Fd:lxrun.pdb /c driver\lxrun.c ^
             /D_AMD64_ /D_WIN64 /D_WIN32_WINNT=0x0A00 ^
             /I"%WDK%\Include\10.0.26100.0\km" ^
             /I"%WDK%\Include\10.0.26100.0\km\crt" ^
             /Fo:lxrun.obj
           if errorlevel 1 exit /b 1
-          link /nologo /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /OUT:lxrun.sys ^
+          link /nologo /DRIVER /SUBSYSTEM:NATIVE /ENTRY:DriverEntry /OUT:lxrun.sys /DEBUG:FULL /PDB:lxrun-link.pdb /MAP:lxrun.map ^
             lxrun.obj ^
             "%WDK%\Lib\10.0.26100.0\km\x64\ntoskrnl.lib" ^
             "%WDK%\Lib\10.0.26100.0\km\x64\BufferOverflowK.lib" ^
@@ -179,13 +180,6 @@ jobs:
           type probe.err
           echo ===== END PROBE =====
 
-      - name: dump driver log
-        if: always()
-        shell: pwsh
-        run: |
-          Write-Host "--- driver status ---"
-          sc.exe query lxrun 2>&1 | Out-String | Write-Host
-          exit 0
       - name: upload probe output
         if: always()
         uses: actions/upload-artifact@v4
@@ -194,4 +188,15 @@ jobs:
           path: |
             probe.out
             probe.err
-          if-no-files-found: warn
+            lxrun.sys
+            lxrun.map
+            lxrun-link.pdb
+            lxprobe.exe
+          if-no-files-found: error
+      - name: dump driver log
+        if: always()
+        timeout-minutes: 1
+        shell: pwsh
+        run: |
+          sc.exe query lxrun 2>&1 | Out-String | Write-Host
+          exit 0

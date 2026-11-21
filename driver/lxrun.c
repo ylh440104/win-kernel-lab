@@ -2356,6 +2356,227 @@ static ULONG64 LxCloseFile(ULONG Fd)
     return 0;
 }
 
+typedef struct _LX_SYSCALL_REGISTERS
+{
+    ULONG64 Number;
+    ULONG64 Args[6];
+} LX_SYSCALL_REGISTERS;
+
+static NTSTATUS LxDecodeSyscallRegisters(ULONG64 Context, LX_SYSCALL_REGISTERS *Registers)
+{
+    const UCHAR *frame = (const UCHAR *)(ULONG_PTR)Context;
+    if (frame == NULL || Registers == NULL)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+    __try
+    {
+        RtlCopyMemory(&Registers->Number, frame + 0x30, 8);
+        RtlCopyMemory(&Registers->Args[0], frame + 0x148, 8);
+        RtlCopyMemory(&Registers->Args[1], frame + 0x150, 8);
+        RtlCopyMemory(&Registers->Args[2], frame + 0x40, 8);
+        RtlCopyMemory(&Registers->Args[3], frame + 0x58, 8);
+        RtlCopyMemory(&Registers->Args[4], frame + 0x48, 8);
+        RtlCopyMemory(&Registers->Args[5], frame + 0x50, 8);
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER)
+    {
+        return GetExceptionCode();
+    }
+    return STATUS_SUCCESS;
+}
+
+static ULONG64 LxWritevCapture(ULONG64 Context)
+{
+    LX_SYSCALL_REGISTERS registers;
+    LX_IOVEC *vectors;
+    LX_APC_STATE apcState;
+    BOOLEAN attached = FALSE;
+    ULONG64 fd;
+    ULONG64 iovAddress;
+    ULONG64 count;
+    ULONG64 sum = 0;
+    ULONG64 total = 0;
+    ULONG64 error = 0;
+    ULONG64 ceiling = (ULONG64)(ULONG_PTR)MmHighestUserAddress;
+    ULONG64 index;
+    NTSTATUS status;
+    UCHAR staging[512];
+
+    status = LxDecodeSyscallRegisters(Context, &registers);
+    g_WritevStatus = (ULONG)status;
+    if (!NT_SUCCESS(status))
+    {
+        return (ULONG64)(-14);
+    }
+    fd = (ULONG)registers.Args[0];
+    iovAddress = registers.Args[1];
+    count = registers.Args[2];
+    g_WritevFd = fd;
+    g_WritevBase = iovAddress;
+    g_WritevCnt = count;
+    g_WritevIovBase = 0;
+    g_WritevIovLen = 0;
+    g_WritevParams0 = registers.Args[3];
+    g_WritevParams1 = registers.Args[4];
+    g_WritevParams2 = fd;
+    g_WritevParams3 = iovAddress;
+    g_WritevParams4 = count;
+    g_WritevParams5 = registers.Args[3];
+    g_WritevParams6 = registers.Args[4];
+    g_WritevParams7 = registers.Args[5];
+    if (fd != 1 && fd != 2 &&
+        (fd >= LX_MAX_FD || !g_FdTable[fd].Used ||
+         g_FdTable[fd].Handle == NULL ||
+         (g_FdTable[fd].OpenFlags & LX_O_ACCMODE) == 0))
+    {
+        g_WritevStatus = STATUS_INVALID_HANDLE;
+        return (ULONG64)(-9);
+    }
+    if (count > 1024)
+    {
+        g_WritevStatus = STATUS_INVALID_PARAMETER;
+        return (ULONG64)(-22);
+    }
+    if (count == 0)
+    {
+        return 0;
+    }
+    if (iovAddress == 0 || iovAddress > ceiling ||
+        count * sizeof(LX_IOVEC) - 1 > ceiling - iovAddress)
+    {
+        g_WritevStatus = STATUS_ACCESS_VIOLATION;
+        return (ULONG64)(-14);
+    }
+    vectors = (LX_IOVEC *)ExAllocatePool2(POOL_FLAG_NON_PAGED,
+                                        (SIZE_T)count * sizeof(LX_IOVEC), 'vWxL');
+    if (vectors == NULL)
+    {
+        g_WritevStatus = STATUS_INSUFFICIENT_RESOURCES;
+        return (ULONG64)(-12);
+    }
+    __try
+    {
+        if (g_PicoProcessObject != NULL &&
+            PsGetCurrentProcess() != g_PicoProcessObject)
+        {
+            KeStackAttachProcess(g_PicoProcessObject, &apcState);
+            attached = TRUE;
+        }
+        __try
+        {
+            ProbeForRead((PVOID)(ULONG_PTR)iovAddress,
+                         (SIZE_T)count * sizeof(LX_IOVEC), 1);
+            RtlCopyMemory(vectors, (PVOID)(ULONG_PTR)iovAddress,
+                          (SIZE_T)count * sizeof(LX_IOVEC));
+            g_WritevIovBase = vectors[0].Base;
+            g_WritevIovLen = vectors[0].Length;
+            for (index = 0; index < count; index++)
+            {
+                if (vectors[index].Length > 0x7FFFFFFFFFFFFFFFull - sum)
+                {
+                    error = (ULONG64)(-22);
+                    g_WritevStatus = STATUS_INVALID_PARAMETER;
+                    break;
+                }
+                sum += vectors[index].Length;
+            }
+            for (index = 0; error == 0 && index < count && total < 0x7FFFF000ull; index++)
+            {
+                ULONG64 offset = 0;
+                ULONG64 length = vectors[index].Length;
+                ULONG64 base = vectors[index].Base;
+                if (length == 0)
+                {
+                    continue;
+                }
+                if (length > 0x7FFFF000ull - total)
+                {
+                    length = 0x7FFFF000ull - total;
+                }
+                if (base == 0 || base > ceiling || length - 1 > ceiling - base)
+                {
+                    error = (ULONG64)(-14);
+                    g_WritevStatus = STATUS_ACCESS_VIOLATION;
+                    break;
+                }
+                while (offset < length)
+                {
+                    ULONG bytes = (ULONG)((length - offset > sizeof(staging)) ?
+                                          sizeof(staging) : length - offset);
+                    ULONG accepted = bytes;
+                    ProbeForRead((PVOID)(ULONG_PTR)(base + offset), bytes, 1);
+                    RtlCopyMemory(staging, (PVOID)(ULONG_PTR)(base + offset), bytes);
+                    if (fd == 1 || fd == 2)
+                    {
+                        ULONG capacity = (ULONG)sizeof(g_WriteBuffer) - 1;
+                        ULONG copied = g_WriteLength < capacity ? capacity - g_WriteLength : 0;
+                        if (copied > bytes)
+                        {
+                            copied = bytes;
+                        }
+                        if (copied != 0)
+                        {
+                            RtlCopyMemory(g_WriteBuffer + g_WriteLength, staging, copied);
+                            g_WriteLength += copied;
+                            g_WriteBuffer[g_WriteLength] = 0;
+                        }
+                    }
+                    else
+                    {
+                        IO_STATUS_BLOCK io;
+                        LARGE_INTEGER fileOffset;
+                        fileOffset.QuadPart = (LONGLONG)g_FdTable[fd].Offset;
+                        RtlZeroMemory(&io, sizeof(io));
+                        status = ZwWriteFile(g_FdTable[fd].Handle, NULL, NULL, NULL,
+                                             &io, staging, bytes, &fileOffset, NULL);
+                        if (!NT_SUCCESS(status))
+                        {
+                            g_WritevStatus = (ULONG)status;
+                            error = LxNtStatusToErrno(status);
+                            break;
+                        }
+                        accepted = (ULONG)io.Information;
+                        g_FdTable[fd].Offset += accepted;
+                    }
+                    total += accepted;
+                    offset += accepted;
+                    if (accepted != bytes)
+                    {
+                        error = total != 0 ? 0 : (ULONG64)(-5);
+                        goto vectorDone;
+                    }
+                }
+            }
+vectorDone:
+            if (error == 0)
+            {
+                g_WritevStatus = STATUS_SUCCESS;
+            }
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            g_WritevStatus = (ULONG)GetExceptionCode();
+            error = (ULONG64)(-14);
+        }
+    }
+    __finally
+    {
+        if (attached)
+        {
+            KeUnstackDetachProcess(&apcState);
+        }
+        ExFreePoolWithTag(vectors, 'vWxL');
+    }
+    g_WriteFd = (ULONG)fd;
+    g_WriteStatus = (ULONG)g_WritevStatus;
+    if (total != 0)
+    {
+        g_WriteCount++;
+    }
+    return total != 0 ? total : error;
+}
+
 static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Context)
 {
     ULONG64 arg0 = Parameters[0];
@@ -4480,360 +4701,100 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return 0;
     }
 
-    case LX_SYS_READV:
     case LX_SYS_WRITEV:
+        return LxWritevCapture(Context);
+
+    case LX_SYS_READV:
     {
-        ULONG64 vectorFd = Parameters[1];
-        ULONG64 vectorBase = Parameters[2];
-        ULONG64 vectorCount = Parameters[3];
-        if (Number == LX_SYS_WRITEV)
+        LX_SYSCALL_REGISTERS registers;
+        LX_IOVEC *vectors;
+        LX_APC_STATE apcState;
+        BOOLEAN attached = FALSE;
+        ULONG64 total = 0;
+        ULONG64 error = 0;
+        ULONG64 count;
+        ULONG64 index;
+        NTSTATUS status = LxDecodeSyscallRegisters(Context, &registers);
+        if (!NT_SUCCESS(status))
         {
-            LX_APC_STATE wvApc2;
-            BOOLEAN wvAtt2 = FALSE;
-            ULONG64 wvRdi = Parameters[1];
-            ULONG64 wvRsi = Parameters[2];
-            ULONG64 wvRdx = Parameters[3];
-            g_WritevFd = Parameters[1];
-            g_WritevBase = Parameters[2];
-            g_WritevCnt = Parameters[3];
-            g_WritevParams0 = Parameters[-2];
-            g_WritevParams1 = Parameters[-1];
-            g_WritevParams2 = Parameters[0];
-            g_WritevParams3 = Parameters[1];
-            g_WritevParams4 = Parameters[2];
-            g_WritevParams5 = Parameters[3];
-            g_WritevParams6 = Parameters[4];
-            g_WritevParams7 = Parameters[5];
-            g_WritevFd = Parameters[0];
-            g_WritevBase = Parameters[1];
-            g_WritevCnt = Parameters[2];
-            g_WritevStatus = 0xABu;
+            return (ULONG64)(-14);
+        }
+        count = registers.Args[2];
+        if (count > 1024)
+        {
+            return (ULONG64)(-22);
+        }
+        if (count == 0)
+        {
+            return 0;
+        }
+        vectors = (LX_IOVEC *)ExAllocatePool2(POOL_FLAG_NON_PAGED,
+                                            (SIZE_T)count * sizeof(LX_IOVEC), 'rVxL');
+        if (vectors == NULL)
+        {
+            return (ULONG64)(-12);
+        }
+        __try
+        {
+            if (g_PicoProcessObject != NULL && PsGetCurrentProcess() != g_PicoProcessObject)
             {
-                ULONG64 candIov[2];
-                ULONG cci;
-                candIov[0] = Parameters[2];
-                candIov[1] = Parameters[3];
-                if (g_PicoProcessObject != NULL)
+                KeStackAttachProcess(g_PicoProcessObject, &apcState);
+                attached = TRUE;
+            }
+            __try
+            {
+                ProbeForRead((PVOID)(ULONG_PTR)registers.Args[1],
+                             (SIZE_T)count * sizeof(LX_IOVEC), 1);
+                RtlCopyMemory(vectors, (PVOID)(ULONG_PTR)registers.Args[1],
+                              (SIZE_T)count * sizeof(LX_IOVEC));
+                for (index = 0; index < count; index++)
                 {
-                    __try
+                    if (vectors[index].Length > 0x7FFFF000ull - total)
                     {
-                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&wvApc2);
-                        wvAtt2 = TRUE;
+                        error = (ULONG64)(-22);
+                        break;
                     }
-                    __except (EXCEPTION_EXECUTE_HANDLER)
-                    {
-                        wvAtt2 = FALSE;
-                    }
+                    total += vectors[index].Length;
                 }
-                for (cci = 0; cci < 2; cci++)
+                total = 0;
+                for (index = 0; error == 0 && index < count; index++)
                 {
-                    ULONG64 iovPtr = candIov[cci];
-                    ULONG cntTry;
-                    if (iovPtr == 0)
+                    ULONG64 received;
+                    if (vectors[index].Length == 0)
                     {
                         continue;
                     }
-                    for (cntTry = 1; cntTry <= 8; cntTry++)
+                    ProbeForWrite((PVOID)(ULONG_PTR)vectors[index].Base,
+                                  (SIZE_T)vectors[index].Length, 1);
+                    received = LxReadFile((ULONG)registers.Args[0],
+                                          (PVOID)(ULONG_PTR)vectors[index].Base,
+                                          (ULONG)vectors[index].Length);
+                    if ((LONG64)received < 0)
                     {
-                        LX_IOVEC tmpIov[8];
-                        ULONG vi;
-                        ULONG validCount = 0;
-                        BOOLEAN iovOk = TRUE;
-                        RtlZeroMemory(tmpIov, sizeof(tmpIov));
-                        __try
-                        {
-                            RtlCopyMemory(tmpIov, (PVOID)(ULONG_PTR)iovPtr, cntTry * sizeof(LX_IOVEC));
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER)
-                        {
-                            iovOk = FALSE;
-                        }
-                        if (!iovOk)
-                        {
-                            break;
-                        }
-                        for (vi = 0; vi < cntTry; vi++)
-                        {
-                            ULONG64 ib = tmpIov[vi].Base;
-                            ULONG64 il = tmpIov[vi].Length;
-                            if (ib == 0 && il == 0)
-                            {
-                                continue;
-                            }
-                            if (ib < 0x1000 || ib > 0x7FFFFFFFFFFFull || il == 0 || il > 0x1000)
-                            {
-                                iovOk = FALSE;
-                                break;
-                            }
-                            validCount++;
-                        }
-                        if (iovOk && validCount > 0)
-                        {
-                            g_WritevBase = iovPtr;
-                            g_WritevCnt = cntTry;
-                            g_WritevIovBase = tmpIov[0].Base;
-                            g_WritevIovLen = tmpIov[0].Length;
-                            g_WriteLength = 0;
-                            RtlZeroMemory(g_WriteBuffer, sizeof(g_WriteBuffer));
-                            for (vi = 0; vi < cntTry; vi++)
-                            {
-                                ULONG64 ib = tmpIov[vi].Base;
-                                ULONG64 il = tmpIov[vi].Length;
-                                if (il == 0)
-                                {
-                                    continue;
-                                }
-                                if ((ULONG64)g_WriteLength + il >= sizeof(g_WriteBuffer) - 1)
-                                {
-                                    break;
-                                }
-                                __try
-                                {
-                                    RtlCopyMemory(g_WriteBuffer + g_WriteLength, (PVOID)(ULONG_PTR)ib, (ULONG)il);
-                                    g_WriteLength += (ULONG)il;
-                                }
-                                __except (EXCEPTION_EXECUTE_HANDLER)
-                                {
-                                    g_WritevParams0 = 0xB2u;
-                                }
-                            }
-                            g_WriteBuffer[g_WriteLength] = 0;
-                            g_WriteCount++;
-                            g_WriteFd = (ULONG)Parameters[1];
-                            g_WritevStatus = 0xB1u;
-                            g_WritevParams1 = (ULONG64)cci;
-                            break;
-                        }
+                        error = received;
+                        break;
                     }
-                    if (g_WritevStatus == 0xB1u)
+                    total += received;
+                    if (received < vectors[index].Length)
                     {
                         break;
                     }
                 }
-                if (wvAtt2)
-                {
-                    KeUnstackDetachProcess((PVOID)&wvApc2);
-                    wvAtt2 = FALSE;
-                }
-                if (g_WritevStatus != 0xB1u)
-                {
-                    g_WritevStatus = 0xBFu;
-                }
             }
+            __except (EXCEPTION_EXECUTE_HANDLER)
             {
-                ULONG64 useIov = Parameters[2];
-                ULONG64 useCnt = Parameters[3];
-                if (useIov != 0 && useCnt > 0 && useCnt < 64)
-                {
-                    LX_APC_STATE wvApc;
-                    BOOLEAN wvAtt = FALSE;
-                    if (g_PicoProcessObject != NULL)
-                    {
-                        __try
-                        {
-                            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&wvApc);
-                            wvAtt = TRUE;
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER)
-                        {
-                            wvAtt = FALSE;
-                        }
-                    }
-                    __try
-                    {
-                        LX_IOVEC firstIov;
-                        RtlZeroMemory(&firstIov, sizeof(firstIov));
-                        RtlCopyMemory(&firstIov, (PVOID)(ULONG_PTR)useIov, sizeof(firstIov));
-                        g_WritevIovBase = firstIov.Base;
-                        g_WritevIovLen = firstIov.Length;
-                        {
-                            LX_IOVEC altIov;
-                            RtlZeroMemory(&altIov, sizeof(altIov));
-                            __try
-                            {
-                                RtlCopyMemory(&altIov, (PVOID)(ULONG_PTR)Parameters[3], sizeof(altIov));
-                                g_WritevParams6 = altIov.Base;
-                                g_WritevParams7 = altIov.Length;
-                            }
-                            __except (EXCEPTION_EXECUTE_HANDLER)
-                            {
-                                g_WritevParams6 = 0xDEAD0001ull;
-                            }
-                        }
-                        if (firstIov.Base != 0 && firstIov.Length > 0 && firstIov.Length <= 200)
-                        {
-                            RtlZeroMemory(g_WriteBuffer, sizeof(g_WriteBuffer));
-                            RtlCopyMemory(g_WriteBuffer, (PVOID)(ULONG_PTR)firstIov.Base, (ULONG)firstIov.Length);
-                            g_WriteLength = (ULONG)firstIov.Length;
-                            g_WriteCount++;
-                            g_WriteFd = (ULONG)Parameters[1];
-                            g_WritevStatus = 0xACu;
-                        }
-                    }
-                    __except (EXCEPTION_EXECUTE_HANDLER)
-                    {
-                        g_WritevStatus = 0xADu;
-                        if (wvAtt)
-                        {
-                            KeUnstackDetachProcess((PVOID)&wvApc);
-                        }
-                    }
-                    if (wvAtt)
-                    {
-                        KeUnstackDetachProcess((PVOID)&wvApc);
-                    }
-                }
+                error = (ULONG64)(-14);
             }
         }
-        ULONG64 vectorTotal = 0;
-        ULONG64 vectorIndex;
-        LX_APC_STATE vectorApc;
-        BOOLEAN vectorAttached = FALSE;
-        if (vectorFd >= 1 && vectorFd <= 2)
+        __finally
         {
-            /* stdout/stderr：不查 fd 表，直接允许 */
-        }
-        else if (vectorFd >= LX_MAX_FD || !g_FdTable[vectorFd].Used)
-        {
-            return (ULONG64)(-9);
-        }
-
-        if (vectorBase == 0 || vectorCount == 0 || vectorCount > 64)
-        {
-            g_WritevFd = vectorFd;
-            g_WritevCnt = vectorCount;
-            g_WritevBase = vectorBase;
-            g_WritevStatus = 0xE1u;
-            return (ULONG64)(-22);
-        }
-        g_WritevFd = vectorFd;
-        g_WritevCnt = vectorCount;
-        g_WritevBase = vectorBase;
-        g_WritevStatus = 0xE0u;
-
-        if (g_PicoProcessObject != NULL)
-        {
-            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&vectorApc);
-            vectorAttached = TRUE;
-        }
-
-        __try
-        {
-            LX_IOVEC vector[64];
-            ULONG vectorBytes = (ULONG)(vectorCount * sizeof(LX_IOVEC));
-
-            ProbeForRead((PVOID)(ULONG_PTR)vectorBase, vectorBytes, 8);
-            RtlCopyMemory(vector, (PVOID)(ULONG_PTR)vectorBase, vectorBytes);
-
-            for (vectorIndex = 0; vectorIndex < vectorCount; vectorIndex++)
+            if (attached)
             {
-                if (vector[vectorIndex].Length == 0)
-                {
-                    continue;
-                }
-
-                if (Number == LX_SYS_READV)
-                {
-                    ULONG64 got = LxReadFile((ULONG)vectorFd,
-                                             (PVOID)(ULONG_PTR)vector[vectorIndex].Base,
-                                             (ULONG)vector[vectorIndex].Length);
-
-                    if ((LONG64)got < 0)
-                    {
-                        if (vectorTotal == 0)
-                        {
-                            vectorTotal = got;
-                        }
-                        break;
-                    }
-
-                    vectorTotal += got;
-
-                    if (got < vector[vectorIndex].Length)
-                    {
-                        break;
-                    }
-                }
-                else
-                {
-                    LX_APC_STATE writevApc;
-                    BOOLEAN writevAttached = FALSE;
-                    PUCHAR writevSource = (PUCHAR)(ULONG_PTR)vector[vectorIndex].Base;
-
-                    if (g_DirCacheUserAddr != 0 && g_DirCacheLen != 0 &&
-                        (ULONG64)(ULONG_PTR)writevSource >= g_DirCacheUserAddr &&
-                        (ULONG64)(ULONG_PTR)writevSource < g_DirCacheUserAddr + g_DirCacheLen)
-                    {
-                        ULONG cacheOffset = (ULONG)((ULONG64)(ULONG_PTR)writevSource - g_DirCacheUserAddr);
-
-                        if ((ULONG64)cacheOffset + vector[vectorIndex].Length > g_DirCacheLen)
-                        {
-                            vector[vectorIndex].Length = (ULONG64)(g_DirCacheLen - cacheOffset);
-                        }
-
-                        writevSource = (PUCHAR)g_DirCache + cacheOffset;
-                    }
-                    else if (g_PicoProcessObject != NULL)
-                    {
-                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&writevApc);
-                        writevAttached = TRUE;
-                    }
-
-                    if (g_WriteCount < 64 && vector[vectorIndex].Length <= 240)
-                    {
-                        CHAR writevStaging[256];
-                        BOOLEAN writevCopied = FALSE;
-
-                        __try
-                        {
-                            ProbeForRead(writevSource, (ULONG)vector[vectorIndex].Length, 1);
-                            RtlCopyMemory(writevStaging, writevSource, (ULONG)vector[vectorIndex].Length);
-                            writevCopied = TRUE;
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER)
-                        {
-                            writevCopied = FALSE;
-                        }
-
-                        if (writevCopied)
-                        {
-                            ULONG writevAppend = g_WriteLength;
-
-                            if (writevAppend + (ULONG)vector[vectorIndex].Length >= sizeof(g_WriteBuffer) - 1)
-                            {
-                                writevAppend = 0;
-                            }
-
-                            RtlCopyMemory(g_WriteBuffer + writevAppend, writevStaging, (ULONG)vector[vectorIndex].Length);
-                            writevAppend += (ULONG)vector[vectorIndex].Length;
-                            g_WriteBuffer[writevAppend] = 0;
-                            g_WriteLength = writevAppend;
-                            g_WriteCount++;
-                            g_WriteFd = (ULONG)vectorFd;
-                            g_WriteStatus = 0xC0000003u;
-                        }
-                    }
-
-                    if (writevAttached)
-                    {
-                        KeUnstackDetachProcess((PVOID)&writevApc);
-                    }
-
-                    vectorTotal += vector[vectorIndex].Length;
-                }
+                KeUnstackDetachProcess(&apcState);
             }
+            ExFreePoolWithTag(vectors, 'rVxL');
         }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            vectorTotal = (ULONG64)(-14);
-        }
-
-        if (vectorAttached)
-        {
-            KeUnstackDetachProcess((PVOID)&vectorApc);
-        }
-
-        return vectorTotal;
+        return total != 0 ? total : error;
     }
 
     case LX_SYS_SOCKET:
@@ -5089,6 +5050,10 @@ static ULONG64 g_ExcCode = 0;
 static ULONG64 g_ExcAddress = 0;
 static ULONG64 g_ExcMsr = 0;
 static ULONG64 g_ExcArg0 = 0;
+static ULONG64 g_ExcCr2 = 0;
+static ULONG64 g_ExcRip = 0;
+static ULONG64 g_ExcRsp = 0;
+static ULONG64 g_ExcCountAt = 0;
 static ULONG g_ExcRecordIdx = 0xFFFFFFFFu;
 static ULONG64 g_ExcRecCode = 0;
 static ULONG64 g_ExcRecAddr = 0;
@@ -5136,96 +5101,58 @@ static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
     return value;
 }
 
-static NTSTATUS LxDispatchException(PVOID Args)
+static BOOLEAN LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFrame,
+                                   PVOID TrapFrame, KPROCESSOR_MODE PreviousMode,
+                                   BOOLEAN FirstChance)
 {
-    ULONG64 *argument = (ULONG64 *)Args;
-    ULONG i;
-
-    if (Args != NULL && g_ExceptionDumpDone == 0)
-    {
-        for (i = 0; i < 8; i++)
-        {
-            g_ExceptionDump[i] = argument[i];
-        }
-        g_ExceptionDumpDone = 1;
-        g_ExcArg0 = argument[0];
-        g_ExcArg1 = argument[1];
-        g_ExcArg2 = argument[2];
-        {
-            ULONG ei;
-            for (ei = 0; ei < 8; ei++)
-            {
-                ULONG64 cand = argument[ei];
-                if (cand < 0xffff000000000000ull)
-                {
-                    continue;
-                }
-                __try
-                {
-                    ULONG recCode = *(volatile ULONG *)(ULONG_PTR)cand;
-                    ULONG64 probe1 = 0;
-                    RtlCopyMemory(&probe1, (PVOID)(ULONG_PTR)(cand + 0x18), 8);
-                    if (g_ExcRecProbe0 == 0)
-                    {
-                        g_ExcRecProbe0 = cand;
-                        g_ExcRecProbe1 = probe1;
-                    }
-                    if (recCode == 0xC0000005u && g_ExcRecordIdx == 0xFFFFFFFFu)
-                    {
-                        UCHAR *rec = (UCHAR *)(ULONG_PTR)cand;
-                        g_ExcRecordIdx = ei;
-                        g_ExcRecCode = recCode;
-                        RtlCopyMemory(&g_ExcRecAddr, rec + 0x18, 8);
-                        RtlCopyMemory(&g_ExcRecNParam, rec + 0x20, 8);
-                        RtlCopyMemory(&g_ExcRecInfo0, rec + 0x28, 8);
-                        RtlCopyMemory(&g_ExcRecInfo1, rec + 0x30, 8);
-                    }
-                }
-                __except (EXCEPTION_EXECUTE_HANDLER)
-                {
-                }
-            }
-        }
-        {
-            UCHAR *kthread = (UCHAR *)PsGetCurrentThread();
-            ULONG64 trapFrame = 0;
-
-            __try
-            {
-                RtlCopyMemory(&trapFrame, kthread + 0x90, sizeof(trapFrame));
-                g_ExcTrapFrame = trapFrame;
-                if (trapFrame != 0)
-                {
-                    RtlCopyMemory(&g_ExcCtxRip, (UCHAR *)(ULONG_PTR)trapFrame + 0x168, sizeof(g_ExcCtxRip));
-                    RtlCopyMemory(&g_ExcCtxRsp, (UCHAR *)(ULONG_PTR)trapFrame + 0x180, sizeof(g_ExcCtxRsp));
-                    RtlCopyMemory(&g_ExcCtxRax, (UCHAR *)(ULONG_PTR)trapFrame + 0x38, sizeof(g_ExcCtxRax));
-                    RtlCopyMemory(&g_ExcCtxRdi, (UCHAR *)(ULONG_PTR)trapFrame + 0xA0, sizeof(g_ExcCtxRdi));
-                    RtlCopyMemory(&g_ExcFrameWords[0], (UCHAR *)(ULONG_PTR)trapFrame + 0x150, sizeof(g_ExcFrameWords));
-                    RtlCopyMemory(&g_ExcTailWords[0], (UCHAR *)(ULONG_PTR)trapFrame + 0x1A0, sizeof(g_ExcTailWords));
-                    if (g_ExcCtxRip != 0 && g_ExcCtxRip < 0x800000000000ull)
-                    {
-                        g_ExcCodeBytes = *(volatile ULONG64 *)(ULONG_PTR)g_ExcCtxRip;
-                    }
-                }
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                g_ExcCtxRip = 0xDEAD0008ull;
-            }
-        }
-    }
+    UNREFERENCED_PARAMETER(ExceptionFrame);
+    UNREFERENCED_PARAMETER(PreviousMode);
+    UNREFERENCED_PARAMETER(FirstChance);
     g_ExceptionCount++;
-
-    if (g_ExceptionCount < 4)
+    if (g_ExceptionDumpDone == 0 && Record != NULL)
     {
-        g_ExcAddrSeq[g_ExceptionCount - 1] = (Args != NULL) ? argument[2] : 0;
+        g_ExceptionDumpDone = 1;
+        g_ExcCr2 = __readcr2();
+        __try
+        {
+            ULONG index;
+            g_ExcRecordIdx = 0;
+            g_ExcRecCode = (ULONG)Record->ExceptionCode;
+            g_ExcRecAddr = (ULONG64)(ULONG_PTR)Record->ExceptionAddress;
+            g_ExcRecNParam = Record->NumberParameters;
+            g_ExcRecInfo0 = Record->NumberParameters > 0 ? Record->ExceptionInformation[0] : 0;
+            g_ExcRecInfo1 = Record->NumberParameters > 1 ? Record->ExceptionInformation[1] : 0;
+            g_ExcCode = g_ExcRecCode;
+            g_ExcAddress = g_ExcRecAddr;
+            g_ExcArg0 = (ULONG)Record->ExceptionCode;
+            g_ExcArg1 = Record->ExceptionFlags;
+            g_ExcArg2 = g_ExcRecAddr;
+            g_ExcTrapFrame = (ULONG64)(ULONG_PTR)TrapFrame;
+            for (index = 0; index < 8; index++)
+            {
+                RtlCopyMemory(&g_ExceptionDump[index], (PUCHAR)Record + index * 8, 8);
+            }
+            if (TrapFrame != NULL)
+            {
+                RtlCopyMemory(&g_ExcCtxRip, (PUCHAR)TrapFrame + 0x168, 8);
+                RtlCopyMemory(&g_ExcCtxRsp, (PUCHAR)TrapFrame + 0x180, 8);
+                RtlCopyMemory(&g_ExcCtxRax, (PUCHAR)TrapFrame + 0x30, 8);
+                RtlCopyMemory(&g_ExcCtxRdi, (PUCHAR)TrapFrame + 0x148, 8);
+            }
+            g_ExcRip = g_ExcCtxRip;
+            g_ExcRsp = g_ExcCtxRsp;
+            g_ExcContextStatus = STATUS_SUCCESS;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            g_ExcContextStatus = (ULONG)GetExceptionCode();
+        }
     }
-
-    if (g_ExceptionCount > 5000)
+    if (g_ExceptionCount <= RTL_NUMBER_OF(g_ExcAddrSeq) && Record != NULL)
     {
-        return (NTSTATUS)0xC0000001u;
+        g_ExcAddrSeq[g_ExceptionCount - 1] = (ULONG64)(ULONG_PTR)Record->ExceptionAddress;
     }
-    return (NTSTATUS)g_ExcReturnValue;
+    return FALSE;
 }
 
 static VOID LxProcessTerminate(PVOID Args)
@@ -10355,16 +10282,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StatDebug[5] = g_WritevParams7;
             result->StatDebug[6] = g_WritevParams0;
             result->StatDebug[7] = g_WritevParams1;
-            result->ReadDebug[0] = g_NfaLen;
-            result->ReadDebug[1] = g_NfaOpenFd;
-            result->ReadDebug[2] = g_NfaCopyStr;
-            result->ReadDebug[3] = g_NfaMvStatus;
+            result->ReadDebug[0] = g_ExcRecNParam;
+            result->ReadDebug[1] = g_ExcRecInfo0;
+            result->ReadDebug[2] = g_ExcRecCode;
+            result->ReadDebug[3] = g_ExcRecAddr;
+            result->ReadDebug[4] = g_ExcRecInfo1;
+            result->ReadDebug[5] = g_ExcCr2;
             result->ReadDebug[6] = g_ExitSuspended;
-            result->ReadDebug[7] = g_PicoThreadObject ? 1 : 0;
-            result->ReadDebug[2] = g_StackTouchPages;
-            result->ReadDebug[3] = g_StackTouchFault;
-            result->ReadDebug[4] = g_ExcRecProbe0;
-            result->ReadDebug[5] = g_ExcRecProbe1;
+            result->ReadDebug[7] = g_ExitCalled;
 
             result->GetDentsCount = g_GetDentsCount;
             result->GetDentsStatus = g_GetDentsStatus;
