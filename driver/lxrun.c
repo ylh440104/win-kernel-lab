@@ -4488,6 +4488,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG64 vectorCount = Parameters[3];
         if (Number == LX_SYS_WRITEV)
         {
+            LX_APC_STATE wvApc2;
+            BOOLEAN wvAtt2 = FALSE;
             ULONG64 wvRdi = Parameters[1];
             ULONG64 wvRsi = Parameters[2];
             ULONG64 wvRdx = Parameters[3];
@@ -4506,6 +4508,118 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_WritevBase = Parameters[1];
             g_WritevCnt = Parameters[2];
             g_WritevStatus = 0xABu;
+            {
+                ULONG64 candIov[2];
+                ULONG cci;
+                candIov[0] = Parameters[2];
+                candIov[1] = Parameters[3];
+                if (g_PicoProcessObject != NULL)
+                {
+                    __try
+                    {
+                        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&wvApc2);
+                        wvAtt2 = TRUE;
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        wvAtt2 = FALSE;
+                    }
+                }
+                for (cci = 0; cci < 2; cci++)
+                {
+                    ULONG64 iovPtr = candIov[cci];
+                    ULONG cntTry;
+                    if (iovPtr == 0)
+                    {
+                        continue;
+                    }
+                    for (cntTry = 1; cntTry <= 8; cntTry++)
+                    {
+                        LX_IOVEC tmpIov[8];
+                        ULONG vi;
+                        ULONG validCount = 0;
+                        BOOLEAN iovOk = TRUE;
+                        RtlZeroMemory(tmpIov, sizeof(tmpIov));
+                        __try
+                        {
+                            RtlCopyMemory(tmpIov, (PVOID)(ULONG_PTR)iovPtr, cntTry * sizeof(LX_IOVEC));
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                            iovOk = FALSE;
+                        }
+                        if (!iovOk)
+                        {
+                            break;
+                        }
+                        for (vi = 0; vi < cntTry; vi++)
+                        {
+                            ULONG64 ib = tmpIov[vi].Base;
+                            ULONG64 il = tmpIov[vi].Length;
+                            if (ib == 0 && il == 0)
+                            {
+                                continue;
+                            }
+                            if (ib < 0x1000 || ib > 0x7FFFFFFFFFFFull || il == 0 || il > 0x1000)
+                            {
+                                iovOk = FALSE;
+                                break;
+                            }
+                            validCount++;
+                        }
+                        if (iovOk && validCount > 0)
+                        {
+                            g_WritevBase = iovPtr;
+                            g_WritevCnt = cntTry;
+                            g_WritevIovBase = tmpIov[0].Base;
+                            g_WritevIovLen = tmpIov[0].Length;
+                            g_WriteLength = 0;
+                            RtlZeroMemory(g_WriteBuffer, sizeof(g_WriteBuffer));
+                            for (vi = 0; vi < cntTry; vi++)
+                            {
+                                ULONG64 ib = tmpIov[vi].Base;
+                                ULONG64 il = tmpIov[vi].Length;
+                                if (il == 0)
+                                {
+                                    continue;
+                                }
+                                if ((ULONG64)g_WriteLength + il >= sizeof(g_WriteBuffer) - 1)
+                                {
+                                    break;
+                                }
+                                __try
+                                {
+                                    RtlCopyMemory(g_WriteBuffer + g_WriteLength, (PVOID)(ULONG_PTR)ib, (ULONG)il);
+                                    g_WriteLength += (ULONG)il;
+                                }
+                                __except (EXCEPTION_EXECUTE_HANDLER)
+                                {
+                                    g_WritevParams0 = 0xB2u;
+                                }
+                            }
+                            g_WriteBuffer[g_WriteLength] = 0;
+                            g_WriteCount++;
+                            g_WriteFd = (ULONG)Parameters[1];
+                            g_WritevStatus = 0xB1u;
+                            g_WritevParams1 = (ULONG64)cci;
+                            break;
+                        }
+                    }
+                    if (g_WritevStatus == 0xB1u)
+                    {
+                        break;
+                    }
+                }
+                if (wvAtt2)
+                {
+                    KeUnstackDetachProcess((PVOID)&wvApc2);
+                    wvAtt2 = FALSE;
+                }
+                if (g_WritevStatus != 0xB1u)
+                {
+                    g_WritevStatus = 0xBFu;
+                }
+            }
             {
                 ULONG64 useIov = Parameters[2];
                 ULONG64 useCnt = Parameters[3];
@@ -10227,10 +10341,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->MmapDebug[5] = g_NfaRaw5;
             result->MmapDebug[6] = g_NfaRaw6;
             result->MmapDebug[7] = g_NfaRaw7;
-            result->StatDebug[8] = g_ExcRecordIdx;
-            result->StatDebug[9] = g_ExcRecCode;
-            result->StatDebug[10] = g_ExcRecAddr;
-            result->StatDebug[11] = g_ExcRecInfo1;
+            result->StatDebug[8] = g_WritevStatus;
+            result->StatDebug[9] = g_WritevCnt;
+            result->StatDebug[10] = g_WritevBase;
+            result->StatDebug[11] = g_WritevIovBase;
             result->ReadDebug[0] = g_ExcRecNParam;
             result->ReadDebug[1] = g_ExcRecInfo0;
             result->StatDebug[0] = g_WritevParams2;
