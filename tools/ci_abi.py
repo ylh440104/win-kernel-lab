@@ -67,6 +67,13 @@ def preflight():
                 print(index, pair)
         raise ValueError('query ABI declarations differ')
     print('QUERY_ABI', len(a), 'declarations match')
+    for name in ('driver/lxrun.c', 'driver/lxprobe.c', 'driver/lxio_runtime.h', 'driver/lxmap_runtime.h'):
+        for number, line in enumerate((ROOT / name).read_text().splitlines(), 1):
+            stripped = line.replace(chr(92) + '"', '')
+            if stripped.count('"') % 2 == 1:
+                raise ValueError('unbalanced quote at %s:%d' % (name, number))
+    print('SOURCE_QUOTES balanced')
+
     driver = (ROOT / 'driver/lxrun.c').read_text()
     assert driver.count('case LX_SYS_WRITEV:') == 1
     assert 'return LxWritevCapture(Context);' in driver
@@ -78,6 +85,8 @@ def preflight():
     assert 'LX_SYS_PREAD64' in driver
     assert 'lxmap_runtime.h' in driver
     assert driver.count('return LxSysMmapFile(Context);') == 1
+    assert 'LxLoadInterpreterImage' in driver
+    assert 'g_LdsoSelfBoot = 1' in driver
     print('WRITEV_DISPATCH and frame decoder verified')
 
 

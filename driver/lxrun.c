@@ -238,6 +238,7 @@ typedef struct _LX_STUB_STATS
 #define LX_MAX_LIBS 4u
 #define LX_LIB_BASE_STEP 0x4000000ull
 #define LX_LIB_IMAGE_MAX 0x400000u
+#define LX_INTERP_BASE 0x15000000ull
 #define LX_MAX_LIB_SYMBOLS 512u
 
 typedef struct _LX_LIB_ENTRY
@@ -776,6 +777,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TpoffApplied[4];
     ULONG LibRelrCount[4];
     ULONG LibRelrApplied[4];
+    ULONG64 InterpLoadStatus;
+    ULONG64 InterpBase;
+    ULONG64 LdsoSelfBoot;
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -912,6 +916,9 @@ static volatile ULONG64 g_SyscallHandlerAddr = 0;
 static ULONG64 g_PicoContext = 0;
 static ULONG64 g_ElfEntry = 0;
 static ULONG g_SkipNeededLibs = 0;
+static ULONG g_LdsoSelfBoot = 1;
+static ULONG64 g_InterpLoadStatus = 0;
+static ULONG64 g_InterpBaseProbe = 0;
 static ULONG g_TlsRegMode = 1;
 static ULONG g_LibStage = 0;
 static ULONG g_LibStopAfterMap = 0;
@@ -7404,6 +7411,308 @@ static void LxLoadNeededLibrariesEx(UCHAR *ImageData, ULONG ImageSize, ULONG64 M
                                       const LX_ELF_DYNAMIC_INFO *Info, PEPROCESS TargetProcess,
                                       LX_LIB_STATS *Stats, LX_GLOBAL_TABLE *Globals);
 
+static ULONG64 LxReadLinuxPathFile(const char *LinuxPath, UCHAR **OutBuffer, ULONG *OutLength,
+                                   ULONG *OutStatus)
+{
+    static const char *Prefixes[] = {
+        "/lib/x86_64-linux-gnu/",
+        "/usr/lib/x86_64-linux-gnu/",
+        "/lib64/",
+        "/usr/lib64/",
+        "/lib/",
+        "/usr/lib/"
+    };
+    const char *baseName = LinuxPath;
+    ULONG prefixIndex;
+    ULONG baseLength = 0;
+    CHAR candidate[192];
+
+    *OutBuffer = NULL;
+    *OutLength = 0;
+    *OutStatus = 0xC0000034u;
+
+    if (LinuxPath == NULL || LinuxPath[0] == 0)
+    {
+        return 0;
+    }
+
+    baseName = LinuxPath;
+    {
+        ULONG scan = 0;
+        while (LinuxPath[scan] != 0)
+        {
+            if (LinuxPath[scan] == '/')
+            {
+                baseName = LinuxPath + scan + 1;
+            }
+            scan++;
+        }
+    }
+
+    while (baseName[baseLength] != 0 && baseLength + 1 < LX_MAX_SYMBOL_NAME)
+    {
+        baseLength++;
+    }
+
+    if (baseLength == 0)
+    {
+        return 0;
+    }
+
+    for (prefixIndex = 0; prefixIndex <= RTL_NUMBER_OF(Prefixes); prefixIndex++)
+    {
+        const char *direct = LinuxPath;
+        const char *prefix = "";
+        ULONG prefixLength = 0;
+        WCHAR ntPath[260];
+        UNICODE_STRING uniPath;
+        OBJECT_ATTRIBUTES attributes;
+        IO_STATUS_BLOCK statusBlock;
+        HANDLE fileHandle = NULL;
+        FILE_STANDARD_INFORMATION fileInfo;
+        NTSTATUS status;
+        ULONG buildIndex;
+        ULONG pathLength;
+
+        if (prefixIndex < RTL_NUMBER_OF(Prefixes))
+        {
+            direct = NULL;
+            prefix = Prefixes[prefixIndex];
+            while (prefix[prefixLength] != 0)
+            {
+                prefixLength++;
+            }
+        }
+
+        if (direct != NULL)
+        {
+            ULONG total = 0;
+            while (direct[total] != 0 && total + 1 < RTL_NUMBER_OF(candidate))
+            {
+                candidate[total] = direct[total];
+                total++;
+            }
+            candidate[total] = 0;
+        }
+        else
+        {
+            if (prefixLength + baseLength + 1 >= RTL_NUMBER_OF(candidate))
+            {
+                continue;
+            }
+            for (buildIndex = 0; buildIndex < prefixLength; buildIndex++)
+            {
+                candidate[buildIndex] = prefix[buildIndex];
+            }
+            for (buildIndex = 0; buildIndex < baseLength; buildIndex++)
+            {
+                candidate[prefixLength + buildIndex] = baseName[buildIndex];
+            }
+            candidate[prefixLength + baseLength] = 0;
+        }
+
+        pathLength = LxBuildNtPath(candidate, ntPath, RTL_NUMBER_OF(ntPath));
+        if (pathLength == 0)
+        {
+            continue;
+        }
+
+        RtlInitUnicodeString(&uniPath, ntPath);
+        InitializeObjectAttributes(&attributes, &uniPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+        status = ZwOpenFile(&fileHandle, GENERIC_READ | FILE_READ_ATTRIBUTES | SYNCHRONIZE, &attributes,
+                            &statusBlock, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                            FILE_SYNCHRONOUS_IO_NONALERT | FILE_OPEN_FOR_BACKUP_INTENT);
+        *OutStatus = (ULONG)status;
+        if (!NT_SUCCESS(status))
+        {
+            continue;
+        }
+
+        RtlZeroMemory(&fileInfo, sizeof(fileInfo));
+        status = ZwQueryInformationFile(fileHandle, &statusBlock, &fileInfo, sizeof(fileInfo),
+                                        FileStandardInformation);
+        if (!NT_SUCCESS(status) || fileInfo.EndOfFile.QuadPart <= 0 ||
+            fileInfo.EndOfFile.QuadPart > (LONGLONG)LX_LIB_IMAGE_MAX)
+        {
+            *OutStatus = NT_SUCCESS(status) ? 0xC0000023u : (ULONG)status;
+            ZwClose(fileHandle);
+            continue;
+        }
+        {
+            ULONG length = (ULONG)fileInfo.EndOfFile.QuadPart;
+            PVOID buffer = ExAllocatePool2(POOL_FLAG_NON_PAGED, length, 'inpL');
+            if (buffer == NULL)
+            {
+                *OutStatus = 0xC000009Au;
+                ZwClose(fileHandle);
+                continue;
+            }
+            RtlZeroMemory(buffer, length);
+            status = ZwReadFile(fileHandle, NULL, NULL, NULL, &statusBlock, buffer, length, NULL, NULL);
+            ZwClose(fileHandle);
+            *OutStatus = (ULONG)status;
+            if (!NT_SUCCESS(status))
+            {
+                ExFreePoolWithTag(buffer, 'inpL');
+                continue;
+            }
+            *OutBuffer = (UCHAR *)buffer;
+            *OutLength = length;
+            return (ULONG64)length;
+        }
+    }
+
+    return 0;
+}
+
+static ULONG64 LxLoadInterpreterImage(const char *LinuxPath, PEPROCESS TargetProcess)
+{
+    UCHAR *fileBuffer = NULL;
+    ULONG fileLength = 0;
+    ULONG openStatus = 0;
+    ULONG phoff;
+    USHORT phnum;
+    USHORT phentsize;
+    ULONG64 minVaddr = 0xFFFFFFFFFFFFFFFFull;
+    ULONG64 maxEnd = 0;
+    ULONG64 imageSize;
+    ULONG64 baseAddress = LX_INTERP_BASE;
+    ULONG64 entryValue;
+    ULONG phdrIndex;
+    HANDLE sectionHandle = NULL;
+    OBJECT_ATTRIBUTES sectionAttributes;
+    LARGE_INTEGER sectionSize;
+    PVOID viewBase = NULL;
+    SIZE_T viewSize = 0;
+    NTSTATUS status;
+    ULONG copiedTotal = 0;
+
+    g_InterpLoadStatus = 0xFFFFFFFFu;
+    g_InterpBaseProbe = 0;
+
+    if (LxReadLinuxPathFile(LinuxPath, &fileBuffer, &fileLength, &openStatus) == 0 || fileBuffer == NULL)
+    {
+        g_InterpLoadStatus = openStatus != 0 ? openStatus : 0xC0000034u;
+        return 0;
+    }
+
+    if (fileLength < 64 || fileBuffer[0] != 0x7F || fileBuffer[1] != 'E' ||
+        fileBuffer[2] != 'L' || fileBuffer[3] != 'F')
+    {
+        g_InterpLoadStatus = 0xC000007Bu;
+        ExFreePoolWithTag(fileBuffer, 'inpL');
+        return 0;
+    }
+
+    phoff = *(ULONG *)(fileBuffer + 32);
+    phentsize = *(USHORT *)(fileBuffer + 54);
+    phnum = *(USHORT *)(fileBuffer + 56);
+    entryValue = *(ULONG64 *)(fileBuffer + 24);
+
+    if (phentsize < 56 || phnum == 0 || phoff + (ULONG64)phnum * phentsize > fileLength)
+    {
+        g_InterpLoadStatus = 0xC000000Du;
+        ExFreePoolWithTag(fileBuffer, 'inpL');
+        return 0;
+    }
+
+    for (phdrIndex = 0; phdrIndex < phnum && phdrIndex < 64; phdrIndex++)
+    {
+        const UCHAR *phdr = fileBuffer + phoff + (ULONG64)phdrIndex * phentsize;
+        ULONG pType = *(ULONG *)(phdr + 0);
+        ULONG64 pVaddr = *(ULONG64 *)(phdr + 16);
+        ULONG64 pMemsz = *(ULONG64 *)(phdr + 40);
+
+        if (pType != LX_PT_LOAD)
+        {
+            continue;
+        }
+        if ((pVaddr & ~0xFFFull) < minVaddr)
+        {
+            minVaddr = pVaddr & ~0xFFFull;
+        }
+        if (((pVaddr + pMemsz) + 0xFFFull) > maxEnd)
+        {
+            maxEnd = ((pVaddr + pMemsz) + 0xFFFull) & ~0xFFFull;
+        }
+    }
+
+    if (minVaddr == 0xFFFFFFFFFFFFFFFFull || maxEnd <= minVaddr)
+    {
+        g_InterpLoadStatus = 0xC000000Du;
+        ExFreePoolWithTag(fileBuffer, 'inpL');
+        return 0;
+    }
+
+    imageSize = maxEnd - minVaddr;
+    sectionSize.QuadPart = (LONGLONG)imageSize + 0x200000ll;
+    InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    status = ZwCreateSection(&sectionHandle, SECTION_ALL_ACCESS, &sectionAttributes, &sectionSize,
+                             PAGE_EXECUTE_READWRITE, SEC_COMMIT, NULL);
+    g_InterpLoadStatus = (ULONG)status;
+    if (!NT_SUCCESS(status))
+    {
+        ExFreePoolWithTag(fileBuffer, 'inpL');
+        return 0;
+    }
+
+    viewBase = (PVOID)(ULONG_PTR)baseAddress;
+    viewSize = 0;
+    status = ZwMapViewOfSection(sectionHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0, 0, NULL, &viewSize,
+                                ViewUnmap, 0, PAGE_EXECUTE_READWRITE);
+    g_InterpLoadStatus = (ULONG)status;
+    ZwClose(sectionHandle);
+    if (!NT_SUCCESS(status))
+    {
+        ExFreePoolWithTag(fileBuffer, 'inpL');
+        return 0;
+    }
+
+    baseAddress = (ULONG64)(ULONG_PTR)viewBase;
+    g_InterpBaseProbe = baseAddress;
+
+    for (phdrIndex = 0; phdrIndex < phnum && phdrIndex < 64; phdrIndex++)
+    {
+        const UCHAR *phdr = fileBuffer + phoff + (ULONG64)phdrIndex * phentsize;
+        ULONG pType = *(ULONG *)(phdr + 0);
+        ULONG64 pOffset;
+        ULONG64 pVaddr;
+        ULONG64 pFilesz;
+        ULONG64 destAddress;
+        SIZE_T copied = 0;
+        NTSTATUS copyStatus;
+
+        if (pType != LX_PT_LOAD)
+        {
+            continue;
+        }
+        pOffset = *(ULONG64 *)(phdr + 8);
+        pVaddr = *(ULONG64 *)(phdr + 16);
+        pFilesz = *(ULONG64 *)(phdr + 32);
+        if (pFilesz == 0 || pOffset + pFilesz > fileLength)
+        {
+            continue;
+        }
+        destAddress = baseAddress + (pVaddr - minVaddr);
+        copyStatus = MmCopyVirtualMemory(PsGetCurrentProcess(), fileBuffer + pOffset, TargetProcess,
+                                         (PVOID)(ULONG_PTR)destAddress, (SIZE_T)pFilesz, KernelMode, &copied);
+        if (!NT_SUCCESS(copyStatus))
+        {
+            g_InterpLoadStatus = (ULONG)copyStatus;
+            ExFreePoolWithTag(fileBuffer, 'inpL');
+            return 0;
+        }
+        copiedTotal += (ULONG)pFilesz;
+    }
+
+    g_LdsoBase = baseAddress;
+    g_LdsoEntry = baseAddress + entryValue;
+    g_InterpLoadStatus = 0;
+    ExFreePoolWithTag(fileBuffer, 'inpL');
+    return baseAddress;
+}
+
 static ULONG64 LxLoadSharedLibrary(const char *Name, PEPROCESS TargetProcess, ULONG LibIndex,
                                    LX_LIB_ENTRY *Entry, LX_LIB_STATS *Stats, LX_GLOBAL_TABLE *Globals)
 {
@@ -8114,7 +8423,52 @@ static void LxLoadNeededLibraries(UCHAR *ImageData, ULONG ImageSize, const LX_EL
     {
         return;
     }
-LxLoadNeededLibrariesEx(ImageData, ImageSize, Load->MinVaddr, Info, TargetProcess, Stats, Globals);
+    if (g_LdsoSelfBoot != 0)
+    {
+        CHAR interpPath[260];
+        ULONG interpChars = 0;
+        if (Info->HasInterp != 0 && Info->InterpOffset != 0 &&
+            Info->InterpOffset + Info->InterpSize <= ImageSize)
+        {
+            ULONG ci;
+            for (ci = 0; ci < Info->InterpSize && ci + 1 < RTL_NUMBER_OF(interpPath); ci++)
+            {
+                interpPath[ci] = (CHAR)ImageData[Info->InterpOffset + ci];
+                if (interpPath[ci] == 0)
+                {
+                    break;
+                }
+                interpChars = ci + 1;
+            }
+            interpPath[RTL_NUMBER_OF(interpPath) - 1] = 0;
+        }
+        else
+        {
+            interpPath[0] = 0;
+        }
+        if (interpPath[0] != 0)
+        {
+            ULONG64 interpBase = LxLoadInterpreterImage(interpPath, TargetProcess);
+            if (interpBase != 0)
+            {
+                Stats->Loaded++;
+                Stats->LastStatus = 0;
+                g_LdsoBase = interpBase;
+            }
+            else
+            {
+                Stats->Failed++;
+                Stats->LastStatus = (ULONG)g_InterpLoadStatus;
+            }
+        }
+        else
+        {
+            Stats->Failed++;
+            Stats->LastStatus = 0xC0000034u;
+        }
+        return;
+    }
+    LxLoadNeededLibrariesEx(ImageData, ImageSize, Load->MinVaddr, Info, TargetProcess, Stats, Globals);
     {
         ULONG libIdx;
         g_LdsoEntry = 0;
@@ -8327,16 +8681,16 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     }
 
     LxParseElfDynamic(imageData, load->DataSize, load, &g_ElfDynamic);
-    LxApplyRelocations(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_RelocStats);
-    LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
-
     LxGlobalTableReset(&g_GlobalSymbols);
-
     LxLoadNeededLibraries(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_LibStats,
                           &g_GlobalSymbols);
-
-    LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats,
-                 &g_GlobalSymbols);
+    if (g_LdsoSelfBoot == 0)
+    {
+        LxApplyRelocations(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_RelocStats);
+        LxDumpSymbols(imageData, load->DataSize, load, &g_ElfDynamic, &g_SymbolInfo);
+        LxBuildStubs(imageData, load->DataSize, load, &g_ElfDynamic, targetProcess, &g_SymbolInfo, &g_StubStats,
+                     &g_GlobalSymbols);
+    }
     g_TlsCallMark = 0xAAAA0001;
     g_GotArch = LxReadUserU64(targetProcess, 0x401C10ull, &g_GotReadStatus);
     g_StubBytes = LxReadUserU64(targetProcess, 0x500000ull, &g_StubReadStatus);
@@ -8346,7 +8700,10 @@ static void LxLoadElf(PVOID Buffer, ULONG BufferLength)
     g_GotDump[1] = g_GotArch;
     g_GotDump[2] = g_StubBytes;
     g_GotDump[7] = g_StubBytes3;
+    if (g_LdsoSelfBoot == 0)
+    {
     LxSetupTls(targetProcess, g_StubStats.StubAreaBase, &g_LibStats);
+    }
     g_GotArchAfterTls = LxReadUserU64(targetProcess, 0x401C10ull, &g_GotReadAfterStatus);
     g_TlsProbe0 = LxReadUserU64(targetProcess, 0x50C000ull, &g_TlsProbe0St);
     g_TlsProbe10 = LxReadUserU64(targetProcess, 0x50C010ull, &g_TlsProbe10St);
@@ -9016,8 +9373,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibRelrApplied[i] = g_LibStats.Libs[i].RelrApplied;
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
-                result->LdsoEntry = g_LdsoEntry;
-                result->LdsoBase = (ULONG64)g_LibStage;
+                result->InterpLoadStatus = g_InterpLoadStatus;
+            result->InterpBase = g_InterpBaseProbe;
+            result->LdsoSelfBoot = (ULONG64)g_LdsoSelfBoot;
+            result->LdsoEntry = g_LdsoEntry;
+                result->LdsoBase = g_LdsoBase;
                 RtlCopyMemory(result->LibNames[i], g_LibStats.Libs[i].Name, 48);
             }
 

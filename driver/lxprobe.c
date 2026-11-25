@@ -411,6 +411,9 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 TpoffApplied[4];
     ULONG LibRelrCount[4];
     ULONG LibRelrApplied[4];
+    ULONG64 InterpLoadStatus;
+    ULONG64 InterpBase;
+    ULONG64 LdsoSelfBoot;
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -860,6 +863,9 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
             printf("  GLOBAL: [%lu] %.48s\n", gi, q.GlobalFirstNames[gi]);
         }
     }
+        printf("  INTERP: status=0x%llx base=0x%llx selfboot=%llu stage=%llu\n",
+               (unsigned long long)q.InterpLoadStatus, (unsigned long long)q.InterpBase,
+               (unsigned long long)q.LdsoSelfBoot, (unsigned long long)q.LdsoBase);
         printf("  LDSO: entry=0x%llx base=0x%llx\n",
                (unsigned long long)q.LdsoEntry, (unsigned long long)q.LdsoBase);
     printf("  LIBS: attempted=%lu loaded=%lu failed=%lu lastStatus=0x%08lx\n",
