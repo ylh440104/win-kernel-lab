@@ -780,6 +780,13 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 InterpLoadStatus;
     ULONG64 InterpBase;
     ULONG64 LdsoSelfBoot;
+    ULONG InterpRelaCount;
+    ULONG InterpRelaApplied;
+    ULONG InterpRelrCount;
+    ULONG InterpRelrApplied;
+    ULONG64 InterpEntry;
+    ULONG64 AtPhdr;
+    ULONG64 AtPhnum;
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -919,6 +926,10 @@ static ULONG g_SkipNeededLibs = 0;
 static ULONG g_LdsoSelfBoot = 1;
 static ULONG64 g_InterpLoadStatus = 0;
 static ULONG64 g_InterpBaseProbe = 0;
+static ULONG g_InterpRelaCount = 0;
+static ULONG g_InterpRelaApplied = 0;
+static ULONG g_InterpRelrCount = 0;
+static ULONG g_InterpRelrApplied = 0;
 static ULONG g_TlsRegMode = 1;
 static ULONG g_LibStage = 0;
 static ULONG g_LibStopAfterMap = 0;
@@ -7706,6 +7717,141 @@ static ULONG64 LxLoadInterpreterImage(const char *LinuxPath, PEPROCESS TargetPro
         copiedTotal += (ULONG)pFilesz;
     }
 
+    {
+        ULONG64 dynVaddr = 0;
+        ULONG64 dynSize = 0;
+        for (phdrIndex = 0; phdrIndex < phnum && phdrIndex < 64; phdrIndex++)
+        {
+            const UCHAR *phdr = fileBuffer + phoff + (ULONG64)phdrIndex * phentsize;
+            if (*(ULONG *)(phdr + 0) == LX_PT_DYNAMIC)
+            {
+                dynVaddr = *(ULONG64 *)(phdr + 16);
+                dynSize = *(ULONG64 *)(phdr + 32);
+                break;
+            }
+        }
+        if (dynVaddr != 0 && dynSize >= 16)
+        {
+            ULONG64 relaVaddr = 0;
+            ULONG64 relaSize = 0;
+            ULONG64 relrVaddr = 0;
+            ULONG64 relrSize = 0;
+            ULONG64 dynOffset = dynVaddr - minVaddr;
+            ULONG dynIndex;
+            for (dynIndex = 0; dynIndex + 16 <= dynSize && dynOffset + dynIndex + 16 <= fileLength; dynIndex += 16)
+            {
+                LONG64 tag = *(LONG64 *)(fileBuffer + dynOffset + dynIndex);
+                ULONG64 val = *(ULONG64 *)(fileBuffer + dynOffset + dynIndex + 8);
+                if (tag == 0)
+                {
+                    break;
+                }
+                if (tag == 7)
+                {
+                    relaVaddr = val;
+                }
+                else if (tag == 8)
+                {
+                    relaSize = val;
+                }
+                else if (tag == 36)
+                {
+                    relrVaddr = val;
+                }
+                else if (tag == 35)
+                {
+                    relrSize = val;
+                }
+            }
+            g_InterpRelaCount = (ULONG)(relaSize / 24);
+            g_InterpRelrCount = (ULONG)(relrSize / 8);
+            if (relaVaddr != 0 && relaSize != 0 && relaVaddr >= minVaddr)
+            {
+                ULONG64 relaOffset = relaVaddr - minVaddr;
+                ULONG64 relaIndex;
+                for (relaIndex = 0; relaIndex < relaSize / 24; relaIndex++)
+                {
+                    ULONG64 off = relaOffset + relaIndex * 24;
+                    ULONG64 relaOffsetValue;
+                    ULONG64 relaInfo;
+                    LONG64 relaAddend;
+                    ULONG relaType;
+                    ULONG64 dest;
+                    ULONG64 value;
+                    SIZE_T written = 0;
+                    if (off + 24 > fileLength)
+                    {
+                        break;
+                    }
+                    relaOffsetValue = *(ULONG64 *)(fileBuffer + off);
+                    relaInfo = *(ULONG64 *)(fileBuffer + off + 8);
+                    relaAddend = *(LONG64 *)(fileBuffer + off + 16);
+                    relaType = (ULONG)(relaInfo & 0xFFFFFFFFull);
+                    if (relaType != LX_R_X86_64_RELATIVE && relaType != LX_R_X86_64_IRELATIVE)
+                    {
+                        continue;
+                    }
+                    dest = baseAddress + relaOffsetValue;
+                    value = baseAddress + (ULONG64)relaAddend;
+                    if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &value, TargetProcess,
+                                                       (PVOID)(ULONG_PTR)dest, sizeof(value), KernelMode, &written)))
+                    {
+                        g_InterpRelaApplied++;
+                    }
+                }
+            }
+            if (relrVaddr != 0 && relrSize != 0 && relrVaddr >= minVaddr)
+            {
+                ULONG64 relrOffset = relrVaddr - minVaddr;
+                ULONG64 relrIndex = 0;
+                ULONG64 where = 0;
+                while (relrIndex < relrSize / 8)
+                {
+                    ULONG64 off = relrOffset + relrIndex * 8;
+                    ULONG64 entry;
+                    if (off + 8 > fileLength)
+                    {
+                        break;
+                    }
+                    entry = *(ULONG64 *)(fileBuffer + off);
+                    relrIndex++;
+                    if ((entry & 1) == 0)
+                    {
+                        ULONG64 dest = baseAddress + entry;
+                        ULONG64 value = baseAddress + entry;
+                        SIZE_T written = 0;
+                        if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &value, TargetProcess,
+                                                           (PVOID)(ULONG_PTR)dest, sizeof(value), KernelMode, &written)))
+                        {
+                            g_InterpRelrApplied++;
+                        }
+                        where = entry + 8;
+                    }
+                    else
+                    {
+                        ULONG64 bitmap = entry >> 1;
+                        ULONG bit;
+                        for (bit = 0; bit < 63; bit++)
+                        {
+                            if ((bitmap & (1ull << bit)) != 0)
+                            {
+                                ULONG64 dest = baseAddress + where + (ULONG64)bit * 8;
+                                ULONG64 value = baseAddress + where + (ULONG64)bit * 8;
+                                SIZE_T written = 0;
+                                if (NT_SUCCESS(MmCopyVirtualMemory(PsGetCurrentProcess(), &value, TargetProcess,
+                                                                   (PVOID)(ULONG_PTR)dest, sizeof(value),
+                                                                   KernelMode, &written)))
+                                {
+                                    g_InterpRelrApplied++;
+                                }
+                            }
+                        }
+                        where += 63 * 8;
+                    }
+                }
+            }
+        }
+    }
     g_LdsoBase = baseAddress;
     g_LdsoEntry = baseAddress + entryValue;
     g_InterpLoadStatus = 0;
@@ -9373,7 +9519,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibRelrApplied[i] = g_LibStats.Libs[i].RelrApplied;
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
-                result->InterpLoadStatus = g_InterpLoadStatus;
+                result->InterpRelaCount = g_InterpRelaCount;
+            result->InterpRelaApplied = g_InterpRelaApplied;
+            result->InterpRelrCount = g_InterpRelrCount;
+            result->InterpRelrApplied = g_InterpRelrApplied;
+            result->InterpEntry = g_LdsoEntry;
+            result->AtPhdr = g_ElfLoad.PhdrAddress;
+            result->AtPhnum = (ULONG64)g_ElfLoad.PhdrCount;
+            result->InterpLoadStatus = g_InterpLoadStatus;
             result->InterpBase = g_InterpBaseProbe;
             result->LdsoSelfBoot = (ULONG64)g_LdsoSelfBoot;
             result->LdsoEntry = g_LdsoEntry;
