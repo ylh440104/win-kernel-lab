@@ -245,7 +245,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG MmapCount;
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
-    ULONG64 MmapDebug[12];
+    ULONG64 MmapDebug[16];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
     ULONG64 TlsBlockBase;
@@ -873,7 +873,10 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
         printf("  INTERP: status=0x%llx base=0x%llx selfboot=%llu stage=%llu\n",
                (unsigned long long)q.InterpLoadStatus, (unsigned long long)q.InterpBase,
                (unsigned long long)q.LdsoSelfBoot, (unsigned long long)q.LdsoBase);
-        printf("  INTERPRELOC: rela=%lu/%lu relr=%lu/%lu entry=0x%llx atphdr=0x%llx phnum=%llu\n",
+        printf("  EXCMAP: map=0x%llx l_addr=0x%llx l_name=0x%llx l_ld=0x%llx\n",
+               (unsigned long long)q.MmapDebug[12], (unsigned long long)q.MmapDebug[13],
+               (unsigned long long)q.MmapDebug[14], (unsigned long long)q.MmapDebug[15]);
+        printf("  INTERPRELOC: rela=%lu/%lu relr=%lu(written)/%lu(entries) entry=0x%llx atphdr=0x%llx phnum=%llu\n",
                q.InterpRelaApplied, q.InterpRelaCount, q.InterpRelrApplied, q.InterpRelrCount,
                (unsigned long long)q.InterpEntry, (unsigned long long)q.AtPhdr,
                (unsigned long long)q.AtPhnum);

@@ -611,7 +611,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG MmapCount;
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
-    ULONG64 MmapDebug[12];
+    ULONG64 MmapDebug[16];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
     ULONG64 TlsBlockBase;
@@ -1055,7 +1055,7 @@ static ULONG64 g_MmapCurrent = 0;
 static ULONG g_MmapCount = 0;
 static ULONG64 g_LastMmapAddress = 0;
 static ULONG64 g_LastMmapStatus = 0;
-static ULONG64 g_MmapDebug[12];
+static ULONG64 g_MmapDebug[16];
 static ULONG64 g_MmapContext[40];
 static UCHAR g_MmapBytes[16];
 static ULONG g_MmapContextDone = 0;
@@ -4480,6 +4480,7 @@ static ULONG64 g_ExcTailWords[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
 static ULONG64 g_ExcChain[5] = {0, 0, 0, 0, 0};
+static ULONG64 g_ExcChainMap[4] = {0, 0, 0, 0};
 
 static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
 {
@@ -4562,8 +4563,18 @@ static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
                             if (inner != 0)
                             {
                                 ULONG64 infoSlot = 0;
+                                ULONG64 mapAddr = 0;
+                                ULONG64 mapName = 0;
+                                ULONG64 mapLd = 0;
                                 RtlCopyMemory(&infoSlot, (PVOID)(ULONG_PTR)(inner + 0x68), 8);
+                                RtlCopyMemory(&mapAddr, (PVOID)(ULONG_PTR)inner, 8);
+                                RtlCopyMemory(&mapName, (PVOID)(ULONG_PTR)(inner + 0x08), 8);
+                                RtlCopyMemory(&mapLd, (PVOID)(ULONG_PTR)(inner + 0x10), 8);
                                 g_ExcChain[3] = infoSlot;
+                                g_ExcChainMap[0] = inner;
+                                g_ExcChainMap[1] = mapAddr;
+                                g_ExcChainMap[2] = mapName;
+                                g_ExcChainMap[3] = mapLd;
                             }
                         }
                     }
@@ -9519,7 +9530,11 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibRelrApplied[i] = g_LibStats.Libs[i].RelrApplied;
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
-                result->InterpRelaCount = g_InterpRelaCount;
+                result->MmapDebug[12] = g_ExcChainMap[0];
+            result->MmapDebug[13] = g_ExcChainMap[1];
+            result->MmapDebug[14] = g_ExcChainMap[2];
+            result->MmapDebug[15] = g_ExcChainMap[3];
+            result->InterpRelaCount = g_InterpRelaCount;
             result->InterpRelaApplied = g_InterpRelaApplied;
             result->InterpRelrCount = g_InterpRelrCount;
             result->InterpRelrApplied = g_InterpRelrApplied;
@@ -10155,7 +10170,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->LastMmapAddress = g_LastMmapAddress;
             result->LastMmapStatus = g_LastMmapStatus;
 
-            for (i = 0; i < 12; i++)
+            for (i = 0; i < 16; i++)
             {
                 result->MmapDebug[i] = g_MmapDebug[i];
             }
