@@ -1299,6 +1299,20 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  EXCMAP: map=0x%llx l_addr=0x%llx l_name=0x%llx l_ld=0x%llx\n",
                    (unsigned long long)q.MmapDebug[12], (unsigned long long)q.MmapDebug[13],
                    (unsigned long long)q.MmapDebug[14], (unsigned long long)q.MmapDebug[15]);
+            {
+                int di;
+                printf("  EXCDYN:");
+                for (di = 0; di < 24; di++)
+                {
+                    printf(" %llx", (unsigned long long)q.MmapContext[di]);
+                }
+                printf("\n  EXCLINFO:");
+                for (di = 0; di < 8; di++)
+                {
+                    printf(" %llx", (unsigned long long)q.MmapContext[24 + di]);
+                }
+                printf("\n");
+            }
             printf("  WRITEV_ABI: fd=%llu iov=0x%llx count=%llu first=0x%llx captured=%lu status=0x%08llx\n",
                    (unsigned long long)q.StatDebug[0], (unsigned long long)q.StatDebug[10],
                    (unsigned long long)q.StatDebug[9], (unsigned long long)q.StatDebug[11],

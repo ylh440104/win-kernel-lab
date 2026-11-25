@@ -4481,6 +4481,8 @@ static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
 static ULONG64 g_ExcChain[5] = {0, 0, 0, 0, 0};
 static ULONG64 g_ExcChainMap[4] = {0, 0, 0, 0};
+static ULONG64 g_ExcDynTags[24];
+static ULONG64 g_ExcLInfo[8];
 
 static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
 {
@@ -4583,6 +4585,28 @@ static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
                                 g_MmapDebug[13] = mapAddr;
                                 g_MmapDebug[14] = mapName;
                                 g_MmapDebug[15] = mapLd;
+                                {
+                                    ULONG64 dynPtr = 0;
+                                    ULONG64 tagIndex;
+                                    g_ExcChainMap[0] = inner;
+                                    if (mapLd != 0)
+                                    {
+                                        for (tagIndex = 0; tagIndex < 24; tagIndex++)
+                                        {
+                                            RtlCopyMemory(&dynPtr,
+                                                          (PVOID)(ULONG_PTR)(mapLd + tagIndex * 16),
+                                                          sizeof(dynPtr));
+                                            g_ExcDynTags[tagIndex] = dynPtr;
+                                        }
+                                    }
+                                    for (tagIndex = 0; tagIndex < 8; tagIndex++)
+                                    {
+                                        RtlCopyMemory(&dynPtr,
+                                                      (PVOID)(ULONG_PTR)(inner + 0x40 + tagIndex * 8),
+                                                      sizeof(dynPtr));
+                                        g_ExcLInfo[tagIndex] = dynPtr;
+                                    }
+                                }
                             }
                         }
                     }
@@ -10182,6 +10206,14 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             for (i = 0; i < 40; i++)
             {
                 result->MmapContext[i] = g_MmapContext[i];
+            }
+            for (i = 0; i < 24; i++)
+            {
+                result->MmapContext[i] = g_ExcDynTags[i];
+            }
+            for (i = 0; i < 8; i++)
+            {
+                result->MmapContext[24 + i] = g_ExcLInfo[i];
             }
 
             for (i = 0; i < 16; i++)

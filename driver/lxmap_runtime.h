@@ -13,7 +13,7 @@ static ULONG g_FileViewCount = 0;
 
 static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length);
 
-static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 *ViewBase)
+static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 FileOffset, ULONG64 *ViewBase)
 {
     ULONG index;
     if (Length == 0)
@@ -24,6 +24,10 @@ static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 
     {
         const LX_FILE_VIEW *view = &g_FileViews[index];
         if (!view->Valid || view->Fd != Fd || view->Base == 0)
+        {
+            continue;
+        }
+        if (view->FileOffset != FileOffset)
         {
             continue;
         }
@@ -124,7 +128,7 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
             g_MmapDebug[11] = 0xF4u;
             return (ULONG64)(-22);
         }
-        if (LxFindFileView(fd, address, length, &viewBase))
+        if (LxFindFileView(fd, address, length, offset, &viewBase))
         {
             g_MmapDebug[8] = viewBase;
             g_MmapDebug[11] = 0xC1u;
