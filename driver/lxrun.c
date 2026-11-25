@@ -9530,11 +9530,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
                 result->LibRelrApplied[i] = g_LibStats.Libs[i].RelrApplied;
                 result->LibBase[i] = g_LibStats.Libs[i].BaseAddress;
                 result->LibImageSize[i] = g_LibStats.Libs[i].ImageSize;
-                result->MmapDebug[12] = g_ExcChainMap[0];
-            result->MmapDebug[13] = g_ExcChainMap[1];
-            result->MmapDebug[14] = g_ExcChainMap[2];
-            result->MmapDebug[15] = g_ExcChainMap[3];
-            result->InterpRelaCount = g_InterpRelaCount;
+                result->InterpRelaCount = g_InterpRelaCount;
             result->InterpRelaApplied = g_InterpRelaApplied;
             result->InterpRelrCount = g_InterpRelrCount;
             result->InterpRelrApplied = g_InterpRelrApplied;
@@ -10174,6 +10170,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             {
                 result->MmapDebug[i] = g_MmapDebug[i];
             }
+            result->MmapDebug[12] = g_ExcChainMap[0];
+            result->MmapDebug[13] = g_ExcChainMap[1];
+            result->MmapDebug[14] = g_ExcChainMap[2];
+            result->MmapDebug[15] = g_ExcChainMap[3];
 
             for (i = 0; i < 40; i++)
             {
