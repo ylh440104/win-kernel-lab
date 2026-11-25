@@ -2667,15 +2667,22 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         g_ExitCode = (ULONG)registers.Args[0];
         g_ExitCalled = 1;
         g_ExitThreadPtr = (ULONG64)(ULONG_PTR)PsGetCurrentThread();
-        g_ExitTermStatus = STATUS_NOT_SUPPORTED;
-        if (g_TerminateThreadFn != 0)
+        g_ExitTermStatus = STATUS_SUCCESS;
+        g_ExitSuspended = 0;
+        if (g_SuspendThreadFn != 0 && g_PicoThreadObject != 0)
         {
-            g_ExitTermStatus = STATUS_SUCCESS;
-            status = ((NTSTATUS (*)(PETHREAD, NTSTATUS, BOOLEAN))g_TerminateThreadFn)(
-                PsGetCurrentThread(), (NTSTATUS)(ULONG)g_ExitCode, TRUE);
-            g_ExitTermStatus = (ULONG)status;
+            ULONG prevSuspend = 0;
+            __try
+            {
+                ((NTSTATUS (*)(PVOID, PULONG))g_SuspendThreadFn)(g_PicoThreadObject, &prevSuspend);
+                g_ExitSuspended = 1;
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_ExitSuspended = 0xDEAD;
+            }
         }
-        return (ULONG64)(-5);
+        return 0;
     }
     case LX_SYS_CLOSE:
         return LxCloseFile((ULONG)Parameters[1]);
@@ -4211,10 +4218,6 @@ static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
     if (g_ExceptionCount <= RTL_NUMBER_OF(g_ExcAddrSeq) && Record != NULL)
     {
         g_ExcAddrSeq[g_ExceptionCount - 1] = (ULONG64)(ULONG_PTR)Record->ExceptionAddress;
-    }
-    if (g_ExceptionCount > 4000)
-    {
-        return (ULONG64)0xC0000001u;
     }
     return 0;
 }
