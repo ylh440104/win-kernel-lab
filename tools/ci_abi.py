@@ -73,16 +73,16 @@ def preflight():
     assert 'candIov' not in driver
     assert 'KAPC_STATE apcState;' not in driver
     assert 'frame + 0x148' in driver and 'frame + 0x150' in driver
-    assert driver.count('return LxSysMmapDecoded(Context);') == 1
-    assert driver.count('return LxSysMunmapDecoded(Context);') == 1
+    assert 'LxSysMmapDecoded' not in driver
+    assert 'LxSysMunmapDecoded' not in driver
     assert 'LX_SYS_PREAD64' in driver
-    assert '#include "lxmap_runtime.h"' in driver
+    assert 'LxCommitRegion' not in driver
     print('WRITEV_DISPATCH and frame decoder verified')
 
 
 def publish():
     preflight()
-    paths = ['driver/lxrun.c', 'driver/lxprobe.c', 'driver/lxio_runtime.h', 'driver/lxmap_runtime.h', '.github/workflows/build-driver.yml', 'tools/ci_abi.py']
+    paths = ['driver/lxrun.c', 'driver/lxprobe.c', 'driver/lxio_runtime.h', '.github/workflows/build-driver.yml', 'tools/ci_abi.py']
     head = request('git/ref/heads/main')['object']['sha']
     commit = request('git/commits/' + head)
     tree = []

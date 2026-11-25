@@ -2580,7 +2580,6 @@ vectorDone:
 }
 
 #include "lxio_runtime.h"
-#include "lxmap_runtime.h"
 
 static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Context)
 {
@@ -2732,7 +2731,33 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     }
 
     case LX_SYS_ACCESS:
-        return LxSysAccessDecoded(Context);
+    {
+        CHAR accessPath[260];
+        WCHAR accessNt[300];
+        ULONG accessLength;
+        NTSTATUS accessStatus;
+
+        accessLength = LxCopyLinuxPath(Parameters[1], accessPath, sizeof(accessPath));
+
+        if (accessLength == 0)
+        {
+            return (ULONG64)(-14);
+        }
+
+        if (LxBuildNtPath(accessPath, accessNt, RTL_NUMBER_OF(accessNt)) == 0)
+        {
+            return (ULONG64)(-2);
+        }
+
+        accessStatus = LxQueryExists(accessNt);
+
+        if (!NT_SUCCESS(accessStatus))
+        {
+            return (ULONG64)(-2);
+        }
+
+        return 0;
+    }
 
     case LX_SYS_LSEEK:
     {
@@ -3145,7 +3170,297 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
 
     case LX_SYS_MMAP:
-        return LxSysMmapDecoded(Context);
+    {
+        ULONG64 mapAddress = 0;
+        ULONG64 mapLength = 0;
+        ULONG64 mapProt = 0;
+        ULONG64 mapFlags = 0;
+        ULONG64 mapFd = 0;
+        ULONG64 mapOffset = 0;
+        ULONG desiredProtection;
+        LX_SYSCALL_REGISTERS registers;
+        if (!NT_SUCCESS(LxDecodeSyscallRegisters(Context, &registers)))
+        {
+            return (ULONG64)(-14);
+        }
+        mapAddress = registers.Args[0];
+        mapLength = registers.Args[1];
+        mapProt = registers.Args[2];
+        mapFlags = registers.Args[3];
+        mapFd = (ULONG)registers.Args[4];
+        mapOffset = registers.Args[5];
+        if (mapLength == 0 || mapLength > 0x40000000ull || (mapOffset & 0xFFF) != 0)
+        {
+            return (ULONG64)(-22);
+        }
+        if ((mapFlags & 0x20u) != 0)
+        {
+            mapFd = (ULONG64)(-1);
+        }
+        else if (mapFd >= LX_MAX_FD || !g_FdTable[mapFd].Used)
+        {
+            return (ULONG64)(-9);
+        }
+
+        g_MmapDebug[0] = mapAddress;
+        g_MmapDebug[1] = mapLength;
+        g_MmapDebug[2] = mapProt;
+        g_MmapDebug[3] = mapFlags;
+        g_MmapDebug[4] = mapFd;
+        g_MmapDebug[5] = mapOffset;
+        g_MmapDebug[6] = (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used) ? 1 : 0;
+        g_MmapDebug[7] = (mapFd < LX_MAX_FD) ? (ULONG64)(ULONG_PTR)g_FdTable[mapFd].Handle : 0;
+
+        mapLength = (mapLength + 0xFFF) & ~0xFFFull;
+
+        if (mapProt & 0x4u)
+        {
+            desiredProtection = PAGE_EXECUTE_READWRITE;
+        }
+        else if (mapProt & 0x2u)
+        {
+            desiredProtection = PAGE_READWRITE;
+        }
+        else
+        {
+            desiredProtection = PAGE_READONLY;
+        }
+
+        if ((mapFlags & 0x10u) == 0)
+        {
+            mapAddress = mapAddress & ~0xFFFull;
+        }
+
+        if (mapAddress == 0 && (mapFlags & 0x20u) == 0)
+        {
+            mapAddress = g_MmapCurrent;
+        }
+        if (mapAddress != 0 && g_PoolSize != 0 && mapAddress + mapLength > g_PoolBase + g_PoolSize)
+        {
+            if ((mapFlags & 0x20u) == 0)
+            {
+                return (ULONG64)(-12);
+            }
+            mapAddress = 0;
+        }
+
+        if (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used && g_FdTable[mapFd].Handle != NULL &&
+            g_PicoProcessObject != NULL)
+        {
+            HANDLE sectionHandle = NULL;
+            OBJECT_ATTRIBUTES sectionAttributes;
+            PVOID viewBase = (PVOID)(ULONG_PTR)mapAddress;
+            SIZE_T viewSize = 0;
+            LARGE_INTEGER sectionOffset;
+            LARGE_INTEGER fileSize;
+            IO_STATUS_BLOCK sectionIosb;
+            FILE_STANDARD_INFORMATION fileInfo;
+            NTSTATUS mapStatus;
+
+            __try
+            {
+                RtlZeroMemory(&fileInfo, sizeof(fileInfo));
+                mapStatus = ZwQueryInformationFile(g_FdTable[mapFd].Handle, &sectionIosb, &fileInfo,
+                                                   sizeof(fileInfo), FileStandardInformation);
+
+                g_MmapDebug[6] = (ULONG64)mapStatus;
+
+                if (NT_SUCCESS(mapStatus))
+                {
+                    fileSize.QuadPart = fileInfo.EndOfFile.QuadPart;
+                    g_MmapDebug[7] = (ULONG64)fileSize.QuadPart;
+                }
+                else
+                {
+                    fileSize.QuadPart = (LONGLONG)(mapOffset + mapLength);
+                }
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                fileSize.QuadPart = (LONGLONG)(mapOffset + mapLength);
+            }
+
+            sectionOffset.QuadPart = (LONGLONG)mapOffset;
+            InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+
+            mapStatus = ZwCreateSection(&sectionHandle, SECTION_MAP_READ, &sectionAttributes, &fileSize,
+                                        PAGE_READONLY, SEC_COMMIT, g_FdTable[mapFd].Handle);
+
+            g_LastMmapStatus = (ULONG64)mapStatus | 0x100000000ull;
+            g_MmapDebug[6] = (ULONG64)mapStatus;
+            g_MmapDebug[7] = fileSize.QuadPart;
+
+            if (NT_SUCCESS(mapStatus))
+            {
+                mapStatus = ZwMapViewOfSection(sectionHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0, 0,
+                                               &sectionOffset, &viewSize, ViewUnmap, 0, PAGE_READONLY);
+
+                ZwClose(sectionHandle);
+
+                g_LastMmapStatus = (ULONG64)mapStatus | 0x200000000ull;
+
+                if (NT_SUCCESS(mapStatus))
+                {
+                    g_MmapCurrent = (ULONG64)(ULONG_PTR)viewBase + viewSize;
+                    g_MmapCount++;
+                    g_LastMmapAddress = (ULONG64)(ULONG_PTR)viewBase;
+                    g_LastMmapStatus = 0;
+
+                    {
+                        UCHAR probeBytes[16];
+                        ULONG probeIndex;
+
+                        RtlZeroMemory(probeBytes, sizeof(probeBytes));
+
+                        __try
+                        {
+                            RtlCopyMemory(probeBytes, viewBase, 16);
+                        }
+                        __except (EXCEPTION_EXECUTE_HANDLER)
+                        {
+                            probeBytes[0] = 0xEE;
+                        }
+
+                        for (probeIndex = 0; probeIndex < 16; probeIndex++)
+                        {
+                            g_MmapBytes[probeIndex] = probeBytes[probeIndex];
+                        }
+                    }
+
+                    return g_LastMmapAddress;
+                }
+            }
+        }
+
+        if (g_PicoProcessObject != NULL && g_LastPicoHandle != NULL && (mapFlags & 0x20u) != 0 && mapFd > LX_MAX_FD)
+        {
+            ULONG64 allocBase = 0;
+            ULONG64 allocSize = (mapLength + 0xFFFFull) & ~0xFFFFull;
+            NTSTATUS allocStatus;
+            ULONG allocProt = PAGE_READWRITE;
+            if (mapProt & 0x4u)
+            {
+                allocProt = PAGE_EXECUTE_READWRITE;
+            }
+            allocBase = 0;
+            /* 按 lxcore 的 LxpMmAllocateMapVm 语义：一次 MEM_COMMIT|MEM_RESERVE，
+               不再分步 RESERVE+逐块 COMMIT（那会丢 PTE） */
+            if (g_PicoProcessObject != NULL)
+            {
+                HANDLE picoProcHandle = NULL;
+                if (NT_SUCCESS(ObOpenObjectByPointer(g_PicoProcessObject, 0, NULL, 0x1F0000, NULL, KernelMode, &picoProcHandle)))
+                {
+                    g_LastPicoHandle = (ULONG64)picoProcHandle;
+                    g_MmapDebug[9] = 0xA1u;
+                }
+            }
+            allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
+                                                  (PSIZE_T)&allocSize, MEM_COMMIT | MEM_RESERVE, allocProt);
+            if (NT_SUCCESS(allocStatus))
+            {
+                ULONG64 cAddr = allocBase;
+                ULONG64 cRemain = allocSize;
+                while (cRemain > 0)
+                {
+                    ULONG64 cSize = (cRemain > 0x10000ull) ? 0x10000ull : cRemain;
+                    PVOID cBase = (PVOID)(ULONG_PTR)cAddr;
+                    SIZE_T cLen = (SIZE_T)cSize;
+                    NTSTATUS cStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &cBase, 0, &cLen,
+                                                               MEM_COMMIT, allocProt);
+                    if (!NT_SUCCESS(cStatus))
+                    {
+                        g_MmapDebug[6] = (ULONG64)cStatus;
+                        break;
+                    }
+                    cAddr += cSize;
+                    cRemain -= cSize;
+                }
+            }
+            g_MmapDebug[6] = (ULONG64)allocStatus;
+            g_MmapDebug[7] = allocBase;
+            g_MmapRaw[1] = (ULONG64)g_MmapTouchPages;
+            if (NT_SUCCESS(allocStatus))
+            {
+                {
+                    ULONG64 tp = allocBase;
+                    ULONG64 tend = allocBase + allocSize;
+                    ULONG tpages = 0;
+                    __try
+                    {
+                        while (tp < tend && tpages < 128)
+                        {
+                            *(volatile UCHAR *)(ULONG_PTR)tp = 0;
+                            tp += 4096;
+                            tpages++;
+                        }
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                    }
+                    g_MmapTouchPages = tpages;
+                g_MmapDebug[0] = (ULONG64)tpages;
+                }
+                g_MmapCurrent = allocBase + allocSize;
+                g_MmapCount++;
+                g_LastMmapAddress = allocBase;
+                g_LastMmapStatus = 0;
+                return allocBase;
+            }
+        }
+        if (g_PicoProcessObject != NULL && g_LastPicoHandle != NULL)
+        {
+            HANDLE anonSection = NULL;
+            OBJECT_ATTRIBUTES anonAttr;
+            PVOID anonBase = NULL;
+            if ((mapFlags & 0x10u) != 0 && mapAddress != 0)
+            {
+                anonBase = (PVOID)(ULONG_PTR)mapAddress;
+            }
+            SIZE_T anonViewSize = 0;
+            LARGE_INTEGER anonSize;
+            NTSTATUS anonStatus;
+            ULONG anonProt = PAGE_READWRITE;
+            if (mapProt & 0x4u)
+            {
+                anonProt = PAGE_EXECUTE_READWRITE;
+            }
+            else if (mapProt & 0x2u)
+            {
+                anonProt = PAGE_READWRITE;
+            }
+            else
+            {
+                anonProt = PAGE_READONLY;
+            }
+            anonSize.QuadPart = (LONGLONG)mapLength;
+            InitializeObjectAttributes(&anonAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
+            anonStatus = ZwCreateSection(&anonSection, SECTION_MAP_READ | SECTION_MAP_WRITE,
+                                         &anonAttr, &anonSize, PAGE_READWRITE, SEC_COMMIT, NULL);
+            g_LastMmapStatus = (ULONG64)anonStatus | 0x300000000ull;
+            if (NT_SUCCESS(anonStatus))
+            {
+                anonStatus = ZwMapViewOfSection(anonSection, (HANDLE)g_LastPicoHandle, &anonBase, 0, 0, NULL,
+                                                &anonViewSize, ViewUnmap, 0, anonProt);
+                ZwClose(anonSection);
+                g_LastMmapStatus = (ULONG64)anonStatus | 0x400000000ull;
+                if (NT_SUCCESS(anonStatus))
+                {
+                    g_MmapCurrent = (ULONG64)(ULONG_PTR)anonBase + anonViewSize;
+                    g_MmapCount++;
+                    g_LastMmapAddress = (ULONG64)(ULONG_PTR)anonBase;
+                    g_LastMmapStatus = 0;
+                    g_MmapDebug[6] = (ULONG64)(ULONG_PTR)anonBase;
+                    g_MmapDebug[7] = (ULONG64)anonViewSize;
+                    return g_LastMmapAddress;
+                }
+            }
+        }
+        g_MmapCurrent = mapAddress + mapLength;
+        g_MmapCount++;
+        g_LastMmapAddress = mapAddress;
+        g_LastMmapStatus = 0xC0000004u;
+        return mapAddress;
+    }
 
     case LX_SYS_ARCH_PRCTL:
     {
@@ -3410,7 +3725,47 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return 0;
     }
     case LX_SYS_MUNMAP:
-        return LxSysMunmapDecoded(Context);
+    {
+        ULONG64 unAddr = Parameters[1];
+        ULONG64 unLen = Parameters[2];
+        NTSTATUS umStatus = STATUS_UNSUCCESSFUL;
+        LX_APC_STATE umApc;
+        BOOLEAN umAtt = FALSE;
+        unLen = (unLen + 0xFFF) & ~0xFFFull;
+        if (unAddr == 0 || unLen == 0 || g_PicoProcessObject == NULL || g_LastPicoHandle == NULL)
+        {
+            return 0;
+        }
+        __try
+        {
+            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&umApc);
+            umAtt = TRUE;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            umAtt = FALSE;
+        }
+        __try
+        {
+            umStatus = ZwUnmapViewOfSection((HANDLE)g_LastPicoHandle, (PVOID)(ULONG_PTR)unAddr);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            umStatus = STATUS_ACCESS_VIOLATION;
+        }
+        if (umAtt)
+        {
+            __try
+            {
+                KeUnstackDetachProcess((PVOID)&umApc);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+            }
+        }
+        g_MmapDebug[4] = (ULONG64)umStatus;
+        return 0;
+    }
 
     case LX_SYS_GETTIMEOFDAY:
     {
