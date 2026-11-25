@@ -873,9 +873,6 @@ static int SendLoadElf(HANDLE device, const wchar_t *Path)
         printf("  INTERP: status=0x%llx base=0x%llx selfboot=%llu stage=%llu\n",
                (unsigned long long)q.InterpLoadStatus, (unsigned long long)q.InterpBase,
                (unsigned long long)q.LdsoSelfBoot, (unsigned long long)q.LdsoBase);
-        printf("  EXCMAP: map=0x%llx l_addr=0x%llx l_name=0x%llx l_ld=0x%llx\n",
-               (unsigned long long)q.MmapDebug[12], (unsigned long long)q.MmapDebug[13],
-               (unsigned long long)q.MmapDebug[14], (unsigned long long)q.MmapDebug[15]);
         printf("  INTERPRELOC: rela=%lu/%lu relr=%lu(written)/%lu(entries) entry=0x%llx atphdr=0x%llx phnum=%llu\n",
                q.InterpRelaApplied, q.InterpRelaCount, q.InterpRelrApplied, q.InterpRelrCount,
                (unsigned long long)q.InterpEntry, (unsigned long long)q.AtPhdr,
@@ -1299,6 +1296,9 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  EXCCHAIN: rbp=%llx slot98=%llx r12=%llx l_info5=%llx\n",
                    (unsigned long long)q.ReadDebug[8], (unsigned long long)q.ReadDebug[9],
                    (unsigned long long)q.ReadDebug[10], (unsigned long long)q.ReadDebug[11]);
+            printf("  EXCMAP: map=0x%llx l_addr=0x%llx l_name=0x%llx l_ld=0x%llx\n",
+                   (unsigned long long)q.MmapDebug[12], (unsigned long long)q.MmapDebug[13],
+                   (unsigned long long)q.MmapDebug[14], (unsigned long long)q.MmapDebug[15]);
             printf("  WRITEV_ABI: fd=%llu iov=0x%llx count=%llu first=0x%llx captured=%lu status=0x%08llx\n",
                    (unsigned long long)q.StatDebug[0], (unsigned long long)q.StatDebug[10],
                    (unsigned long long)q.StatDebug[9], (unsigned long long)q.StatDebug[11],
