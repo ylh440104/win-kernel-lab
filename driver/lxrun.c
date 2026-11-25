@@ -4161,7 +4161,7 @@ static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
     return value;
 }
 
-static BOOLEAN LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFrame,
+static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFrame,
                                    PVOID TrapFrame, KPROCESSOR_MODE PreviousMode,
                                    BOOLEAN FirstChance)
 {
@@ -4212,7 +4212,11 @@ static BOOLEAN LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
     {
         g_ExcAddrSeq[g_ExceptionCount - 1] = (ULONG64)(ULONG_PTR)Record->ExceptionAddress;
     }
-    return FALSE;
+    if (g_ExceptionCount > 4000)
+    {
+        return (ULONG64)0xC0000001u;
+    }
+    return 0;
 }
 
 static VOID LxProcessTerminate(PVOID Args)
