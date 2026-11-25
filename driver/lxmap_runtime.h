@@ -2,7 +2,6 @@ typedef struct _LX_FILE_VIEW
 {
     ULONG64 Base;
     ULONG64 Size;
-    ULONG64 FileOffset;
     LONG Fd;
     BOOLEAN Valid;
 } LX_FILE_VIEW;
@@ -13,9 +12,7 @@ static LX_FILE_VIEW g_FileViews[LX_MAX_FILE_VIEWS];
 static ULONG g_FileViewCount = 0;
 static ULONG64 g_FileMmapFail[4];
 
-static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length);
-
-static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 FileOffset, ULONG64 *ViewBase)
+static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 *ViewBase)
 {
     ULONG index;
     if (Length == 0)
@@ -25,6 +22,7 @@ static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 
     for (index = 0; index < g_FileViewCount; index++)
     {
         const LX_FILE_VIEW *view = &g_FileViews[index];
+        ULONG64 delta;
         if (!view->Valid || view->Fd != Fd || view->Base == 0)
         {
             continue;
@@ -33,15 +31,12 @@ static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 
         {
             continue;
         }
-        if (Address - view->Base != FileOffset - view->FileOffset)
+        delta = Address - view->Base;
+        if (delta > view->Size)
         {
             continue;
         }
-        if (Address - view->Base > view->Size)
-        {
-            continue;
-        }
-        if (Address - view->Base > view->Size - Length)
+        if (delta > view->Size - Length)
         {
             continue;
         }
@@ -54,7 +49,7 @@ static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 
     return FALSE;
 }
 
-static VOID LxRecordFileView(ULONG64 Base, ULONG64 Size, ULONG64 FileOffset, LONG Fd)
+static VOID LxRecordFileView(ULONG64 Base, ULONG64 Size, LONG Fd)
 {
     ULONG slot;
     if (g_FileViewCount < LX_MAX_FILE_VIEWS)
@@ -68,9 +63,77 @@ static VOID LxRecordFileView(ULONG64 Base, ULONG64 Size, ULONG64 FileOffset, LON
     }
     g_FileViews[slot].Base = Base;
     g_FileViews[slot].Size = Size;
-    g_FileViews[slot].FileOffset = FileOffset;
     g_FileViews[slot].Fd = Fd;
     g_FileViews[slot].Valid = TRUE;
+}
+
+static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length)
+{
+    UCHAR *staging;
+    ULONG64 done = 0;
+    ULONG64 stagingSize = 0x10000ull;
+    NTSTATUS status;
+    if (Length == 0)
+    {
+        return 0;
+    }
+    staging = (UCHAR *)ExAllocatePool2(POOL_FLAG_NON_PAGED, (SIZE_T)stagingSize, 'mFxL');
+    if (staging == NULL)
+    {
+        return (ULONG64)(-12);
+    }
+    while (done < Length)
+    {
+        IO_STATUS_BLOCK io;
+        LARGE_INTEGER readOffset;
+        ULONG chunk = (ULONG)((Length - done > stagingSize) ? stagingSize : Length - done);
+        ULONG copyIndex;
+        RtlZeroMemory(&io, sizeof(io));
+        RtlZeroMemory(staging, (SIZE_T)chunk);
+        readOffset.QuadPart = (LONGLONG)(FileOffset + done);
+        status = ZwReadFile(FileHandle, NULL, NULL, NULL, &io, staging, chunk, &readOffset, NULL);
+        if (status == STATUS_END_OF_FILE)
+        {
+            break;
+        }
+        if (!NT_SUCCESS(status) || io.Information == 0)
+        {
+            g_FileMmapFail[0] = 0xE1u;
+            g_FileMmapFail[1] = (ULONG64)status;
+            break;
+        }
+        if (io.Information > chunk)
+        {
+            io.Information = chunk;
+        }
+        for (copyIndex = 0; copyIndex < io.Information; copyIndex += 8)
+        {
+            ULONG64 address = TargetBase + done + copyIndex;
+            ULONG copySize = 8;
+            if (copyIndex + copySize > io.Information)
+            {
+                copySize = io.Information - copyIndex;
+            }
+            __try
+            {
+                RtlCopyMemory((PVOID)(ULONG_PTR)address, staging + copyIndex, copySize);
+            }
+            __except (EXCEPTION_EXECUTE_HANDLER)
+            {
+                g_FileMmapFail[0] = 0xE2u;
+                g_FileMmapFail[1] = address;
+                ExFreePoolWithTag(staging, 'mFxL');
+                return (ULONG64)(-14);
+            }
+        }
+        done += io.Information;
+        if (io.Information < chunk)
+        {
+            break;
+        }
+    }
+    ExFreePoolWithTag(staging, 'mFxL');
+    return done;
 }
 
 static ULONG64 LxSysMmapFile(ULONG64 Context)
@@ -85,6 +148,8 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
     ULONG64 offset;
     LONG fd;
     ULONG64 viewBase = 0;
+    ULONG64 wholeSize;
+    ULONG64 requestBase = 0;
     IO_STATUS_BLOCK io;
     FILE_STANDARD_INFORMATION fileInfo;
     NTSTATUS status;
@@ -145,7 +210,12 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
             g_MmapDebug[11] = 0xF4u;
             return (ULONG64)(-22);
         }
-        if (LxFindFileView(fd, address, length, offset, &viewBase))
+        requestBase = address;
+        if (offset != 0 && requestBase >= offset)
+        {
+            requestBase = address - offset;
+        }
+        if (LxFindFileView(fd, requestBase, length, &viewBase))
         {
             g_MmapDebug[8] = viewBase;
             g_MmapDebug[11] = 0xC1u;
@@ -164,8 +234,13 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
         return LxNtStatusToErrno(status);
     }
     g_MmapDebug[9] = (ULONG64)fileInfo.EndOfFile.QuadPart;
-    base = (flags & 0x10u) != 0 ? (PVOID)(ULONG_PTR)address : NULL;
-    viewSize = (SIZE_T)length;
+    wholeSize = ((ULONG64)fileInfo.EndOfFile.QuadPart + 0xFFFull) & ~0xFFFull;
+    if (wholeSize < offset + length)
+    {
+        wholeSize = offset + length;
+    }
+    base = requestBase != 0 ? (PVOID)(ULONG_PTR)requestBase : NULL;
+    viewSize = (SIZE_T)wholeSize;
     if (g_PicoProcessObject != NULL && PsGetCurrentProcess() != g_PicoProcessObject)
     {
         KeStackAttachProcess(g_PicoProcessObject, (PVOID)&apcState);
@@ -178,13 +253,13 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
     {
         KeUnstackDetachProcess((PVOID)&apcState);
     }
-    if (!NT_SUCCESS(status) || viewSize < length)
+    if (!NT_SUCCESS(status) || viewSize < wholeSize)
     {
         if (g_FileMmapFail[0] == 0)
         {
             g_FileMmapFail[0] = (ULONG64)status | 0x100000000ull;
-            g_FileMmapFail[1] = address;
-            g_FileMmapFail[2] = length;
+            g_FileMmapFail[1] = requestBase;
+            g_FileMmapFail[2] = wholeSize;
             g_FileMmapFail[3] = flags;
         }
         if (NT_SUCCESS(status))
@@ -200,7 +275,7 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
     g_MmapDebug[8] = viewBase;
     g_MmapDebug[7] = (ULONG64)viewSize;
     {
-        ULONG64 copied = LxCopyFileIntoView(g_FdTable[fd].Handle, viewBase, offset, length);
+        ULONG64 copied = LxCopyFileIntoView(g_FdTable[fd].Handle, viewBase, 0, wholeSize);
         if ((LONG64)copied < 0)
         {
             g_MmapDebug[11] = 0xF8u;
@@ -208,73 +283,13 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
         }
         g_MmapDebug[9] = copied;
     }
-    LxRecordFileView(viewBase, length, offset, fd);
+    LxRecordFileView(viewBase, wholeSize, fd);
     g_MmapDebug[10] = (ULONG64)g_FileViewCount;
     g_MmapDebug[11] = 0xC0u;
     g_MmapCount++;
-    g_LastMmapAddress = viewBase;
+    g_LastMmapAddress = viewBase + offset;
     g_LastMmapStatus = 0;
-    return viewBase;
-}
-
-static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length)
-{
-    UCHAR *staging;
-    ULONG64 done = 0;
-    ULONG64 stagingSize = 0x10000ull;
-    NTSTATUS status;
-    if (Length == 0)
-    {
-        return 0;
-    }
-    staging = (UCHAR *)ExAllocatePool2(POOL_FLAG_NON_PAGED, (SIZE_T)stagingSize, 'mFxL');
-    if (staging == NULL)
-    {
-        return (ULONG64)(-12);
-    }
-    while (done < Length)
-    {
-        IO_STATUS_BLOCK io;
-        LARGE_INTEGER readOffset;
-        ULONG chunk = (ULONG)((Length - done > stagingSize) ? stagingSize : Length - done);
-        ULONG copyIndex;
-        RtlZeroMemory(&io, sizeof(io));
-        RtlZeroMemory(staging, (SIZE_T)chunk);
-        readOffset.QuadPart = (LONGLONG)(FileOffset + done);
-        status = ZwReadFile(FileHandle, NULL, NULL, NULL, &io, staging, chunk, &readOffset, NULL);
-        if (!NT_SUCCESS(status) || io.Information == 0)
-        {
-            g_MmapDebug[11] = 0xE1u;
-            break;
-        }
-        if (io.Information > chunk)
-        {
-            io.Information = chunk;
-        }
-        for (copyIndex = 0; copyIndex < io.Information; copyIndex += 8)
-        {
-            ULONG64 address = TargetBase + done + copyIndex;
-            ULONG copySize = 8;
-            if (copyIndex + copySize > io.Information)
-            {
-                copySize = io.Information - copyIndex;
-            }
-            if ((LONG64)LxCopyUserBytes(address, staging + copyIndex, (SIZE_T)copySize, TRUE) < 0)
-            {
-                g_MmapDebug[11] = 0xE2u;
-                g_MmapDebug[8] = address;
-                ExFreePoolWithTag(staging, 'mFxL');
-                return (ULONG64)(-14);
-            }
-        }
-        done += io.Information;
-        if (io.Information < chunk)
-        {
-            break;
-        }
-    }
-    ExFreePoolWithTag(staging, 'mFxL');
-    return done;
+    return viewBase + offset;
 }
 
 static ULONG64 LxSysMunmapDecoded(ULONG64 Context)
