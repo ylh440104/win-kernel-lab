@@ -245,7 +245,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG MmapCount;
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
-    ULONG64 MmapDebug[8];
+    ULONG64 MmapDebug[12];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
     ULONG64 TlsBlockBase;
@@ -1251,11 +1251,13 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  mmapCount=%lu lastMmap=0x%llx mmapStatus=0x%llx\n", q.MmapCount,
                    (unsigned long long)q.LastMmapAddress,
                    (unsigned long long)q.LastMmapStatus);
-            printf("  mmapDebug=%llx %llx %llx %llx %llx %llx fdok=%llx handle=%llx\n",
+            printf("  mmapDebug=%llx %llx %llx %llx %llx %llx a0=%llx a1=%llx probe=%llx back=%llx views=%llx pages=%llx\n",
                    (unsigned long long)q.MmapDebug[0], (unsigned long long)q.MmapDebug[1],
                    (unsigned long long)q.MmapDebug[2], (unsigned long long)q.MmapDebug[3],
                    (unsigned long long)q.MmapDebug[4], (unsigned long long)q.MmapDebug[5],
-                   (unsigned long long)q.MmapDebug[6], (unsigned long long)q.MmapDebug[7]);
+                   (unsigned long long)q.MmapDebug[6], (unsigned long long)q.MmapDebug[7],
+                   (unsigned long long)q.MmapDebug[8], (unsigned long long)q.MmapDebug[9],
+                   (unsigned long long)q.MmapDebug[10], (unsigned long long)q.MmapDebug[11]);
             printf("  mmapBytes:");
             {
                 int bi;
@@ -1283,11 +1285,6 @@ printf("  writeLen=%lu\n", q.WriteLength);
                    (unsigned long long)q.ReadDebug[0], (unsigned long long)q.ReadDebug[1],
                    (unsigned long long)q.ReadDebug[4], (unsigned long long)q.ReadDebug[5],
                    (unsigned long long)q.ReadDebug[7], (unsigned long long)q.ReadDebug[6]);
-            printf("  NFARAW_LEGACY: %llx %llx %llx %llx %llx %llx %llx %llx\n",
-                   (unsigned long long)q.MmapDebug[0], (unsigned long long)q.MmapDebug[1],
-                   (unsigned long long)q.MmapDebug[2], (unsigned long long)q.MmapDebug[3],
-                   (unsigned long long)q.MmapDebug[4], (unsigned long long)q.MmapDebug[5],
-                   (unsigned long long)q.MmapDebug[6], (unsigned long long)q.MmapDebug[7]);
             {
                 int si;
                 for (si = 0; si < 8; si++)

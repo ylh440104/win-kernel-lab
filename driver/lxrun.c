@@ -610,7 +610,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG MmapCount;
     ULONG64 LastMmapAddress;
     ULONG64 LastMmapStatus;
-    ULONG64 MmapDebug[8];
+    ULONG64 MmapDebug[12];
     ULONG64 MmapContext[40];
     UCHAR MmapBytes[16];
     ULONG64 TlsBlockBase;
@@ -1065,6 +1065,7 @@ static ULONG g_GetContextStatus = 0xFFFFFFFFu;
 #define LX_SYS_ARCH_PRCTL 158
 #define LX_SYS_SET_TID_ADDRESS 218
 #define LX_SYS_EXIT_GROUP 231
+#define LX_SYS_PREAD64 17
 #define LX_SYS_OPEN 2
 #define LX_SYS_CLOSE 3
 #define LX_SYS_STAT 4
@@ -2579,12 +2580,27 @@ vectorDone:
 }
 
 #include "lxio_runtime.h"
+#include "lxmap_runtime.h"
 
 static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Context)
 {
-    ULONG64 arg0 = Parameters[0];
-    ULONG64 arg1 = Parameters[1];
-    ULONG64 arg2 = Parameters[2];
+    LX_SYSCALL_REGISTERS regs;
+    ULONG haveRegs = NT_SUCCESS(LxDecodeSyscallRegisters(Context, &regs)) ? 1u : 0u;
+    ULONG64 arg0;
+    ULONG64 arg1;
+    ULONG64 arg2;
+    if (haveRegs == 0)
+    {
+        ULONG fallback;
+        for (fallback = 0; fallback < 6; fallback++)
+        {
+            regs.Args[fallback] = Parameters[fallback + 1];
+        }
+    }
+    arg0 = regs.Args[0];
+    arg1 = regs.Args[1];
+    arg2 = regs.Args[2];
+    UNREFERENCED_PARAMETER(Parameters);
 
     if (g_TlsBlockBase != 0 && g_SetDescriptorBaseFn != 0)
     {
@@ -2604,16 +2620,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     }
 
     g_TraceRing[g_TraceIdx & 63] = Number;
-    g_TraceRing[(g_TraceIdx + 1) & 63] = Parameters[0];
-    g_TraceRing[(g_TraceIdx + 2) & 63] = Parameters[1];
+    g_TraceRing[(g_TraceIdx + 1) & 63] = arg0;
+    g_TraceRing[(g_TraceIdx + 2) & 63] = arg1;
     g_TraceIdx += 3;
     g_TraceTotal++;
     if (g_EntryCount < 8)
     {
         g_EntryDump[g_EntryCount][0] = Number;
-        g_EntryDump[g_EntryCount][1] = Parameters[0];
-        g_EntryDump[g_EntryCount][2] = Parameters[1];
-        g_EntryDump[g_EntryCount][3] = Parameters[2];
+        g_EntryDump[g_EntryCount][1] = arg0;
+        g_EntryDump[g_EntryCount][2] = arg1;
+        g_EntryDump[g_EntryCount][3] = arg2;
         g_EntryCount++;
     }
 
@@ -2624,12 +2640,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_OPENAT:
         return LxSysOpenDecoded(Context, TRUE);
     case LX_SYS_STAT:
+    case LX_SYS_LSTAT:
     case LX_SYS_FSTAT:
     case LX_SYS_NEWFSTATAT:
         return LxSysStatDecoded(Context, (ULONG)Number);
     case LX_SYS_READ:
         return LxSysReadDecoded(Context, FALSE);
-    case 17:
+    case LX_SYS_PREAD64:
         return LxSysReadDecoded(Context, TRUE);
     case LX_SYS_EXIT:
     case LX_SYS_EXIT_GROUP:
@@ -2654,22 +2671,22 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return (ULONG64)(-5);
     }
     case LX_SYS_CLOSE:
-        return LxCloseFile((ULONG)Parameters[1]);
+        return LxCloseFile((ULONG)regs.Args[0]);
 
     case LX_SYS_GETDENTS64:
     {
-        ULONG fd = (ULONG)Parameters[1];
-        ULONG64 gdBuf = Parameters[2];
-        ULONG count = (ULONG)Parameters[3];
+        ULONG fd = (ULONG)regs.Args[0];
+        ULONG64 gdBuf = regs.Args[1];
+        ULONG count = (ULONG)regs.Args[2];
         {
             ULONG64 tfRsi = 0;
             ULONG64 tfRdx = 0;
             ULONG64 tfR10 = 0;
             __try
             {
-                tfRsi = Parameters[2];
-                tfRdx = Parameters[3];
-                tfR10 = Parameters[4];
+                tfRsi = regs.Args[1];
+                tfRdx = regs.Args[2];
+                tfR10 = regs.Args[3];
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
@@ -2687,9 +2704,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             {
                 count = (ULONG)tfR10;
             }
-            if (Parameters[1] != 0 && Parameters[1] < 0x1000)
+            if (regs.Args[0] != 0 && regs.Args[0] < 0x1000)
             {
-                fd = (ULONG)Parameters[1];
+                fd = (ULONG)regs.Args[0];
             }
         }
         if (count == 0 || count > 0x4000)
@@ -2701,39 +2718,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     }
 
     case LX_SYS_ACCESS:
-    {
-        CHAR accessPath[260];
-        WCHAR accessNt[300];
-        ULONG accessLength;
-        NTSTATUS accessStatus;
-
-        accessLength = LxCopyLinuxPath(Parameters[1], accessPath, sizeof(accessPath));
-
-        if (accessLength == 0)
-        {
-            return (ULONG64)(-14);
-        }
-
-        if (LxBuildNtPath(accessPath, accessNt, RTL_NUMBER_OF(accessNt)) == 0)
-        {
-            return (ULONG64)(-2);
-        }
-
-        accessStatus = LxQueryExists(accessNt);
-
-        if (!NT_SUCCESS(accessStatus))
-        {
-            return (ULONG64)(-2);
-        }
-
-        return 0;
-    }
+        return LxSysAccessDecoded(Context);
 
     case LX_SYS_LSEEK:
     {
-        ULONG64 fd = Parameters[1];
-        LONG64 offset = (LONG64)Parameters[2];
-        ULONG64 whence = Parameters[3];
+        ULONG64 fd = regs.Args[0];
+        LONG64 offset = (LONG64)regs.Args[1];
+        ULONG64 whence = regs.Args[2];
         ULONG64 base;
         LONGLONG newPosition;
 
@@ -2798,7 +2789,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         for (i = 0; i < 6; i++)
         {
-            values[i] = Parameters[i];
+            values[i] = regs.Args[i];
         }
 
         for (i = 0; i < 6; i++)
@@ -2817,7 +2808,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             ULONG64 writeCount = 0;
 
-            writeCount = Parameters[3];
+            writeCount = regs.Args[2];
 
             g_WriteDebug[7] = writeCount;
 
@@ -2868,7 +2859,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
             __try
             {
-                contextCount = Parameters[3];
+                contextCount = regs.Args[2];
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
@@ -3067,7 +3058,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_BrkProbe[7] = 0xBBBB0001ull;
             g_BrkDebug[0] = arg0;
             g_BrkDebug[1] = arg1;
-            g_BrkDebug[2] = Parameters[2];
+            g_BrkDebug[2] = regs.Args[1];
             g_BrkDebug[3] = Context;
             g_BrkDebug[4] = brkTarget;
             g_BrkDebug[5] = 0;
@@ -3140,297 +3131,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         }
 
     case LX_SYS_MMAP:
-    {
-        ULONG64 mapAddress = 0;
-        ULONG64 mapLength = 0;
-        ULONG64 mapProt = 0;
-        ULONG64 mapFlags = 0;
-        ULONG64 mapFd = 0;
-        ULONG64 mapOffset = 0;
-        ULONG desiredProtection;
-        LX_SYSCALL_REGISTERS registers;
-        if (!NT_SUCCESS(LxDecodeSyscallRegisters(Context, &registers)))
-        {
-            return (ULONG64)(-14);
-        }
-        mapAddress = registers.Args[0];
-        mapLength = registers.Args[1];
-        mapProt = registers.Args[2];
-        mapFlags = registers.Args[3];
-        mapFd = (ULONG)registers.Args[4];
-        mapOffset = registers.Args[5];
-        if (mapLength == 0 || mapLength > 0x40000000ull || (mapOffset & 0xFFF) != 0)
-        {
-            return (ULONG64)(-22);
-        }
-        if ((mapFlags & 0x20u) != 0)
-        {
-            mapFd = (ULONG64)(-1);
-        }
-        else if (mapFd >= LX_MAX_FD || !g_FdTable[mapFd].Used)
-        {
-            return (ULONG64)(-9);
-        }
-
-        g_MmapDebug[0] = mapAddress;
-        g_MmapDebug[1] = mapLength;
-        g_MmapDebug[2] = mapProt;
-        g_MmapDebug[3] = mapFlags;
-        g_MmapDebug[4] = mapFd;
-        g_MmapDebug[5] = mapOffset;
-        g_MmapDebug[6] = (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used) ? 1 : 0;
-        g_MmapDebug[7] = (mapFd < LX_MAX_FD) ? (ULONG64)(ULONG_PTR)g_FdTable[mapFd].Handle : 0;
-
-        mapLength = (mapLength + 0xFFF) & ~0xFFFull;
-
-        if (mapProt & 0x4u)
-        {
-            desiredProtection = PAGE_EXECUTE_READWRITE;
-        }
-        else if (mapProt & 0x2u)
-        {
-            desiredProtection = PAGE_READWRITE;
-        }
-        else
-        {
-            desiredProtection = PAGE_READONLY;
-        }
-
-        if ((mapFlags & 0x10u) == 0)
-        {
-            mapAddress = mapAddress & ~0xFFFull;
-        }
-
-        if (mapAddress == 0 && (mapFlags & 0x20u) == 0)
-        {
-            mapAddress = g_MmapCurrent;
-        }
-        if (mapAddress != 0 && g_PoolSize != 0 && mapAddress + mapLength > g_PoolBase + g_PoolSize)
-        {
-            if ((mapFlags & 0x20u) == 0)
-            {
-                return (ULONG64)(-12);
-            }
-            mapAddress = 0;
-        }
-
-        if (mapFd < LX_MAX_FD && g_FdTable[mapFd].Used && g_FdTable[mapFd].Handle != NULL &&
-            g_PicoProcessObject != NULL)
-        {
-            HANDLE sectionHandle = NULL;
-            OBJECT_ATTRIBUTES sectionAttributes;
-            PVOID viewBase = (PVOID)(ULONG_PTR)mapAddress;
-            SIZE_T viewSize = 0;
-            LARGE_INTEGER sectionOffset;
-            LARGE_INTEGER fileSize;
-            IO_STATUS_BLOCK sectionIosb;
-            FILE_STANDARD_INFORMATION fileInfo;
-            NTSTATUS mapStatus;
-
-            __try
-            {
-                RtlZeroMemory(&fileInfo, sizeof(fileInfo));
-                mapStatus = ZwQueryInformationFile(g_FdTable[mapFd].Handle, &sectionIosb, &fileInfo,
-                                                   sizeof(fileInfo), FileStandardInformation);
-
-                g_MmapDebug[6] = (ULONG64)mapStatus;
-
-                if (NT_SUCCESS(mapStatus))
-                {
-                    fileSize.QuadPart = fileInfo.EndOfFile.QuadPart;
-                    g_MmapDebug[7] = (ULONG64)fileSize.QuadPart;
-                }
-                else
-                {
-                    fileSize.QuadPart = (LONGLONG)(mapOffset + mapLength);
-                }
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                fileSize.QuadPart = (LONGLONG)(mapOffset + mapLength);
-            }
-
-            sectionOffset.QuadPart = (LONGLONG)mapOffset;
-            InitializeObjectAttributes(&sectionAttributes, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-
-            mapStatus = ZwCreateSection(&sectionHandle, SECTION_MAP_READ, &sectionAttributes, &fileSize,
-                                        PAGE_READONLY, SEC_COMMIT, g_FdTable[mapFd].Handle);
-
-            g_LastMmapStatus = (ULONG64)mapStatus | 0x100000000ull;
-            g_MmapDebug[6] = (ULONG64)mapStatus;
-            g_MmapDebug[7] = fileSize.QuadPart;
-
-            if (NT_SUCCESS(mapStatus))
-            {
-                mapStatus = ZwMapViewOfSection(sectionHandle, (HANDLE)g_LastPicoHandle, &viewBase, 0, 0,
-                                               &sectionOffset, &viewSize, ViewUnmap, 0, PAGE_READONLY);
-
-                ZwClose(sectionHandle);
-
-                g_LastMmapStatus = (ULONG64)mapStatus | 0x200000000ull;
-
-                if (NT_SUCCESS(mapStatus))
-                {
-                    g_MmapCurrent = (ULONG64)(ULONG_PTR)viewBase + viewSize;
-                    g_MmapCount++;
-                    g_LastMmapAddress = (ULONG64)(ULONG_PTR)viewBase;
-                    g_LastMmapStatus = 0;
-
-                    {
-                        UCHAR probeBytes[16];
-                        ULONG probeIndex;
-
-                        RtlZeroMemory(probeBytes, sizeof(probeBytes));
-
-                        __try
-                        {
-                            RtlCopyMemory(probeBytes, viewBase, 16);
-                        }
-                        __except (EXCEPTION_EXECUTE_HANDLER)
-                        {
-                            probeBytes[0] = 0xEE;
-                        }
-
-                        for (probeIndex = 0; probeIndex < 16; probeIndex++)
-                        {
-                            g_MmapBytes[probeIndex] = probeBytes[probeIndex];
-                        }
-                    }
-
-                    return g_LastMmapAddress;
-                }
-            }
-        }
-
-        if (g_PicoProcessObject != NULL && g_LastPicoHandle != NULL && (mapFlags & 0x20u) != 0 && mapFd > LX_MAX_FD)
-        {
-            ULONG64 allocBase = 0;
-            ULONG64 allocSize = (mapLength + 0xFFFFull) & ~0xFFFFull;
-            NTSTATUS allocStatus;
-            ULONG allocProt = PAGE_READWRITE;
-            if (mapProt & 0x4u)
-            {
-                allocProt = PAGE_EXECUTE_READWRITE;
-            }
-            allocBase = 0;
-            /* 按 lxcore 的 LxpMmAllocateMapVm 语义：一次 MEM_COMMIT|MEM_RESERVE，
-               不再分步 RESERVE+逐块 COMMIT（那会丢 PTE） */
-            if (g_PicoProcessObject != NULL)
-            {
-                HANDLE picoProcHandle = NULL;
-                if (NT_SUCCESS(ObOpenObjectByPointer(g_PicoProcessObject, 0, NULL, 0x1F0000, NULL, KernelMode, &picoProcHandle)))
-                {
-                    g_LastPicoHandle = (ULONG64)picoProcHandle;
-                    g_MmapDebug[9] = 0xA1u;
-                }
-            }
-            allocStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, (PVOID *)(ULONG_PTR)&allocBase, 0,
-                                                  (PSIZE_T)&allocSize, MEM_COMMIT | MEM_RESERVE, allocProt);
-            if (NT_SUCCESS(allocStatus))
-            {
-                ULONG64 cAddr = allocBase;
-                ULONG64 cRemain = allocSize;
-                while (cRemain > 0)
-                {
-                    ULONG64 cSize = (cRemain > 0x10000ull) ? 0x10000ull : cRemain;
-                    PVOID cBase = (PVOID)(ULONG_PTR)cAddr;
-                    SIZE_T cLen = (SIZE_T)cSize;
-                    NTSTATUS cStatus = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &cBase, 0, &cLen,
-                                                               MEM_COMMIT, allocProt);
-                    if (!NT_SUCCESS(cStatus))
-                    {
-                        g_MmapDebug[6] = (ULONG64)cStatus;
-                        break;
-                    }
-                    cAddr += cSize;
-                    cRemain -= cSize;
-                }
-            }
-            g_MmapDebug[6] = (ULONG64)allocStatus;
-            g_MmapDebug[7] = allocBase;
-            g_MmapRaw[1] = (ULONG64)g_MmapTouchPages;
-            if (NT_SUCCESS(allocStatus))
-            {
-                {
-                    ULONG64 tp = allocBase;
-                    ULONG64 tend = allocBase + allocSize;
-                    ULONG tpages = 0;
-                    __try
-                    {
-                        while (tp < tend && tpages < 128)
-                        {
-                            *(volatile UCHAR *)(ULONG_PTR)tp = 0;
-                            tp += 4096;
-                            tpages++;
-                        }
-                    }
-                    __except (EXCEPTION_EXECUTE_HANDLER)
-                    {
-                    }
-                    g_MmapTouchPages = tpages;
-                g_MmapDebug[0] = (ULONG64)tpages;
-                }
-                g_MmapCurrent = allocBase + allocSize;
-                g_MmapCount++;
-                g_LastMmapAddress = allocBase;
-                g_LastMmapStatus = 0;
-                return allocBase;
-            }
-        }
-        if (g_PicoProcessObject != NULL && g_LastPicoHandle != NULL)
-        {
-            HANDLE anonSection = NULL;
-            OBJECT_ATTRIBUTES anonAttr;
-            PVOID anonBase = NULL;
-            if ((mapFlags & 0x10u) != 0 && mapAddress != 0)
-            {
-                anonBase = (PVOID)(ULONG_PTR)mapAddress;
-            }
-            SIZE_T anonViewSize = 0;
-            LARGE_INTEGER anonSize;
-            NTSTATUS anonStatus;
-            ULONG anonProt = PAGE_READWRITE;
-            if (mapProt & 0x4u)
-            {
-                anonProt = PAGE_EXECUTE_READWRITE;
-            }
-            else if (mapProt & 0x2u)
-            {
-                anonProt = PAGE_READWRITE;
-            }
-            else
-            {
-                anonProt = PAGE_READONLY;
-            }
-            anonSize.QuadPart = (LONGLONG)mapLength;
-            InitializeObjectAttributes(&anonAttr, NULL, OBJ_KERNEL_HANDLE, NULL, NULL);
-            anonStatus = ZwCreateSection(&anonSection, SECTION_MAP_READ | SECTION_MAP_WRITE,
-                                         &anonAttr, &anonSize, PAGE_READWRITE, SEC_COMMIT, NULL);
-            g_LastMmapStatus = (ULONG64)anonStatus | 0x300000000ull;
-            if (NT_SUCCESS(anonStatus))
-            {
-                anonStatus = ZwMapViewOfSection(anonSection, (HANDLE)g_LastPicoHandle, &anonBase, 0, 0, NULL,
-                                                &anonViewSize, ViewUnmap, 0, anonProt);
-                ZwClose(anonSection);
-                g_LastMmapStatus = (ULONG64)anonStatus | 0x400000000ull;
-                if (NT_SUCCESS(anonStatus))
-                {
-                    g_MmapCurrent = (ULONG64)(ULONG_PTR)anonBase + anonViewSize;
-                    g_MmapCount++;
-                    g_LastMmapAddress = (ULONG64)(ULONG_PTR)anonBase;
-                    g_LastMmapStatus = 0;
-                    g_MmapDebug[6] = (ULONG64)(ULONG_PTR)anonBase;
-                    g_MmapDebug[7] = (ULONG64)anonViewSize;
-                    return g_LastMmapAddress;
-                }
-            }
-        }
-        g_MmapCurrent = mapAddress + mapLength;
-        g_MmapCount++;
-        g_LastMmapAddress = mapAddress;
-        g_LastMmapStatus = 0xC0000004u;
-        return mapAddress;
-    }
+        return LxSysMmapDecoded(Context);
 
     case LX_SYS_ARCH_PRCTL:
     {
@@ -3497,11 +3198,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_UNAME:
     {
         LX_LINUX_UTSNAME uts;
-        ULONG64 utsTarget = Parameters[1];
+        ULONG64 utsTarget = regs.Args[0];
 
         if (utsTarget == 0)
         {
-            utsTarget = Parameters[2];
+            utsTarget = regs.Args[1];
         }
 
         if (utsTarget == 0)
@@ -3533,8 +3234,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_GETCWD:
     {
         static const char Cwd[] = "/";
-        ULONG64 cwdBuffer = Parameters[1];
-        ULONG64 cwdSize = Parameters[2];
+        ULONG64 cwdBuffer = regs.Args[0];
+        ULONG64 cwdSize = regs.Args[1];
         ULONG cwdNeeded = (ULONG)sizeof(Cwd);
 
         if (cwdBuffer == 0)
@@ -3562,8 +3263,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_GETRANDOM:
     {
-        ULONG64 randomBuffer = Parameters[1];
-        ULONG64 randomLength = Parameters[2];
+        ULONG64 randomBuffer = regs.Args[0];
+        ULONG64 randomLength = regs.Args[1];
         LARGE_INTEGER systemTime;
         ULONGLONG seed;
 
@@ -3626,9 +3327,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_MPROTECT:
     {
-        ULONG64 protAddr = Parameters[1];
-        ULONG64 protLen = Parameters[2];
-        ULONG protFlags = (ULONG)Parameters[3];
+        ULONG64 protAddr = regs.Args[0];
+        ULONG64 protLen = regs.Args[1];
+        ULONG protFlags = (ULONG)regs.Args[2];
         ULONG newProt = PAGE_READONLY;
         ULONG64 oldProt = 0;
         NTSTATUS mpStatus = STATUS_UNSUCCESSFUL;
@@ -3695,56 +3396,16 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return 0;
     }
     case LX_SYS_MUNMAP:
-    {
-        ULONG64 unAddr = Parameters[1];
-        ULONG64 unLen = Parameters[2];
-        NTSTATUS umStatus = STATUS_UNSUCCESSFUL;
-        LX_APC_STATE umApc;
-        BOOLEAN umAtt = FALSE;
-        unLen = (unLen + 0xFFF) & ~0xFFFull;
-        if (unAddr == 0 || unLen == 0 || g_PicoProcessObject == NULL || g_LastPicoHandle == NULL)
-        {
-            return 0;
-        }
-        __try
-        {
-            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&umApc);
-            umAtt = TRUE;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            umAtt = FALSE;
-        }
-        __try
-        {
-            umStatus = ZwUnmapViewOfSection((HANDLE)g_LastPicoHandle, (PVOID)(ULONG_PTR)unAddr);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            umStatus = STATUS_ACCESS_VIOLATION;
-        }
-        if (umAtt)
-        {
-            __try
-            {
-                KeUnstackDetachProcess((PVOID)&umApc);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-            }
-        }
-        g_MmapDebug[4] = (ULONG64)umStatus;
-        return 0;
-    }
+        return LxSysMunmapDecoded(Context);
 
     case LX_SYS_GETTIMEOFDAY:
     {
         LX_LINUX_TIMEVAL tv;
-        ULONG64 tvTarget = Parameters[1];
+        ULONG64 tvTarget = regs.Args[0];
 
         if (tvTarget == 0)
         {
-            tvTarget = Parameters[2];
+            tvTarget = regs.Args[1];
         }
 
         LxGetUnixTimeval(&tv);
@@ -3769,11 +3430,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_CLOCK_GETRES:
     {
         LX_LINUX_TIMESPEC ts;
-        ULONG64 tsTarget = Parameters[2];
+        ULONG64 tsTarget = regs.Args[1];
 
         if (tsTarget == 0)
         {
-            tsTarget = Parameters[1];
+            tsTarget = regs.Args[0];
         }
 
         LxGetUnixTimespec(&ts);
@@ -3797,7 +3458,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_TIME:
     {
         LX_LINUX_TIMEVAL tv;
-        ULONG64 timeTarget = Parameters[1];
+        ULONG64 timeTarget = regs.Args[0];
 
         LxGetUnixTimeval(&tv);
 
@@ -3819,11 +3480,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_GETRLIMIT:
     {
-        ULONG64 limitTarget = Parameters[2];
+        ULONG64 limitTarget = regs.Args[1];
 
         if (limitTarget == 0)
         {
-            limitTarget = Parameters[3];
+            limitTarget = regs.Args[2];
         }
 
         if (limitTarget != 0)
@@ -3855,7 +3516,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG mkdirLength;
         ULONG64 mkdirArg;
 
-        mkdirArg = (Number == LX_SYS_MKDIRAT) ? Parameters[2] : Parameters[1];
+        mkdirArg = (Number == LX_SYS_MKDIRAT) ? regs.Args[1] : regs.Args[0];
 
         mkdirLength = LxCopyLinuxPath(mkdirArg, mkdirPath, sizeof(mkdirPath));
 
@@ -3869,7 +3530,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             return (ULONG64)(-2);
         }
 
-        return LxNtStatusToErrno(LxCreateDirectory(mkdirNt, (ULONG)Parameters[2]));
+        return LxNtStatusToErrno(LxCreateDirectory(mkdirNt, (ULONG)regs.Args[1]));
     }
 
     case LX_SYS_RMDIR:
@@ -3879,11 +3540,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         CHAR removePath[260];
         WCHAR removeNt[300];
         ULONG removeLength;
-        ULONG64 removeArg = Parameters[1];
+        ULONG64 removeArg = regs.Args[0];
 
         if (Number == LX_SYS_UNLINKAT)
         {
-            removeArg = Parameters[2];
+            removeArg = regs.Args[1];
         }
 
         removeLength = LxCopyLinuxPath(removeArg, removePath, sizeof(removePath));
@@ -3913,13 +3574,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (Number == LX_SYS_RENAMEAT)
         {
-            sourceArg = Parameters[2];
-            targetArg = Parameters[4];
+            sourceArg = regs.Args[1];
+            targetArg = regs.Args[3];
         }
         else
         {
-            sourceArg = Parameters[1];
-            targetArg = Parameters[2];
+            sourceArg = regs.Args[0];
+            targetArg = regs.Args[1];
         }
 
         if (LxCopyLinuxPath(sourceArg, renameSource, sizeof(renameSource)) == 0)
@@ -3949,7 +3610,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     {
         ULONG previous = g_ReportedUmask;
 
-        g_ReportedUmask = (ULONG)Parameters[1] & 0777u;
+        g_ReportedUmask = (ULONG)regs.Args[0] & 0777u;
         return previous;
     }
 
@@ -3967,7 +3628,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_FUTEX:
     {
-        ULONG64 futexOperation = Parameters[2] & 0x7Fu;
+        ULONG64 futexOperation = regs.Args[1] & 0x7Fu;
 
         if (futexOperation == 0 || futexOperation == 9 || futexOperation == 10)
         {
@@ -4029,13 +3690,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (Number == LX_SYS_READLINKAT)
         {
-            linkBuffer = Parameters[3];
-            linkSize = Parameters[4];
+            linkBuffer = regs.Args[2];
+            linkSize = regs.Args[3];
         }
         else
         {
-            linkBuffer = Parameters[2];
-            linkSize = Parameters[3];
+            linkBuffer = regs.Args[1];
+            linkSize = regs.Args[2];
         }
 
         if (linkBuffer == 0)
@@ -4065,18 +3726,18 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_FSTATFS:
     {
         LX_LINUX_STATFS statfs;
-        ULONG64 statfsTarget = Parameters[2];
+        ULONG64 statfsTarget = regs.Args[1];
 
         if (Number == LX_SYS_FSTATFS)
         {
-            ULONG64 statfsFd = Parameters[1];
+            ULONG64 statfsFd = regs.Args[0];
 
             if (statfsFd >= LX_MAX_FD || !g_FdTable[statfsFd].Used)
             {
                 return (ULONG64)(-9);
             }
 
-            statfsTarget = Parameters[2];
+            statfsTarget = regs.Args[1];
         }
 
         if (statfsTarget == 0)
@@ -4229,7 +3890,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_FCNTL:
     {
-        ULONG64 fcntlFd = Parameters[1];
+        ULONG64 fcntlFd = regs.Args[0];
 
         if (fcntlFd >= LX_MAX_FD || !g_FdTable[fcntlFd].Used)
         {
@@ -4241,7 +3902,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_DUP:
     {
-        ULONG64 dupSource = Parameters[1];
+        ULONG64 dupSource = regs.Args[0];
         ULONG dupSlot;
 
         if (dupSource >= LX_MAX_FD || !g_FdTable[dupSource].Used)
@@ -4268,8 +3929,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_DUP2:
     {
-        ULONG64 dup2Source = Parameters[1];
-        ULONG64 dup2Target = Parameters[2];
+        ULONG64 dup2Source = regs.Args[0];
+        ULONG64 dup2Target = regs.Args[1];
 
         if (dup2Source >= LX_MAX_FD || !g_FdTable[dup2Source].Used)
         {
@@ -9618,7 +9279,7 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->LastMmapAddress = g_LastMmapAddress;
             result->LastMmapStatus = g_LastMmapStatus;
 
-            for (i = 0; i < 8; i++)
+            for (i = 0; i < 12; i++)
             {
                 result->MmapDebug[i] = g_MmapDebug[i];
             }
@@ -9653,14 +9314,6 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->StatDebug[5] = g_NfaMvStatus;
             result->StatDebug[6] = g_NfaCopyW0;
             result->StatDebug[7] = g_NfaCopyStr;
-            result->MmapDebug[0] = g_NfaRaw0;
-            result->MmapDebug[1] = g_NfaRaw1;
-            result->MmapDebug[2] = g_NfaRaw2;
-            result->MmapDebug[3] = g_NfaRaw3;
-            result->MmapDebug[4] = g_NfaRaw4;
-            result->MmapDebug[5] = g_NfaRaw5;
-            result->MmapDebug[6] = g_NfaRaw6;
-            result->MmapDebug[7] = g_NfaRaw7;
             result->StatDebug[8] = g_WritevStatus;
             result->StatDebug[9] = g_WritevCnt;
             result->StatDebug[10] = g_WritevBase;
