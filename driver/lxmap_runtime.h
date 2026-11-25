@@ -2,6 +2,7 @@ typedef struct _LX_FILE_VIEW
 {
     ULONG64 Base;
     ULONG64 Size;
+    ULONG64 FileOffset;
     LONG Fd;
     BOOLEAN Valid;
 } LX_FILE_VIEW;
@@ -48,7 +49,7 @@ static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 
     return FALSE;
 }
 
-static VOID LxRecordFileView(ULONG64 Base, ULONG64 Size, LONG Fd)
+static VOID LxRecordFileView(ULONG64 Base, ULONG64 Size, ULONG64 FileOffset, LONG Fd)
 {
     ULONG slot;
     if (g_FileViewCount < LX_MAX_FILE_VIEWS)
@@ -62,6 +63,7 @@ static VOID LxRecordFileView(ULONG64 Base, ULONG64 Size, LONG Fd)
     }
     g_FileViews[slot].Base = Base;
     g_FileViews[slot].Size = Size;
+    g_FileViews[slot].FileOffset = FileOffset;
     g_FileViews[slot].Fd = Fd;
     g_FileViews[slot].Valid = TRUE;
 }
@@ -184,7 +186,7 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
         }
         g_MmapDebug[9] = copied;
     }
-    LxRecordFileView(viewBase, length, fd);
+    LxRecordFileView(viewBase, length, offset, fd);
     g_MmapDebug[10] = (ULONG64)g_FileViewCount;
     g_MmapDebug[11] = 0xC0u;
     g_MmapCount++;
