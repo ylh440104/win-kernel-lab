@@ -589,7 +589,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG SelfTestSystemRoot;
     ULONG SelfTestGlobal;
     ULONG SelfTestDosDevices;
-    ULONG64 ReadDebug[8];
+    ULONG64 ReadDebug[12];
     ULONG GetDentsCount;
     ULONG64 GetDentsStatus;
     ULONG64 GetDentsBytes;
@@ -4461,6 +4461,7 @@ static ULONG64 g_ExcFrameWords[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 static ULONG64 g_ExcTailWords[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 static volatile ULONG g_ExcReturnValue = 0;
 static ULONG64 g_ExcAddrSeq[4] = {0, 0, 0, 0};
+static ULONG64 g_ExcChain[5] = {0, 0, 0, 0, 0};
 
 static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
 {
@@ -4521,10 +4522,38 @@ static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
             }
             if (TrapFrame != NULL)
             {
+                ULONG64 frameRbp = 0;
                 RtlCopyMemory(&g_ExcCtxRip, (PUCHAR)TrapFrame + 0x168, 8);
                 RtlCopyMemory(&g_ExcCtxRsp, (PUCHAR)TrapFrame + 0x180, 8);
                 RtlCopyMemory(&g_ExcCtxRax, (PUCHAR)TrapFrame + 0x30, 8);
                 RtlCopyMemory(&g_ExcCtxRdi, (PUCHAR)TrapFrame + 0x148, 8);
+                RtlCopyMemory(&frameRbp, (PUCHAR)TrapFrame + 0x158, 8);
+                g_ExcChain[0] = frameRbp;
+                if (frameRbp != 0 && PsGetCurrentProcess() == g_PicoProcessObject)
+                {
+                    ULONG64 slotValue = 0;
+                    __try
+                    {
+                        RtlCopyMemory(&slotValue, (PVOID)(ULONG_PTR)(frameRbp - 0x98), 8);
+                        g_ExcChain[1] = slotValue;
+                        if (slotValue != 0)
+                        {
+                            ULONG64 inner = 0;
+                            RtlCopyMemory(&inner, (PVOID)(ULONG_PTR)(slotValue + 0x28), 8);
+                            g_ExcChain[2] = inner;
+                            if (inner != 0)
+                            {
+                                ULONG64 infoSlot = 0;
+                                RtlCopyMemory(&infoSlot, (PVOID)(ULONG_PTR)(inner + 0x68), 8);
+                                g_ExcChain[3] = infoSlot;
+                            }
+                        }
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        g_ExcChain[4] = 0xDEAD;
+                    }
+                }
             }
             g_ExcRip = g_ExcCtxRip;
             g_ExcRsp = g_ExcCtxRsp;
@@ -9631,9 +9660,12 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->SeekCount = g_SeekCount;
             result->LastSeekResult = g_LastSeekResult;
 
-            for (i = 0; i < 8; i++)
+            for (i = 0; i < 12; i++)
             {
                 result->ReadDebug[i] = g_ReadDebug[i];
+            }
+            for (i = 0; i < 8; i++)
+            {
                 RtlCopyMemory(result->SlotText[i], g_SlotText[i], 48);
             }
             for (i = 0; i < 12; i++)
@@ -9670,6 +9702,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ReadDebug[5] = g_ExcCr2;
             result->ReadDebug[6] = g_ExitSuspended;
             result->ReadDebug[7] = g_ExitCalled;
+            result->ReadDebug[8] = g_ExcChain[0];
+            result->ReadDebug[9] = g_ExcChain[1];
+            result->ReadDebug[10] = g_ExcChain[2];
+            result->ReadDebug[11] = g_ExcChain[3];
 
             result->GetDentsCount = g_GetDentsCount;
             result->GetDentsStatus = g_GetDentsStatus;
