@@ -2580,6 +2580,7 @@ vectorDone:
 }
 
 #include "lxio_runtime.h"
+#include "lxmap_runtime.h"
 
 static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Context)
 {
@@ -3189,6 +3190,10 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         mapFlags = registers.Args[3];
         mapFd = (ULONG)registers.Args[4];
         mapOffset = registers.Args[5];
+        if ((mapFlags & 0x20u) == 0)
+        {
+            return LxSysMmapFile(Context);
+        }
         if (mapLength == 0 || mapLength > 0x40000000ull || (mapOffset & 0xFFF) != 0)
         {
             return (ULONG64)(-22);
@@ -3725,47 +3730,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return 0;
     }
     case LX_SYS_MUNMAP:
-    {
-        ULONG64 unAddr = Parameters[1];
-        ULONG64 unLen = Parameters[2];
-        NTSTATUS umStatus = STATUS_UNSUCCESSFUL;
-        LX_APC_STATE umApc;
-        BOOLEAN umAtt = FALSE;
-        unLen = (unLen + 0xFFF) & ~0xFFFull;
-        if (unAddr == 0 || unLen == 0 || g_PicoProcessObject == NULL || g_LastPicoHandle == NULL)
-        {
-            return 0;
-        }
-        __try
-        {
-            KeStackAttachProcess(g_PicoProcessObject, (PVOID)&umApc);
-            umAtt = TRUE;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            umAtt = FALSE;
-        }
-        __try
-        {
-            umStatus = ZwUnmapViewOfSection((HANDLE)g_LastPicoHandle, (PVOID)(ULONG_PTR)unAddr);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            umStatus = STATUS_ACCESS_VIOLATION;
-        }
-        if (umAtt)
-        {
-            __try
-            {
-                KeUnstackDetachProcess((PVOID)&umApc);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-            }
-        }
-        g_MmapDebug[4] = (ULONG64)umStatus;
-        return 0;
-    }
+        return LxSysMunmapDecoded(Context);
 
     case LX_SYS_GETTIMEOFDAY:
     {

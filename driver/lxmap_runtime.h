@@ -1,29 +1,30 @@
-typedef struct _LX_MAP_VIEW
+typedef struct _LX_FILE_VIEW
 {
     ULONG64 Base;
     ULONG64 Size;
-    ULONG64 FileOffset;
     LONG Fd;
-    BOOLEAN FileBacked;
     BOOLEAN Valid;
-} LX_MAP_VIEW;
+} LX_FILE_VIEW;
 
-#define LX_MAX_MAP_VIEWS 32u
+#define LX_MAX_FILE_VIEWS 16u
 
-static LX_MAP_VIEW g_MapViews[LX_MAX_MAP_VIEWS];
-static ULONG g_MapViewCount = 0;
+static LX_FILE_VIEW g_FileViews[LX_MAX_FILE_VIEWS];
+static ULONG g_FileViewCount = 0;
 
-static BOOLEAN LxFindOwnedRegion(ULONG64 Address, ULONG64 Length, ULONG64 *RegionBase, ULONG64 *RegionSize)
+static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length);
+static BOOLEAN LxRegionAvailable(PVOID Base, SIZE_T Length);
+
+static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 *ViewBase)
 {
     ULONG index;
     if (Length == 0)
     {
         return FALSE;
     }
-    for (index = 0; index < g_MapViewCount; index++)
+    for (index = 0; index < g_FileViewCount; index++)
     {
-        const LX_MAP_VIEW *view = &g_MapViews[index];
-        if (!view->Valid || view->Base == 0 || view->Size == 0)
+        const LX_FILE_VIEW *view = &g_FileViews[index];
+        if (!view->Valid || view->Fd != Fd || view->Base == 0)
         {
             continue;
         }
@@ -35,77 +36,174 @@ static BOOLEAN LxFindOwnedRegion(ULONG64 Address, ULONG64 Length, ULONG64 *Regio
         {
             continue;
         }
-        if (RegionBase != NULL)
+        if (ViewBase != NULL)
         {
-            *RegionBase = view->Base;
-        }
-        if (RegionSize != NULL)
-        {
-            *RegionSize = view->Size;
+            *ViewBase = view->Base;
         }
         return TRUE;
     }
     return FALSE;
 }
 
-static VOID LxRecordMapView(ULONG64 Base, ULONG64 Size, ULONG64 FileOffset, LONG Fd, BOOLEAN FileBacked)
+static VOID LxRecordFileView(ULONG64 Base, ULONG64 Size, LONG Fd)
 {
     ULONG slot;
-    if (g_MapViewCount < LX_MAX_MAP_VIEWS)
+    if (g_FileViewCount < LX_MAX_FILE_VIEWS)
     {
-        slot = g_MapViewCount;
-        g_MapViewCount++;
+        slot = g_FileViewCount;
+        g_FileViewCount++;
     }
     else
     {
-        slot = LX_MAX_MAP_VIEWS - 1;
+        slot = LX_MAX_FILE_VIEWS - 1;
     }
-    g_MapViews[slot].Base = Base;
-    g_MapViews[slot].Size = Size;
-    g_MapViews[slot].FileOffset = FileOffset;
-    g_MapViews[slot].Fd = Fd;
-    g_MapViews[slot].FileBacked = FileBacked;
-    g_MapViews[slot].Valid = TRUE;
+    g_FileViews[slot].Base = Base;
+    g_FileViews[slot].Size = Size;
+    g_FileViews[slot].Fd = Fd;
+    g_FileViews[slot].Valid = TRUE;
 }
 
-static ULONG64 LxWriteByteToUser(ULONG64 Address, UCHAR Value)
+static ULONG64 LxSysMmapFile(ULONG64 Context)
 {
-    __try
-    {
-        *(volatile UCHAR *)(ULONG_PTR)Address = Value;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    LX_SYSCALL_REGISTERS registers;
+    LX_APC_STATE apcState;
+    BOOLEAN attached = FALSE;
+    ULONG64 address;
+    ULONG64 length;
+    ULONG64 protection;
+    ULONG64 flags;
+    ULONG64 offset;
+    LONG fd;
+    ULONG64 viewBase = 0;
+    IO_STATUS_BLOCK io;
+    FILE_STANDARD_INFORMATION fileInfo;
+    NTSTATUS status;
+    PVOID base;
+    SIZE_T viewSize;
+
+    status = LxDecodeSyscallRegisters(Context, &registers);
+    if (!NT_SUCCESS(status))
     {
         return (ULONG64)(-14);
     }
-    return 0;
-}
-
-static ULONG64 LxProbeCommittedPages(ULONG64 Address, ULONG64 Length)
-{
-    ULONG64 pages = 0;
-    ULONG64 offset;
-    if (Length < 4096)
+    address = registers.Args[0];
+    length = registers.Args[1];
+    protection = registers.Args[2];
+    flags = registers.Args[3];
+    fd = (LONG)registers.Args[4];
+    offset = registers.Args[5];
+    g_MmapDebug[0] = address;
+    g_MmapDebug[1] = length;
+    g_MmapDebug[2] = protection;
+    g_MmapDebug[3] = flags;
+    g_MmapDebug[4] = (ULONG64)(ULONG)fd;
+    g_MmapDebug[5] = offset;
+    g_MmapDebug[6] = 0xAAu;
+    g_MmapDebug[7] = 0xAAu;
+    g_MmapDebug[10] = (ULONG64)g_FileViewCount;
+    g_MmapDebug[11] = 0;
+    if (length == 0 || length > 0x40000000ull || (offset & 0xFFFull) != 0)
     {
-        Length = 4096;
+        g_MmapDebug[11] = 0xF1u;
+        return (ULONG64)(-22);
     }
-    for (offset = 0; offset < Length; offset += 4096)
+    length = (length + 0xFFFull) & ~0xFFFull;
+    if (fd < 0 || fd >= LX_MAX_FD || !g_FdTable[fd].Used || g_FdTable[fd].Handle == NULL)
     {
-        ULONG64 result = LxWriteByteToUser(Address + offset, 0);
-        if ((LONG64)result < 0)
+        g_MmapDebug[11] = 0xF2u;
+        return (ULONG64)(-9);
+    }
+    if (g_FdTable[fd].IsDirectory)
+    {
+        g_MmapDebug[11] = 0xF3u;
+        return (ULONG64)(-21);
+    }
+    if ((flags & 0x10u) != 0)
+    {
+        if (address == 0 || (address & 0xFFFull) != 0)
         {
-            break;
+            g_MmapDebug[11] = 0xF4u;
+            return (ULONG64)(-22);
         }
-        pages++;
+        if (LxFindFileView(fd, address, length, &viewBase))
+        {
+            g_MmapDebug[8] = viewBase;
+            g_MmapDebug[11] = 0xC1u;
+            g_MmapCount++;
+            g_LastMmapAddress = address;
+            g_LastMmapStatus = 0;
+            return address;
+        }
     }
-    return pages;
+    RtlZeroMemory(&fileInfo, sizeof(fileInfo));
+    status = ZwQueryInformationFile(g_FdTable[fd].Handle, &io, &fileInfo, sizeof(fileInfo),
+                                    FileStandardInformation);
+    if (!NT_SUCCESS(status))
+    {
+        g_MmapDebug[11] = 0xF5u;
+        return LxNtStatusToErrno(status);
+    }
+    g_MmapDebug[9] = (ULONG64)fileInfo.EndOfFile.QuadPart;
+    if ((flags & 0x10u) != 0)
+    {
+        PVOID probe = (PVOID)(ULONG_PTR)address;
+        if (!LxRegionAvailable(probe, (SIZE_T)length))
+        {
+            g_MmapDebug[11] = 0xF6u;
+            return (ULONG64)(-12);
+        }
+    }
+    base = (flags & 0x10u) != 0 ? (PVOID)(ULONG_PTR)address : NULL;
+    viewSize = (SIZE_T)length;
+    if (g_PicoProcessObject != NULL && PsGetCurrentProcess() != g_PicoProcessObject)
+    {
+        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&apcState);
+        attached = TRUE;
+    }
+    status = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &base, 0, &viewSize,
+                                     MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    g_MmapDebug[6] = (ULONG64)status | 0x300000000ull;
+    if (attached)
+    {
+        KeUnstackDetachProcess((PVOID)&apcState);
+    }
+    if (!NT_SUCCESS(status) || viewSize < length)
+    {
+        if (NT_SUCCESS(status))
+        {
+            SIZE_T freeSize = viewSize;
+            PVOID freeBase = base;
+            ZwFreeVirtualMemory((HANDLE)g_LastPicoHandle, &freeBase, &freeSize, MEM_RELEASE);
+        }
+        g_MmapDebug[11] = 0xF7u;
+        return (ULONG64)(-12);
+    }
+    viewBase = (ULONG64)(ULONG_PTR)base;
+    g_MmapDebug[8] = viewBase;
+    g_MmapDebug[7] = (ULONG64)viewSize;
+    {
+        ULONG64 copied = LxCopyFileIntoView(g_FdTable[fd].Handle, viewBase, offset, length);
+        if ((LONG64)copied < 0)
+        {
+            g_MmapDebug[11] = 0xF8u;
+            return copied;
+        }
+        g_MmapDebug[9] = copied;
+    }
+    LxRecordFileView(viewBase, length, fd);
+    g_MmapDebug[10] = (ULONG64)g_FileViewCount;
+    g_MmapDebug[11] = 0xC0u;
+    g_MmapCount++;
+    g_LastMmapAddress = viewBase;
+    g_LastMmapStatus = 0;
+    return viewBase;
 }
 
-static ULONG64 LxLoadFileBytes(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length)
+static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length)
 {
     UCHAR *staging;
     ULONG64 done = 0;
-    ULONG64 stagingSize = 0x40000ull;
+    ULONG64 stagingSize = 0x10000ull;
     NTSTATUS status;
     if (Length == 0)
     {
@@ -128,7 +226,7 @@ static ULONG64 LxLoadFileBytes(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 Fi
         status = ZwReadFile(FileHandle, NULL, NULL, NULL, &io, staging, chunk, &readOffset, NULL);
         if (!NT_SUCCESS(status) || io.Information == 0)
         {
-            g_MmapDebug[6] = (ULONG64)status | 0x10000ull;
+            g_MmapDebug[11] = 0xE1u;
             break;
         }
         if (io.Information > chunk)
@@ -143,14 +241,10 @@ static ULONG64 LxLoadFileBytes(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 Fi
             {
                 copySize = io.Information - copyIndex;
             }
-            __try
+            if ((LONG64)LxCopyUserBytes(address, staging + copyIndex, (SIZE_T)copySize, TRUE) < 0)
             {
-                RtlCopyMemory((PVOID)(ULONG_PTR)address, staging + copyIndex, copySize);
-            }
-            __except (EXCEPTION_EXECUTE_HANDLER)
-            {
-                g_MmapDebug[6] = 0xF1u;
-                g_MmapDebug[8] = done + copyIndex;
+                g_MmapDebug[11] = 0xE2u;
+                g_MmapDebug[8] = address;
                 ExFreePoolWithTag(staging, 'mFxL');
                 return (ULONG64)(-14);
             }
@@ -162,190 +256,63 @@ static ULONG64 LxLoadFileBytes(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 Fi
         }
     }
     ExFreePoolWithTag(staging, 'mFxL');
-    g_MmapDebug[9] = done;
     return done;
 }
 
-static ULONG64 LxCommitRegion(ULONG64 Address, ULONG64 Length)
+static BOOLEAN LxRegionAvailable(PVOID Base, SIZE_T Length)
 {
-    PVOID base = (PVOID)(ULONG_PTR)Address;
-    SIZE_T size = (SIZE_T)Length;
-    NTSTATUS status;
-    status = ZwAllocateVirtualMemory((HANDLE)g_LastPicoHandle, &base, 0, &size,
-                                     MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    g_MmapDebug[7] = (ULONG64)status;
-    if (!NT_SUCCESS(status) || size < Length)
-    {
-        if (NT_SUCCESS(status))
-        {
-            ZwFreeVirtualMemory((HANDLE)g_LastPicoHandle, &base, &size, MEM_RELEASE);
-        }
-        return 0;
-    }
-    return (ULONG64)(ULONG_PTR)base;
-}
-
-static ULONG64 LxZeroUserRange(ULONG64 Address, ULONG64 Length)
-{
-    ULONG64 done = 0;
-    while (done < Length)
-    {
-        ULONG64 chunk = Length - done > 0x10000ull ? 0x10000ull : Length - done;
-        __try
-        {
-            RtlZeroMemory((PVOID)(ULONG_PTR)(Address + done), (SIZE_T)chunk);
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            return (ULONG64)(-14);
-        }
-        done += chunk;
-    }
-    return 0;
-}
-
-static ULONG64 LxSysMmapDecoded(ULONG64 Context)
-{
-    LX_SYSCALL_REGISTERS registers;
+    MEMORY_BASIC_INFORMATION info;
+    SIZE_T returned = 0;
+    ULONG64 cursor = (ULONG64)(ULONG_PTR)Base;
+    ULONG64 end = cursor + Length;
     LX_APC_STATE apcState;
     BOOLEAN attached = FALSE;
-    ULONG64 address;
-    ULONG64 length;
-    ULONG64 protection;
-    ULONG64 flags;
-    ULONG64 offset;
-    LONG fd;
-    ULONG64 regionBase = 0;
-    ULONG64 regionSize = 0;
-    ULONG64 mappedBase;
-    ULONG64 probePages;
-    BOOLEAN anonymous;
-    BOOLEAN fixed;
-    NTSTATUS status = LxDecodeSyscallRegisters(Context, &registers);
-    if (!NT_SUCCESS(status))
+    NTSTATUS status;
+    if (g_LastPicoHandle == 0)
     {
-        return (ULONG64)(-14);
+        return FALSE;
     }
-    address = registers.Args[0];
-    length = registers.Args[1];
-    protection = registers.Args[2];
-    flags = registers.Args[3];
-    fd = (LONG)registers.Args[4];
-    offset = registers.Args[5];
-    if (length == 0 || length > 0x40000000ull || (offset & 0xFFFull) != 0)
-    {
-        return (ULONG64)(-22);
-    }
-    length = (length + 0xFFFull) & ~0xFFFull;
-    fixed = (flags & 0x10u) != 0 ? TRUE : FALSE;
-    anonymous = (flags & 0x20u) != 0 ? TRUE : FALSE;
-    if (fixed && (address == 0 || (address & 0xFFFull) != 0))
-    {
-        return (ULONG64)(-22);
-    }
-    if (!fixed)
-    {
-        address = 0;
-    }
-    if (!anonymous && (fd < 0 || fd >= LX_MAX_FD || !g_FdTable[fd].Used || g_FdTable[fd].Handle == NULL))
-    {
-        return (ULONG64)(-9);
-    }
-    if (!anonymous && g_FdTable[fd].IsDirectory)
-    {
-        return (ULONG64)(-21);
-    }
-    g_MmapDebug[0] = address;
-    g_MmapDebug[1] = length;
-    g_MmapDebug[2] = protection;
-    g_MmapDebug[3] = flags;
-    g_MmapDebug[4] = anonymous ? 0xFFFFFFFEull : (ULONG64)(ULONG)fd;
-    g_MmapDebug[5] = offset;
-    g_MmapDebug[6] = 0xCCu;
-    g_MmapDebug[7] = 0xCCu;
-    g_MmapDebug[8] = 0;
-    g_MmapDebug[9] = 0;
-    g_MmapDebug[10] = (ULONG64)g_MapViewCount;
-    if (g_PicoProcessObject == NULL || g_LastPicoHandle == 0)
-    {
-        return (ULONG64)(-12);
-    }
-    __try
+    if (g_PicoProcessObject != NULL && PsGetCurrentProcess() != g_PicoProcessObject)
     {
         KeStackAttachProcess(g_PicoProcessObject, (PVOID)&apcState);
         attached = TRUE;
     }
-    __except (EXCEPTION_EXECUTE_HANDLER)
+    while (cursor < end)
     {
-        attached = FALSE;
-    }
-    if (fixed && LxFindOwnedRegion(address, length, &regionBase, &regionSize))
-    {
-        ULONG64 result = 0;
-        g_MmapDebug[6] = regionBase;
-        g_MmapDebug[7] = 0xDDu;
-        if (anonymous)
-        {
-            result = LxZeroUserRange(address, length);
-        }
-        else
-        {
-            ULONG64 copied = LxLoadFileBytes(g_FdTable[fd].Handle, address, offset, length);
-            if ((LONG64)copied < 0)
-            {
-                result = copied;
-            }
-        }
-        if (result == 0)
-        {
-            LxRecordMapView(address, length, anonymous ? 0 : offset, anonymous ? -1 : fd, !anonymous);
-            g_MmapCount++;
-            g_LastMmapAddress = address;
-            g_LastMmapStatus = 0;
-        }
-        g_MmapDebug[10] = (ULONG64)g_MapViewCount;
-        if (attached)
-        {
-            KeUnstackDetachProcess((PVOID)&apcState);
-        }
-        return result == 0 ? address : result;
-    }
-    mappedBase = LxCommitRegion(address, length);
-    if (mappedBase == 0)
-    {
-        g_MmapDebug[6] = 0xEEu;
-        if (attached)
-        {
-            KeUnstackDetachProcess((PVOID)&apcState);
-        }
-        return (ULONG64)(-12);
-    }
-    g_MmapDebug[6] = mappedBase;
-    probePages = LxProbeCommittedPages(mappedBase, length);
-    g_MmapDebug[8] = probePages;
-    g_MmapDebug[11] = length / 4096;
-    if (!anonymous)
-    {
-        ULONG64 copied = LxLoadFileBytes(g_FdTable[fd].Handle, mappedBase, offset, length);
-        if ((LONG64)copied < 0)
+        RtlZeroMemory(&info, sizeof(info));
+        status = ZwQueryVirtualMemory(NtCurrentProcess(), (PVOID)(ULONG_PTR)cursor,
+                                      MemoryBasicInformation, &info, sizeof(info), &returned);
+        if (!NT_SUCCESS(status))
         {
             if (attached)
             {
                 KeUnstackDetachProcess((PVOID)&apcState);
             }
-            return copied;
+            return FALSE;
+        }
+        if (info.State == MEM_COMMIT || info.State == MEM_RESERVE)
+        {
+            if (attached)
+            {
+                KeUnstackDetachProcess((PVOID)&apcState);
+            }
+            return FALSE;
+        }
+        cursor = (ULONG64)(ULONG_PTR)info.BaseAddress + (ULONG64)info.RegionSize;
+        if (cursor <= (ULONG64)(ULONG_PTR)info.BaseAddress)
+        {
+            if (attached)
+            {
+                KeUnstackDetachProcess((PVOID)&apcState);
+            }
+            return FALSE;
         }
     }
-    LxRecordMapView(mappedBase, length, anonymous ? 0 : offset, anonymous ? -1 : fd, !anonymous);
-    g_MmapDebug[10] = (ULONG64)g_MapViewCount;
-    g_MmapCount++;
-    g_LastMmapAddress = mappedBase;
-    g_LastMmapStatus = 0;
     if (attached)
     {
         KeUnstackDetachProcess((PVOID)&apcState);
     }
-    return mappedBase;
+    return TRUE;
 }
 
 static ULONG64 LxSysMunmapDecoded(ULONG64 Context)
@@ -369,54 +336,19 @@ static ULONG64 LxSysMunmapDecoded(ULONG64 Context)
     {
         return (ULONG64)(-22);
     }
-    for (index = 0; index < g_MapViewCount; index++)
+    for (index = 0; index < g_FileViewCount; index++)
     {
-        LX_MAP_VIEW *view = &g_MapViews[index];
+        LX_FILE_VIEW *view = &g_FileViews[index];
         if (!view->Valid)
         {
             continue;
         }
-        if (address >= view->Base && address - view->Base <= view->Size &&
-            address + length >= view->Base && view->Base + view->Size >= address + length)
+        if (address >= view->Base && address - view->Base < view->Size &&
+            view->Base + view->Size <= address + length)
         {
             view->Valid = FALSE;
-            g_MmapDebug[10] = (ULONG64)g_MapViewCount;
-            return 0;
         }
     }
-    return 0;
-}
-
-static ULONG64 LxSysAccessDecoded(ULONG64 Context)
-{
-    LX_SYSCALL_REGISTERS registers;
-    CHAR path[260];
-    CHAR resolved[260];
-    WCHAR ntBuffer[300];
-    NTSTATUS status;
-    ULONG64 result;
-    if (!NT_SUCCESS(LxDecodeSyscallRegisters(Context, &registers)))
-    {
-        return (ULONG64)(-14);
-    }
-    result = LxCopyUserPathExact(registers.Args[0], path, sizeof(path));
-    if ((LONG64)result < 0)
-    {
-        return result;
-    }
-    result = LxResolveAtPath(-100, path, resolved, sizeof(resolved));
-    if ((LONG64)result < 0)
-    {
-        return result;
-    }
-    if (LxBuildNtPath(resolved, ntBuffer, RTL_NUMBER_OF(ntBuffer)) == 0)
-    {
-        return (ULONG64)(-36);
-    }
-    status = LxQueryExists(ntBuffer);
-    if (!NT_SUCCESS(status))
-    {
-        return LxNtStatusToErrno(status);
-    }
+    g_MmapDebug[11] = 0xB0u;
     return 0;
 }
