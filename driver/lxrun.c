@@ -1216,7 +1216,7 @@ static CHAR g_LastNtPath[260];
 static ULONG g_SelfTestSystemRoot = 0xFFFFFFFFu;
 static ULONG g_SelfTestGlobal = 0xFFFFFFFFu;
 static ULONG g_SelfTestDosDevices = 0xFFFFFFFFu;
-static ULONG64 g_ReadDebug[8];
+static ULONG64 g_ReadDebug[12];
 static ULONG64 g_StatDebug[12];
 static ULONG64 g_NfaCount = 0;
 static ULONG64 g_NfaDirFd = 0;
@@ -4575,6 +4575,14 @@ static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
                                 g_ExcChainMap[1] = mapAddr;
                                 g_ExcChainMap[2] = mapName;
                                 g_ExcChainMap[3] = mapLd;
+                                g_ReadDebug[8] = frameRbp;
+                                g_ReadDebug[9] = slotValue;
+                                g_ReadDebug[10] = inner;
+                                g_ReadDebug[11] = infoSlot;
+                                g_MmapDebug[12] = inner;
+                                g_MmapDebug[13] = mapAddr;
+                                g_MmapDebug[14] = mapName;
+                                g_MmapDebug[15] = mapLd;
                             }
                         }
                     }
@@ -10170,10 +10178,6 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             {
                 result->MmapDebug[i] = g_MmapDebug[i];
             }
-            result->MmapDebug[12] = g_ExcChainMap[0];
-            result->MmapDebug[13] = g_ExcChainMap[1];
-            result->MmapDebug[14] = g_ExcChainMap[2];
-            result->MmapDebug[15] = g_ExcChainMap[3];
 
             for (i = 0; i < 40; i++)
             {
@@ -10230,10 +10234,6 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->ReadDebug[5] = g_ExcCr2;
             result->ReadDebug[6] = g_ExitSuspended;
             result->ReadDebug[7] = g_ExitCalled;
-            result->ReadDebug[8] = g_ExcChain[0];
-            result->ReadDebug[9] = g_ExcChain[1];
-            result->ReadDebug[10] = g_ExcChain[2];
-            result->ReadDebug[11] = g_ExcChain[3];
 
             result->GetDentsCount = g_GetDentsCount;
             result->GetDentsStatus = g_GetDentsStatus;
