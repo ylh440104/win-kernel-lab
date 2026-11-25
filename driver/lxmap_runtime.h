@@ -12,7 +12,6 @@ static LX_FILE_VIEW g_FileViews[LX_MAX_FILE_VIEWS];
 static ULONG g_FileViewCount = 0;
 
 static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length);
-static BOOLEAN LxRegionAvailable(PVOID Base, SIZE_T Length);
 
 static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 *ViewBase)
 {
@@ -144,15 +143,6 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
         return LxNtStatusToErrno(status);
     }
     g_MmapDebug[9] = (ULONG64)fileInfo.EndOfFile.QuadPart;
-    if ((flags & 0x10u) != 0)
-    {
-        PVOID probe = (PVOID)(ULONG_PTR)address;
-        if (!LxRegionAvailable(probe, (SIZE_T)length))
-        {
-            g_MmapDebug[11] = 0xF6u;
-            return (ULONG64)(-12);
-        }
-    }
     base = (flags & 0x10u) != 0 ? (PVOID)(ULONG_PTR)address : NULL;
     viewSize = (SIZE_T)length;
     if (g_PicoProcessObject != NULL && PsGetCurrentProcess() != g_PicoProcessObject)
@@ -257,62 +247,6 @@ static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64
     }
     ExFreePoolWithTag(staging, 'mFxL');
     return done;
-}
-
-static BOOLEAN LxRegionAvailable(PVOID Base, SIZE_T Length)
-{
-    MEMORY_BASIC_INFORMATION info;
-    SIZE_T returned = 0;
-    ULONG64 cursor = (ULONG64)(ULONG_PTR)Base;
-    ULONG64 end = cursor + Length;
-    LX_APC_STATE apcState;
-    BOOLEAN attached = FALSE;
-    NTSTATUS status;
-    if (g_LastPicoHandle == 0)
-    {
-        return FALSE;
-    }
-    if (g_PicoProcessObject != NULL && PsGetCurrentProcess() != g_PicoProcessObject)
-    {
-        KeStackAttachProcess(g_PicoProcessObject, (PVOID)&apcState);
-        attached = TRUE;
-    }
-    while (cursor < end)
-    {
-        RtlZeroMemory(&info, sizeof(info));
-        status = ZwQueryVirtualMemory(NtCurrentProcess(), (PVOID)(ULONG_PTR)cursor,
-                                      MemoryBasicInformation, &info, sizeof(info), &returned);
-        if (!NT_SUCCESS(status))
-        {
-            if (attached)
-            {
-                KeUnstackDetachProcess((PVOID)&apcState);
-            }
-            return FALSE;
-        }
-        if (info.State == MEM_COMMIT || info.State == MEM_RESERVE)
-        {
-            if (attached)
-            {
-                KeUnstackDetachProcess((PVOID)&apcState);
-            }
-            return FALSE;
-        }
-        cursor = (ULONG64)(ULONG_PTR)info.BaseAddress + (ULONG64)info.RegionSize;
-        if (cursor <= (ULONG64)(ULONG_PTR)info.BaseAddress)
-        {
-            if (attached)
-            {
-                KeUnstackDetachProcess((PVOID)&apcState);
-            }
-            return FALSE;
-        }
-    }
-    if (attached)
-    {
-        KeUnstackDetachProcess((PVOID)&apcState);
-    }
-    return TRUE;
 }
 
 static ULONG64 LxSysMunmapDecoded(ULONG64 Context)
