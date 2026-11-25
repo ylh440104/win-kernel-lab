@@ -4588,16 +4588,14 @@ static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
                                 {
                                     ULONG64 dynPtr = 0;
                                     ULONG64 tagIndex;
+                                    ULONG64 rtldGlobal = g_LdsoBase + 0x38000ull;
                                     g_ExcChainMap[0] = inner;
-                                    if (mapLd != 0)
+                                    for (tagIndex = 0; tagIndex < 24; tagIndex++)
                                     {
-                                        for (tagIndex = 0; tagIndex < 24; tagIndex++)
-                                        {
-                                            RtlCopyMemory(&dynPtr,
-                                                          (PVOID)(ULONG_PTR)(mapLd + tagIndex * 16),
-                                                          sizeof(dynPtr));
-                                            g_ExcDynTags[tagIndex] = dynPtr;
-                                        }
+                                        RtlCopyMemory(&dynPtr,
+                                                      (PVOID)(ULONG_PTR)(rtldGlobal + tagIndex * 8),
+                                                      sizeof(dynPtr));
+                                        g_ExcDynTags[tagIndex] = dynPtr;
                                     }
                                     for (tagIndex = 0; tagIndex < 8; tagIndex++)
                                     {
