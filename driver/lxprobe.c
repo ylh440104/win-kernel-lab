@@ -421,6 +421,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 InterpEntry;
     ULONG64 AtPhdr;
     ULONG64 AtPhnum;
+    ULONG64 FileMmapFail[4];
 } LX_QUERY_RESULT;
 
 typedef struct _LX_ELF_SEG
@@ -1296,6 +1297,9 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  EXCCHAIN: rbp=%llx slot98=%llx r12=%llx l_info5=%llx\n",
                    (unsigned long long)q.ReadDebug[8], (unsigned long long)q.ReadDebug[9],
                    (unsigned long long)q.ReadDebug[10], (unsigned long long)q.ReadDebug[11]);
+            printf("  FILEMMAPFAIL: %llx %llx %llx %llx\n",
+                   (unsigned long long)q.FileMmapFail[0], (unsigned long long)q.FileMmapFail[1],
+                   (unsigned long long)q.FileMmapFail[2], (unsigned long long)q.FileMmapFail[3]);
             printf("  EXCMAP: map=0x%llx l_addr=0x%llx l_name=0x%llx l_ld=0x%llx\n",
                    (unsigned long long)q.MmapDebug[12], (unsigned long long)q.MmapDebug[13],
                    (unsigned long long)q.MmapDebug[14], (unsigned long long)q.MmapDebug[15]);

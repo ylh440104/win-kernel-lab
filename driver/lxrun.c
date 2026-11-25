@@ -787,6 +787,7 @@ typedef struct _LX_QUERY_RESULT
     ULONG64 InterpEntry;
     ULONG64 AtPhdr;
     ULONG64 AtPhnum;
+    ULONG64 FileMmapFail[4];
 } LX_QUERY_RESULT;
 
 DRIVER_INITIALIZE DriverEntry;
@@ -9567,6 +9568,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             result->InterpEntry = g_LdsoEntry;
             result->AtPhdr = g_ElfLoad.PhdrAddress;
             result->AtPhnum = (ULONG64)g_ElfLoad.PhdrCount;
+            for (i = 0; i < 4; i++)
+            {
+                result->FileMmapFail[i] = g_FileMmapFail[i];
+            }
             result->InterpLoadStatus = g_InterpLoadStatus;
             result->InterpBase = g_InterpBaseProbe;
             result->LdsoSelfBoot = (ULONG64)g_LdsoSelfBoot;

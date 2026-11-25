@@ -11,6 +11,7 @@ typedef struct _LX_FILE_VIEW
 
 static LX_FILE_VIEW g_FileViews[LX_MAX_FILE_VIEWS];
 static ULONG g_FileViewCount = 0;
+static ULONG64 g_FileMmapFail[4];
 
 static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64 FileOffset, ULONG64 Length);
 
@@ -28,11 +29,15 @@ static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 
         {
             continue;
         }
-        if (view->FileOffset != FileOffset)
+        if (Address < view->Base)
         {
             continue;
         }
-        if (Address < view->Base || Address - view->Base > view->Size)
+        if (Address - view->Base != FileOffset - view->FileOffset)
+        {
+            continue;
+        }
+        if (Address - view->Base > view->Size)
         {
             continue;
         }
@@ -109,12 +114,22 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
     g_MmapDebug[11] = 0;
     if (length == 0 || length > 0x40000000ull || (offset & 0xFFFull) != 0)
     {
+        if (g_FileMmapFail[0] == 0)
+        {
+            g_FileMmapFail[0] = 0xF1u;
+            g_FileMmapFail[1] = length;
+        }
         g_MmapDebug[11] = 0xF1u;
         return (ULONG64)(-22);
     }
     length = (length + 0xFFFull) & ~0xFFFull;
     if (fd < 0 || fd >= LX_MAX_FD || !g_FdTable[fd].Used || g_FdTable[fd].Handle == NULL)
     {
+        if (g_FileMmapFail[0] == 0)
+        {
+            g_FileMmapFail[0] = 0xF2u;
+            g_FileMmapFail[1] = (ULONG64)(ULONG)fd;
+        }
         g_MmapDebug[11] = 0xF2u;
         return (ULONG64)(-9);
     }
@@ -165,6 +180,13 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
     }
     if (!NT_SUCCESS(status) || viewSize < length)
     {
+        if (g_FileMmapFail[0] == 0)
+        {
+            g_FileMmapFail[0] = (ULONG64)status | 0x100000000ull;
+            g_FileMmapFail[1] = address;
+            g_FileMmapFail[2] = length;
+            g_FileMmapFail[3] = flags;
+        }
         if (NT_SUCCESS(status))
         {
             SIZE_T freeSize = viewSize;
