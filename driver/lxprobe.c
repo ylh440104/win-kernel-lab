@@ -1276,8 +1276,7 @@ printf("  writeLen=%lu\n", q.WriteLength);
             printf("  statCount=%llu lastStatStatus=0x%llx size=%lld mode=0%lo path=[%.*s]\n",
                    (unsigned long long)q.StatCount, (unsigned long long)q.LastStatStatus,
                    (long long)q.LastStatSize, q.LastStatMode, (int)sizeof(q.LastStatPath), q.LastStatPath);
-            printf("  EXCCHAIN: rbp=%llx slot98=%llx r12=%llx l_info5=%llx
-",
+            printf("  EXCCHAIN: rbp=%llx slot98=%llx r12=%llx l_info5=%llx\n",
                    (unsigned long long)q.ReadDebug[8], (unsigned long long)q.ReadDebug[9],
                    (unsigned long long)q.ReadDebug[10], (unsigned long long)q.ReadDebug[11]);
             printf("  WRITEV_ABI: fd=%llu iov=0x%llx count=%llu first=0x%llx captured=%lu status=0x%08llx\n",
