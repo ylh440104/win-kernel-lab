@@ -2585,23 +2585,30 @@ vectorDone:
 static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Context)
 {
     LX_SYSCALL_REGISTERS regs;
-    ULONG haveRegs = NT_SUCCESS(LxDecodeSyscallRegisters(Context, &regs)) ? 1u : 0u;
+    ULONG64 localArgs[7];
+    ULONG indexArg;
     ULONG64 arg0;
     ULONG64 arg1;
     ULONG64 arg2;
-    if (haveRegs == 0)
+    if (NT_SUCCESS(LxDecodeSyscallRegisters(Context, &regs)))
     {
-        ULONG fallback;
-        for (fallback = 0; fallback < 6; fallback++)
+        localArgs[0] = 0;
+        for (indexArg = 0; indexArg < 6; indexArg++)
         {
-            regs.Args[fallback] = Parameters[fallback + 1];
+            localArgs[indexArg + 1] = regs.Args[indexArg];
         }
     }
-    arg0 = regs.Args[0];
-    arg1 = regs.Args[1];
-    arg2 = regs.Args[2];
-    UNREFERENCED_PARAMETER(Parameters);
-
+    else
+    {
+        for (indexArg = 0; indexArg < 7; indexArg++)
+        {
+            localArgs[indexArg] = Parameters[indexArg];
+        }
+    }
+    Parameters = localArgs;
+    arg0 = Parameters[0];
+    arg1 = Parameters[1];
+    arg2 = Parameters[2];
     if (g_TlsBlockBase != 0 && g_SetDescriptorBaseFn != 0)
     {
         __try
@@ -2671,22 +2678,22 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         return (ULONG64)(-5);
     }
     case LX_SYS_CLOSE:
-        return LxCloseFile((ULONG)regs.Args[0]);
+        return LxCloseFile((ULONG)Parameters[1]);
 
     case LX_SYS_GETDENTS64:
     {
-        ULONG fd = (ULONG)regs.Args[0];
-        ULONG64 gdBuf = regs.Args[1];
-        ULONG count = (ULONG)regs.Args[2];
+        ULONG fd = (ULONG)Parameters[1];
+        ULONG64 gdBuf = Parameters[2];
+        ULONG count = (ULONG)Parameters[3];
         {
             ULONG64 tfRsi = 0;
             ULONG64 tfRdx = 0;
             ULONG64 tfR10 = 0;
             __try
             {
-                tfRsi = regs.Args[1];
-                tfRdx = regs.Args[2];
-                tfR10 = regs.Args[3];
+                tfRsi = Parameters[2];
+                tfRdx = Parameters[3];
+                tfR10 = Parameters[4];
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
@@ -2704,9 +2711,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             {
                 count = (ULONG)tfR10;
             }
-            if (regs.Args[0] != 0 && regs.Args[0] < 0x1000)
+            if (Parameters[1] != 0 && Parameters[1] < 0x1000)
             {
-                fd = (ULONG)regs.Args[0];
+                fd = (ULONG)Parameters[1];
             }
         }
         if (count == 0 || count > 0x4000)
@@ -2722,9 +2729,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_LSEEK:
     {
-        ULONG64 fd = regs.Args[0];
-        LONG64 offset = (LONG64)regs.Args[1];
-        ULONG64 whence = regs.Args[2];
+        ULONG64 fd = Parameters[1];
+        LONG64 offset = (LONG64)Parameters[2];
+        ULONG64 whence = Parameters[3];
         ULONG64 base;
         LONGLONG newPosition;
 
@@ -2808,7 +2815,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         {
             ULONG64 writeCount = 0;
 
-            writeCount = regs.Args[2];
+            writeCount = Parameters[3];
 
             g_WriteDebug[7] = writeCount;
 
@@ -2859,7 +2866,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
             __try
             {
-                contextCount = regs.Args[2];
+                contextCount = Parameters[3];
             }
             __except (EXCEPTION_EXECUTE_HANDLER)
             {
@@ -3058,7 +3065,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             g_BrkProbe[7] = 0xBBBB0001ull;
             g_BrkDebug[0] = arg0;
             g_BrkDebug[1] = arg1;
-            g_BrkDebug[2] = regs.Args[1];
+            g_BrkDebug[2] = Parameters[2];
             g_BrkDebug[3] = Context;
             g_BrkDebug[4] = brkTarget;
             g_BrkDebug[5] = 0;
@@ -3198,11 +3205,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_UNAME:
     {
         LX_LINUX_UTSNAME uts;
-        ULONG64 utsTarget = regs.Args[0];
+        ULONG64 utsTarget = Parameters[1];
 
         if (utsTarget == 0)
         {
-            utsTarget = regs.Args[1];
+            utsTarget = Parameters[2];
         }
 
         if (utsTarget == 0)
@@ -3234,8 +3241,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_GETCWD:
     {
         static const char Cwd[] = "/";
-        ULONG64 cwdBuffer = regs.Args[0];
-        ULONG64 cwdSize = regs.Args[1];
+        ULONG64 cwdBuffer = Parameters[1];
+        ULONG64 cwdSize = Parameters[2];
         ULONG cwdNeeded = (ULONG)sizeof(Cwd);
 
         if (cwdBuffer == 0)
@@ -3263,8 +3270,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_GETRANDOM:
     {
-        ULONG64 randomBuffer = regs.Args[0];
-        ULONG64 randomLength = regs.Args[1];
+        ULONG64 randomBuffer = Parameters[1];
+        ULONG64 randomLength = Parameters[2];
         LARGE_INTEGER systemTime;
         ULONGLONG seed;
 
@@ -3327,9 +3334,9 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_MPROTECT:
     {
-        ULONG64 protAddr = regs.Args[0];
-        ULONG64 protLen = regs.Args[1];
-        ULONG protFlags = (ULONG)regs.Args[2];
+        ULONG64 protAddr = Parameters[1];
+        ULONG64 protLen = Parameters[2];
+        ULONG protFlags = (ULONG)Parameters[3];
         ULONG newProt = PAGE_READONLY;
         ULONG64 oldProt = 0;
         NTSTATUS mpStatus = STATUS_UNSUCCESSFUL;
@@ -3401,11 +3408,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_GETTIMEOFDAY:
     {
         LX_LINUX_TIMEVAL tv;
-        ULONG64 tvTarget = regs.Args[0];
+        ULONG64 tvTarget = Parameters[1];
 
         if (tvTarget == 0)
         {
-            tvTarget = regs.Args[1];
+            tvTarget = Parameters[2];
         }
 
         LxGetUnixTimeval(&tv);
@@ -3430,11 +3437,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_CLOCK_GETRES:
     {
         LX_LINUX_TIMESPEC ts;
-        ULONG64 tsTarget = regs.Args[1];
+        ULONG64 tsTarget = Parameters[2];
 
         if (tsTarget == 0)
         {
-            tsTarget = regs.Args[0];
+            tsTarget = Parameters[1];
         }
 
         LxGetUnixTimespec(&ts);
@@ -3458,7 +3465,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_TIME:
     {
         LX_LINUX_TIMEVAL tv;
-        ULONG64 timeTarget = regs.Args[0];
+        ULONG64 timeTarget = Parameters[1];
 
         LxGetUnixTimeval(&tv);
 
@@ -3480,11 +3487,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_GETRLIMIT:
     {
-        ULONG64 limitTarget = regs.Args[1];
+        ULONG64 limitTarget = Parameters[2];
 
         if (limitTarget == 0)
         {
-            limitTarget = regs.Args[2];
+            limitTarget = Parameters[3];
         }
 
         if (limitTarget != 0)
@@ -3516,7 +3523,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         ULONG mkdirLength;
         ULONG64 mkdirArg;
 
-        mkdirArg = (Number == LX_SYS_MKDIRAT) ? regs.Args[1] : regs.Args[0];
+        mkdirArg = (Number == LX_SYS_MKDIRAT) ? Parameters[2] : Parameters[1];
 
         mkdirLength = LxCopyLinuxPath(mkdirArg, mkdirPath, sizeof(mkdirPath));
 
@@ -3530,7 +3537,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
             return (ULONG64)(-2);
         }
 
-        return LxNtStatusToErrno(LxCreateDirectory(mkdirNt, (ULONG)regs.Args[1]));
+        return LxNtStatusToErrno(LxCreateDirectory(mkdirNt, (ULONG)Parameters[2]));
     }
 
     case LX_SYS_RMDIR:
@@ -3540,11 +3547,11 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
         CHAR removePath[260];
         WCHAR removeNt[300];
         ULONG removeLength;
-        ULONG64 removeArg = regs.Args[0];
+        ULONG64 removeArg = Parameters[1];
 
         if (Number == LX_SYS_UNLINKAT)
         {
-            removeArg = regs.Args[1];
+            removeArg = Parameters[2];
         }
 
         removeLength = LxCopyLinuxPath(removeArg, removePath, sizeof(removePath));
@@ -3574,13 +3581,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (Number == LX_SYS_RENAMEAT)
         {
-            sourceArg = regs.Args[1];
-            targetArg = regs.Args[3];
+            sourceArg = Parameters[2];
+            targetArg = Parameters[4];
         }
         else
         {
-            sourceArg = regs.Args[0];
-            targetArg = regs.Args[1];
+            sourceArg = Parameters[1];
+            targetArg = Parameters[2];
         }
 
         if (LxCopyLinuxPath(sourceArg, renameSource, sizeof(renameSource)) == 0)
@@ -3610,7 +3617,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     {
         ULONG previous = g_ReportedUmask;
 
-        g_ReportedUmask = (ULONG)regs.Args[0] & 0777u;
+        g_ReportedUmask = (ULONG)Parameters[1] & 0777u;
         return previous;
     }
 
@@ -3628,7 +3635,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_FUTEX:
     {
-        ULONG64 futexOperation = regs.Args[1] & 0x7Fu;
+        ULONG64 futexOperation = Parameters[2] & 0x7Fu;
 
         if (futexOperation == 0 || futexOperation == 9 || futexOperation == 10)
         {
@@ -3690,13 +3697,13 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
         if (Number == LX_SYS_READLINKAT)
         {
-            linkBuffer = regs.Args[2];
-            linkSize = regs.Args[3];
+            linkBuffer = Parameters[3];
+            linkSize = Parameters[4];
         }
         else
         {
-            linkBuffer = regs.Args[1];
-            linkSize = regs.Args[2];
+            linkBuffer = Parameters[2];
+            linkSize = Parameters[3];
         }
 
         if (linkBuffer == 0)
@@ -3726,18 +3733,18 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
     case LX_SYS_FSTATFS:
     {
         LX_LINUX_STATFS statfs;
-        ULONG64 statfsTarget = regs.Args[1];
+        ULONG64 statfsTarget = Parameters[2];
 
         if (Number == LX_SYS_FSTATFS)
         {
-            ULONG64 statfsFd = regs.Args[0];
+            ULONG64 statfsFd = Parameters[1];
 
             if (statfsFd >= LX_MAX_FD || !g_FdTable[statfsFd].Used)
             {
                 return (ULONG64)(-9);
             }
 
-            statfsTarget = regs.Args[1];
+            statfsTarget = Parameters[2];
         }
 
         if (statfsTarget == 0)
@@ -3890,7 +3897,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_FCNTL:
     {
-        ULONG64 fcntlFd = regs.Args[0];
+        ULONG64 fcntlFd = Parameters[1];
 
         if (fcntlFd >= LX_MAX_FD || !g_FdTable[fcntlFd].Used)
         {
@@ -3902,7 +3909,7 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_DUP:
     {
-        ULONG64 dupSource = regs.Args[0];
+        ULONG64 dupSource = Parameters[1];
         ULONG dupSlot;
 
         if (dupSource >= LX_MAX_FD || !g_FdTable[dupSource].Used)
@@ -3929,8 +3936,8 @@ static ULONG64 LxHandleSyscall(ULONG64 Number, ULONG64 *Parameters, ULONG64 Cont
 
     case LX_SYS_DUP2:
     {
-        ULONG64 dup2Source = regs.Args[0];
-        ULONG64 dup2Target = regs.Args[1];
+        ULONG64 dup2Source = Parameters[1];
+        ULONG64 dup2Target = Parameters[2];
 
         if (dup2Source >= LX_MAX_FD || !g_FdTable[dup2Source].Used)
         {
