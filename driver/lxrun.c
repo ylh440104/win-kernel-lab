@@ -4521,19 +4521,6 @@ static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
     UNREFERENCED_PARAMETER(PreviousMode);
     UNREFERENCED_PARAMETER(FirstChance);
     g_ExceptionCount++;
-    if (g_ExceptionCount == 100000 && g_SuspendThreadFn != 0 && g_PicoThreadObject != 0)
-    {
-        ULONG fusePrev = 0;
-        __try
-        {
-            ((NTSTATUS (*)(PVOID, PULONG))g_SuspendThreadFn)(g_PicoThreadObject, &fusePrev);
-            g_ExcFuseSuspended = 1;
-        }
-        __except (EXCEPTION_EXECUTE_HANDLER)
-        {
-            g_ExcFuseSuspended = 0xDEAD;
-        }
-    }
     if (g_ExceptionDumpDone == 0 && Record != NULL)
     {
         g_ExceptionDumpDone = 1;
