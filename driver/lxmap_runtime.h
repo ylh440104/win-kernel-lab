@@ -11,6 +11,7 @@ typedef struct _LX_FILE_VIEW
 static LX_FILE_VIEW g_FileViews[LX_MAX_FILE_VIEWS];
 static ULONG g_FileViewCount = 0;
 static ULONG64 g_FileMmapFail[4];
+static ULONG g_FileOverlayEnable = 0;
 
 static BOOLEAN LxFindFileView(LONG Fd, ULONG64 Address, ULONG64 Length, ULONG64 *ViewBase)
 {
@@ -386,6 +387,7 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
             return copied;
         }
         g_MmapDebug[9] = copied;
+        if (g_FileOverlayEnable != 0)
         {
             ULONG64 shifted = LxOverlayShiftedSegments(g_FdTable[fd].Handle,
                                                        (ULONG64)fileInfo.EndOfFile.QuadPart,
