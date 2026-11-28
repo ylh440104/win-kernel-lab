@@ -4484,6 +4484,7 @@ static ULONG64 g_ExcChain[5] = {0, 0, 0, 0, 0};
 static ULONG64 g_ExcChainMap[4] = {0, 0, 0, 0};
 static ULONG64 g_ExcDynTags[24];
 static ULONG64 g_ExcLInfo[8];
+static ULONG64 g_ExcDynTail[4];
 
 static ULONG64 LxReadMsrSafe(NTSTATUS *OutStatus)
 {
@@ -4589,14 +4590,21 @@ static ULONG64 LxDispatchException(PEXCEPTION_RECORD Record, PVOID ExceptionFram
                                 {
                                     ULONG64 dynPtr = 0;
                                     ULONG64 tagIndex;
-                                    ULONG64 rtldGlobal = g_LdsoBase + 0x38000ull;
+                                    ULONG64 dynamicBase = mapLd;
                                     g_ExcChainMap[0] = inner;
                                     for (tagIndex = 0; tagIndex < 24; tagIndex++)
                                     {
                                         RtlCopyMemory(&dynPtr,
-                                                      (PVOID)(ULONG_PTR)(rtldGlobal + tagIndex * 8),
+                                                      (PVOID)(ULONG_PTR)(dynamicBase + tagIndex * 16),
                                                       sizeof(dynPtr));
                                         g_ExcDynTags[tagIndex] = dynPtr;
+                                    }
+                                    for (tagIndex = 0; tagIndex < 4; tagIndex++)
+                                    {
+                                        RtlCopyMemory(&dynPtr,
+                                                      (PVOID)(ULONG_PTR)(mapLd + 0x100 + tagIndex * 8),
+                                                      sizeof(dynPtr));
+                                        g_ExcDynTail[tagIndex] = dynPtr;
                                     }
                                     for (tagIndex = 0; tagIndex < 8; tagIndex++)
                                     {
@@ -10217,6 +10225,10 @@ static NTSTATUS LxrunDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
             for (i = 0; i < 8; i++)
             {
                 result->MmapContext[24 + i] = g_ExcLInfo[i];
+            }
+            for (i = 0; i < 4; i++)
+            {
+                result->MmapContext[32 + i] = g_ExcDynTail[i];
             }
 
             for (i = 0; i < 16; i++)

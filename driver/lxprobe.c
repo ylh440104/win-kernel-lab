@@ -1310,6 +1310,11 @@ printf("  writeLen=%lu\n", q.WriteLength);
                 {
                     printf(" %llx", (unsigned long long)q.MmapContext[di]);
                 }
+                printf("\n  EXCDYNTAIL:");
+                for (di = 0; di < 4; di++)
+                {
+                    printf(" %llx", (unsigned long long)q.MmapContext[32 + di]);
+                }
                 printf("\n  EXCLINFO:");
                 for (di = 0; di < 8; di++)
                 {

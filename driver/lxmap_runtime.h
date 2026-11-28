@@ -136,6 +136,117 @@ static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64
     return done;
 }
 
+typedef struct _LX_ELF_PHDR_VIEW
+{
+    ULONG Type;
+    ULONG Flags;
+    ULONG64 Offset;
+    ULONG64 Vaddr;
+    ULONG64 Filesz;
+    ULONG64 Memsz;
+} LX_ELF_PHDR_VIEW;
+
+static ULONG64 LxMapFileSegments(HANDLE FileHandle, ULONG64 FileSize, ULONG64 ViewBase,
+                                 ULONG64 ViewSpan, ULONG64 WholeSize)
+{
+    UCHAR header[64];
+    ULONG64 phoff;
+    ULONG phnum;
+    ULONG phentsize;
+    UCHAR *phdrs;
+    ULONG index;
+    IO_STATUS_BLOCK io;
+    LARGE_INTEGER offset;
+    ULONG64 copiedTotal = 0;
+
+    RtlZeroMemory(header, sizeof(header));
+    RtlZeroMemory(&io, sizeof(io));
+    offset.QuadPart = 0;
+    if (!NT_SUCCESS(ZwReadFile(FileHandle, NULL, NULL, NULL, &io, header, sizeof(header), &offset, NULL)) ||
+        io.Information < 64)
+    {
+        return 0;
+    }
+    if (header[0] != 0x7F || header[1] != 'E' || header[2] != 'L' || header[3] != 'F')
+    {
+        return 0;
+    }
+    phoff = *(ULONG64 *)(header + 0x20);
+    phentsize = *(USHORT *)(header + 0x36);
+    phnum = *(USHORT *)(header + 0x38);
+    if (phentsize < 56 || phnum == 0 || phnum > 64 || phoff > FileSize)
+    {
+        return 0;
+    }
+    if (phoff + (ULONG64)phnum * phentsize > FileSize)
+    {
+        return 0;
+    }
+    phdrs = (UCHAR *)ExAllocatePool2(POOL_FLAG_NON_PAGED, (SIZE_T)(phnum * phentsize), 'pExL');
+    if (phdrs == NULL)
+    {
+        return 0;
+    }
+    RtlZeroMemory(phdrs, (SIZE_T)(phnum * phentsize));
+    RtlZeroMemory(&io, sizeof(io));
+    offset.QuadPart = (LONGLONG)phoff;
+    if (!NT_SUCCESS(ZwReadFile(FileHandle, NULL, NULL, NULL, &io, phdrs, (ULONG)(phnum * phentsize),
+                              &offset, NULL)) ||
+        io.Information < phnum * phentsize)
+    {
+        ExFreePoolWithTag(phdrs, 'pExL');
+        return 0;
+    }
+    for (index = 0; index < phnum; index++)
+    {
+        UCHAR *ph = phdrs + index * phentsize;
+        ULONG type = *(ULONG *)(ph + 0);
+        ULONG64 pOffset;
+        ULONG64 pVaddr;
+        ULONG64 pFilesz;
+        ULONG64 limit;
+        ULONG64 copied;
+        if (type != 1)
+        {
+            continue;
+        }
+        pOffset = *(ULONG64 *)(ph + 0x08);
+        pVaddr = *(ULONG64 *)(ph + 0x10);
+        pFilesz = *(ULONG64 *)(ph + 0x20);
+        if (pFilesz == 0 || pOffset >= FileSize)
+        {
+            continue;
+        }
+        if (pOffset + pFilesz > FileSize)
+        {
+            pFilesz = FileSize - pOffset;
+        }
+        if (pVaddr >= WholeSize)
+        {
+            continue;
+        }
+        limit = WholeSize - pVaddr;
+        if (pFilesz > limit)
+        {
+            pFilesz = limit;
+        }
+        if (pFilesz == 0)
+        {
+            continue;
+        }
+        copied = LxCopyFileIntoView(FileHandle, ViewBase + pVaddr, pOffset, pFilesz);
+        if ((LONG64)copied < 0)
+        {
+            ExFreePoolWithTag(phdrs, 'pExL');
+            return (ULONG64)(-14);
+        }
+        copiedTotal += copied;
+    }
+    ExFreePoolWithTag(phdrs, 'pExL');
+    UNREFERENCED_PARAMETER(ViewSpan);
+    return copiedTotal;
+}
+
 static ULONG64 LxSysMmapFile(ULONG64 Context)
 {
     LX_SYSCALL_REGISTERS registers;
@@ -275,11 +386,23 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
     g_MmapDebug[8] = viewBase;
     g_MmapDebug[7] = (ULONG64)viewSize;
     {
-        ULONG64 copied = LxCopyFileIntoView(g_FdTable[fd].Handle, viewBase, 0, wholeSize);
+        ULONG64 copied = LxMapFileSegments(g_FdTable[fd].Handle,
+                                          (ULONG64)fileInfo.EndOfFile.QuadPart,
+                                          viewBase, wholeSize, wholeSize);
         if ((LONG64)copied < 0)
         {
             g_MmapDebug[11] = 0xF8u;
             return copied;
+        }
+        if (copied == 0)
+        {
+            ULONG64 flat = LxCopyFileIntoView(g_FdTable[fd].Handle, viewBase, 0, wholeSize);
+            if ((LONG64)flat < 0)
+            {
+                g_MmapDebug[11] = 0xF9u;
+                return flat;
+            }
+            copied = flat;
         }
         g_MmapDebug[9] = copied;
     }
