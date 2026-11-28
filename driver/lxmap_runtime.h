@@ -136,6 +136,110 @@ static ULONG64 LxCopyFileIntoView(HANDLE FileHandle, ULONG64 TargetBase, ULONG64
     return done;
 }
 
+static ULONG64 LxOverlayShiftedSegments(HANDLE FileHandle, ULONG64 FileSize, ULONG64 ViewBase,
+                                        ULONG64 WholeSize)
+{
+    UCHAR header[64];
+    UCHAR *phdrs;
+    ULONG64 phoff;
+    ULONG phnum;
+    ULONG phentsize;
+    ULONG index;
+    IO_STATUS_BLOCK io;
+    LARGE_INTEGER offset;
+    ULONG64 fixedTotal = 0;
+
+    RtlZeroMemory(header, sizeof(header));
+    RtlZeroMemory(&io, sizeof(io));
+    offset.QuadPart = 0;
+    if (!NT_SUCCESS(ZwReadFile(FileHandle, NULL, NULL, NULL, &io, header, sizeof(header), &offset, NULL)) ||
+        io.Information < 64)
+    {
+        return 0;
+    }
+    if (header[0] != 0x7F || header[1] != 'E' || header[2] != 'L' || header[3] != 'F')
+    {
+        return 0;
+    }
+    phoff = *(ULONG64 *)(header + 0x20);
+    phentsize = *(USHORT *)(header + 0x36);
+    phnum = *(USHORT *)(header + 0x38);
+    if (phentsize < 56 || phnum == 0 || phnum > 32)
+    {
+        return 0;
+    }
+    if (phoff > FileSize || phoff + (ULONG64)phnum * phentsize > FileSize)
+    {
+        return 0;
+    }
+    phdrs = (UCHAR *)ExAllocatePool2(POOL_FLAG_NON_PAGED, (SIZE_T)(phnum * phentsize), 'pExL');
+    if (phdrs == NULL)
+    {
+        return 0;
+    }
+    RtlZeroMemory(phdrs, (SIZE_T)(phnum * phentsize));
+    RtlZeroMemory(&io, sizeof(io));
+    offset.QuadPart = (LONGLONG)phoff;
+    if (!NT_SUCCESS(ZwReadFile(FileHandle, NULL, NULL, NULL, &io, phdrs, (ULONG)(phnum * phentsize),
+                              &offset, NULL)) ||
+        io.Information < phnum * phentsize)
+    {
+        ExFreePoolWithTag(phdrs, 'pExL');
+        return 0;
+    }
+    for (index = 0; index < phnum; index++)
+    {
+        UCHAR *ph = phdrs + index * phentsize;
+        ULONG type = *(ULONG *)(ph + 0);
+        ULONG64 pOffset;
+        ULONG64 pVaddr;
+        ULONG64 pFilesz;
+        ULONG64 limit;
+        ULONG64 copied;
+        if (type != 1)
+        {
+            continue;
+        }
+        pOffset = *(ULONG64 *)(ph + 0x08);
+        pVaddr = *(ULONG64 *)(ph + 0x10);
+        pFilesz = *(ULONG64 *)(ph + 0x20);
+        if (pFilesz == 0 || pOffset >= FileSize)
+        {
+            continue;
+        }
+        if ((pOffset & 0xFFFull) == (pVaddr & 0xFFFull))
+        {
+            continue;
+        }
+        if (pOffset + pFilesz > FileSize)
+        {
+            pFilesz = FileSize - pOffset;
+        }
+        if (pVaddr >= WholeSize)
+        {
+            continue;
+        }
+        limit = WholeSize - pVaddr;
+        if (pFilesz > limit)
+        {
+            pFilesz = limit;
+        }
+        if (pFilesz == 0 || pFilesz > 0x100000ull)
+        {
+            continue;
+        }
+        copied = LxCopyFileIntoView(FileHandle, ViewBase + pVaddr, pOffset, pFilesz);
+        if ((LONG64)copied < 0)
+        {
+            ExFreePoolWithTag(phdrs, 'pExL');
+            return (ULONG64)(-14);
+        }
+        fixedTotal += copied;
+    }
+    ExFreePoolWithTag(phdrs, 'pExL');
+    return fixedTotal;
+}
+
 static ULONG64 LxSysMmapFile(ULONG64 Context)
 {
     LX_SYSCALL_REGISTERS registers;
@@ -282,6 +386,17 @@ static ULONG64 LxSysMmapFile(ULONG64 Context)
             return copied;
         }
         g_MmapDebug[9] = copied;
+        {
+            ULONG64 shifted = LxOverlayShiftedSegments(g_FdTable[fd].Handle,
+                                                       (ULONG64)fileInfo.EndOfFile.QuadPart,
+                                                       viewBase, wholeSize);
+            if ((LONG64)shifted < 0)
+            {
+                g_MmapDebug[11] = 0xFAu;
+                return shifted;
+            }
+            g_MmapDebug[8] = shifted;
+        }
     }
     LxRecordFileView(viewBase, wholeSize, fd);
     g_MmapDebug[10] = (ULONG64)g_FileViewCount;
