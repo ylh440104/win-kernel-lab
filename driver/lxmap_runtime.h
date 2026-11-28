@@ -207,7 +207,7 @@ static ULONG64 LxOverlayShiftedSegments(HANDLE FileHandle, ULONG64 FileSize, ULO
         {
             continue;
         }
-        if ((pOffset & 0xFFFull) == (pVaddr & 0xFFFull))
+        if (pOffset == pVaddr)
         {
             continue;
         }
